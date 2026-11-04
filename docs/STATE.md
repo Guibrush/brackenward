@@ -64,7 +64,7 @@ not started.
 | Blocker | Waiting on |
 | --- | --- |
 | No main scene | G2; `--quit` stays unusable until then |
-| G1.8 not yet proven | one PR into `dev`, green CI, squash-merged (T-0005) |
+| G1 signature | human: G1.8 (merged PR) and G1.11 (README accuracy) |
 
 Art budget is **not** a blocker: 31 free PixelLab generations remain on top of $10
 credit, and the human has confirmed credit is consumed only after the free
@@ -81,7 +81,7 @@ paid call.
 
 ## Next action
 
-G1 — Bootstrap is complete in evidence: repository, protection, CI, engine pin, and
-the integration loop all pass (`all.ps1 -Gate G1`: 7 scripts, 0 fail). PR #1 proved
-G1.8 — branch → PR → green `gates` → squash-merge into `dev` → branch deleted.
-Awaiting the human signature on G1, then the G1 retro, then G2 planning.
+G1 is ready for signature on `dev @ 562572f`: every script criterion passes, and
+G1.9 now rests on a scanner that has been observed failing against a planted key
+(PR #3 fixed a false pass that scanned zero files). After signature: G1 retro, then
+G2 planning with the leads.
