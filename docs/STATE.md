@@ -81,7 +81,8 @@ paid call.
 
 ## Next action
 
-G1 is ready for signature on `dev @ 562572f`: every script criterion passes, and
-G1.9 now rests on a scanner that has been observed failing against a planted key
-(PR #3 fixed a false pass that scanned zero files). After signature: G1 retro, then
-G2 planning with the leads.
+G1 is ready for signature on `dev @ 889d7dc`: every script criterion passes, G1.9
+rests on a scanner observed failing against a planted key, and the gate record states
+the docs-only delta between evidence and signature (L-023). After signature: G2
+planning with the three leads, starting from the fun hypothesis and the 10-system
+budget.
