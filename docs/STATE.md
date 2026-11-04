@@ -6,15 +6,16 @@ Last updated: 2026-11-04
 
 ## Milestone
 
-**G0 — Concept. Signed 2026-11-04.** No gate has failed. Next: **G1 — Bootstrap**,
-not started.
+**G1 — Bootstrap. Signed 2026-11-05.** No gate has failed. Next: **G2 — Vertical
+slice**, not started. Session paused at the human's request; G2 planning has not
+begun.
 
 ## Gate status
 
 | Gate | Result | Signed by | Date |
 | --- | --- | --- | --- |
 | G0 Concept | pass — 14/14 script sub-checks, 5 human criteria signed | Guybrush Threepwood | 2026-11-04 |
-| G1 Bootstrap | not started | — | — |
+| G1 Bootstrap | pass — 11 script criteria, 2 human criteria signed; evidence at `889d7dc` | Guybrush Threepwood | 2026-11-05 |
 | G2 Vertical slice | not started | — | — |
 | G3 Alpha | not started | — | — |
 | G4 Beta | not started | — | — |
@@ -64,7 +65,7 @@ not started.
 | Blocker | Waiting on |
 | --- | --- |
 | No main scene | G2; `--quit` stays unusable until then |
-| G1 signature | human: G1.8 (merged PR) and G1.11 (README accuracy) |
+| G2 not scoped | `leads/tech`, `leads/design`, `leads/art` — deliberately not started, resumes next session |
 
 Art budget is **not** a blocker: 31 free PixelLab generations remain on top of $10
 credit, and the human has confirmed credit is consumed only after the free
@@ -81,8 +82,7 @@ paid call.
 
 ## Next action
 
-G1 is ready for signature on `dev @ 889d7dc`: every script criterion passes, G1.9
-rests on a scanner observed failing against a planted key, and the gate record states
-the docs-only delta between evidence and signature (L-023). After signature: G2
-planning with the three leads, starting from the fun hypothesis and the 10-system
-budget.
+**Nothing is in flight.** G1 is signed; G2 planning is deliberately not started, to
+resume next session. When it does start: scope with `leads/tech`, `leads/design`, and
+`leads/art` from the fun hypothesis and the 10-system budget, then the first G2
+briefs. Art generation still has 31 free PixelLab generations plus $10 credit.

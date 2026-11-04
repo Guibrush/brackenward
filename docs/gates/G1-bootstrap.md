@@ -1,6 +1,6 @@
 # G1 — Bootstrap
 
-Status: **blocked on G0** · Signed: no
+Status: **signed 2026-11-05** · Signed: yes
 Owner of signature: human
 
 ## Purpose
@@ -53,8 +53,8 @@ protection assumed rather than verified.
 
 | Field | Value |
 | --- | --- |
-| Signed by | — |
-| Date | — |
-| Commit | — |
-| Repository URL | — |
-| Godot version | — |
+| Signed by | Guybrush Threepwood |
+| Date | 2026-11-05 |
+| Commit | `889d7dc` — evidence commit; this signature is applied in the documentation-only commit that follows it (L-023) |
+| Repository URL | https://github.com/Guibrush/brackenward |
+| Godot version | 4.7.2 |

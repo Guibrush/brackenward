@@ -1,6 +1,6 @@
 # G0 — Concept
 
-Status: **open** · Signed: no
+Status: **signed 2026-11-04** · Signed: yes
 Owner of signature: human
 
 ## Purpose
