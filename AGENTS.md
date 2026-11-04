@@ -11,6 +11,24 @@ specific to this project.
 3. `docs/LESSONS.md` — recorded rules. Cite lesson IDs when they apply.
 4. `docs/OWNERSHIP.md` — which agent owns which path. Check before editing.
 
+## Record failures immediately
+
+A lesson is written **when the failure happens**, not at the next retro. This is a
+standing rule, not a reminder for the human to repeat.
+
+Trigger any one of these and the lesson is recorded before the next task starts:
+
+- a command, script, or dispatch fails unexpectedly;
+- a gate or check passes when it should have failed;
+- a claim in a return envelope does not match the artifact;
+- a process step is skipped, done twice, or done in the wrong order;
+- the human has to ask for something the process should already have done.
+
+Dispatch `archivist` with the evidence, not a summary of it. If the incident is too
+small to earn a lesson on its own, append it to an existing one rather than dropping
+it. The gate retro then becomes a review of lessons already recorded, not the first
+time anyone writes them down.
+
 ## Dispatch table
 
 The roster is defined by this project's pack. `studio-lead` routes from this table
