@@ -19,6 +19,11 @@ param(
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '..\lib\common.ps1')
 
+# Every protection requirement that could not be applied or read back. The exit
+# code is derived from this list, so a failed call can never be reported as a
+# success, which is how the BOM-mangled payload went unnoticed the first time.
+$script:ProtectFailures = New-Object System.Collections.ArrayList
+
 $nwo = $null
 $view = Invoke-Native -Exe 'gh' -Arguments @('repo', 'view', '--json', 'nameWithOwner')
 if ($view.ExitCode -ne 0) {
@@ -50,8 +55,13 @@ function Set-Protection {
         return
     }
 
+    # `Set-Content -Encoding utf8` emits a UTF-8 BOM on Windows PowerShell 5.1,
+    # and `gh api --input` sends the file byte for byte. GitHub answers 400
+    # "Problems parsing JSON" and never applies the protection, so the body is
+    # written explicitly as UTF-8 without a preamble.
     $tmp = Join-Path $env:TEMP ('protect_' + $Branch + '.json')
-    Set-Content -Path $tmp -Value $payload -Encoding utf8
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($tmp, $payload, $utf8NoBom)
 
     $put = Invoke-Native -Exe 'gh' -Arguments @('api', '-X', 'PUT', ('repos/' + $nwo + '/branches/' + $Branch + '/protection'), '--input', $tmp)
     Remove-Item $tmp -Force -ErrorAction SilentlyContinue
@@ -60,6 +70,7 @@ function Set-Protection {
         $msg = ($put.Output -split "`n" | Where-Object { $_.Trim() -ne '' } | Select-Object -First 3) -join ' | '
         Write-Host ('  FAILED to protect ' + $Branch + ': ' + $msg)
         Write-Host '  If this is a private repository, protection may not be available on your plan.'
+        [void]$script:ProtectFailures.Add(('protection was not applied to ' + $Branch))
         return
     }
     Write-Host ('  protected ' + $Branch + ' (approvals=' + $Approvals + ')')
@@ -70,6 +81,7 @@ function Show-Protection {
     $get = Invoke-Native -Exe 'gh' -Arguments @('api', ('repos/' + $nwo + '/branches/' + $Branch + '/protection'))
     if ($get.ExitCode -ne 0) {
         Write-Host ('  ' + $Branch + ': not readable or not protected')
+        [void]$script:ProtectFailures.Add(('protection not readable on ' + $Branch))
         return
     }
     $p = $get.Output | ConvertFrom-Json
@@ -91,5 +103,11 @@ if (-not $DryRun) {
 }
 
 Write-Host ''
+if ($script:ProtectFailures.Count -gt 0) {
+    Write-Host ('FAILED: ' + $script:ProtectFailures.Count + ' protection requirement(s) not satisfied')
+    foreach ($f in $script:ProtectFailures) { Write-Host ('  - ' + $f) }
+    Write-Host 'G1.2 and G1.3 are not satisfied until branch protection is actually applied.'
+    exit 1
+}
 Write-Host 'Protection is enforced by GitHub, not by local policy. Verify it after any settings change.'
 exit 0
