@@ -5,33 +5,8 @@ Keep this file near 100 lines; archive the oldest entries to
 `docs/lessons/archive-<milestone>.md`.
 Entries L-001 … L-008 (2026-11-02 → 2026-11-03) live in
 `docs/lessons/archive-G0.md`; entries L-009 … L-012 (2026-11-04) live in
-`docs/lessons/archive-G1.md`. Their rules remain in force.
-
-## L-013 — 2026-11-04 — Run the gate script while authoring the document it checks
-Situation: `style.ps1` at gate time failed on a missing `Character canvas` row
-and a palette row with no hexes — gaps in the freshly written style guide, not
-in the script.
-Worked: fixing the guide to the script's schema; the script was correct.
-Failed: writing the document first and discovering the gate's expectations only
-when the gate ran.
-Rule: while drafting a gate-checked document, run its gate script against the
-draft; fix the document to the gate, never the gate to the document.
-Evidence: `style.ps1` failures on `Character canvas` row and empty palette row,
-resolved by editing `art/STYLE.md`.
-
-## L-014 — 2026-11-04 — Scribing into unowned paths is allowed only if disclosed
-Situation: studio-lead wrote CHARTER.md, AUDIO.md, art/STYLE.md,
-art/manifest.json and OWNERSHIP.md at the human's dictation, outside its stated
-writable paths. Every word was human-directed, but the exception was recorded
-nowhere and surfaced only in the retro.
-Worked: the retro caught it; ownership was never actually violated by content.
-Failed: silently absorbing an ownership exception into normal practice.
-Rule: an agent may scribe human-dictated content into a path it does not own
-only when the human dictates the substance, and the exception must be disclosed
-in the return envelope and in `docs/OWNERSHIP.md` (as a noted exception, not a
-reassignment); an undisclosed write is an ownership violation.
-Evidence: G0 retro candidate 6; the five files absent from studio-lead's
-writable paths in `docs/OWNERSHIP.md`.
+`docs/lessons/archive-G1.md`; entries L-013 … L-014 (2026-11-04) live in
+`docs/lessons/archive-2026-11-04.md`. Their rules remain in force.
 
 ## L-015 — 2026-11-05 — PowerShell 5.1 `Set-Content -Encoding utf8` writes a BOM and GitHub rejects it
 Situation: `protect.ps1` wrote its JSON payload with `Set-Content -Encoding
@@ -112,3 +87,64 @@ preconditions (branch exists, repo reachable) before reading the hint, and
 phrase hints as observations ("call failed with 404") rather than causes.
 Evidence: `404 Branch not found` on a nonexistent branch; `repo.ps1:53` hint
 while protection had simply never been applied.
+
+## L-021 — 2026-11-05 — A check that has never been observed failing is not evidence
+Situation: `secrets.ps1` passed G1.9 while scanning zero files: it built its
+file list as strings, threw on `.Extension`, threw again inside `Get-Content`,
+and swallowed both errors — so it counted every tracked file and regex-tested
+none. A planted AWS-key-shaped string passed the gate.
+Worked: planting `AKIA-EXAMPLE-NOT-A-KEY` in a tracked file proved the pass was
+empty; the fix (PR #3) reports coverage (`54 files scanned, 20 skipped`) and
+now fails on the same probe.
+Failed: accepting a green result as evidence without ever seeing the check fail.
+Rule: every gate check must be demonstrated failing once against a planted
+fixture before its passing result may be recorded as evidence; a check whose
+only observation is "pass" proves nothing.
+Evidence: `tasks/T-0006.md:12,33`; `docs/gates/G1-result.md:14-30`; corrected
+`scripts/gate/secrets.ps1:23-27,58-65,76`; distinct from L-016 (there the exit
+code was honest, the coverage was empty).
+
+## L-022 — 2026-11-05 — PowerShell `-match` is case-insensitive; placeholders must break the pattern structurally
+Situation: while documenting the scanner fix, a real-looking AWS key was
+replaced with a lowercase variant — which still matched `AKIA[0-9A-Z]{16}`,
+because `-match` ignores case, and CI failed again on the documentation.
+Worked: hyphenated placeholders (`AKIA-EXAMPLE-NOT-A-KEY`) break the pattern
+structurally and pass the scanner.
+Failed: assuming case is a distinguishing feature in a case-insensitive engine.
+Rule: in PowerShell, any placeholder meant to dodge a regex must break the
+pattern's structure (hyphens, spaces, wrong length), never rely on case; never
+write a key-shaped literal into a brief, gate record, or any scanned file.
+Evidence: `scripts/gate/secrets.ps1:16` (pattern `AKIA[0-9A-Z]{16}` under
+case-insensitive `-match`, line 69); the passing hyphenated placeholder at
+`tasks/T-0006.md:12`.
+
+## L-023 — 2026-11-05 — Gate evidence and the signed commit must be the same commit
+Situation: G1's recorded evidence was taken at `562572f`; three documentation
+commits followed before the human signature, so the gate record and `dev` head
+diverged. Nothing wrong was signed, but the signer had to reason about whether
+the divergence mattered.
+Worked: the divergence was visible in the result file itself (commit field vs.
+actual head), so it could be reasoned about.
+Failed: letting evidence and signature reference different commits without the
+record acknowledging it.
+Rule: either re-run the gate at the final commit before signing, or state the
+divergence (commits since evidence, what they touched) in the result file
+itself; never leave the signer to reconstruct the gap.
+Evidence: `docs/gates/G1-result.md:4` (`562572f`) and :8 (`Signed: no`) —
+the recorded commit predates the signature and the later docs commits are not
+in the record.
+
+## L-024 — 2026-11-05 — Lessons must be captured when the failure happens, not at retro
+Situation: the human had to ask twice for lessons to be captured promptly —
+once before the G1 signature, once to add a standing rule — the exact trigger
+"human has to ask for something the process should already have done" from
+`AGENTS.md`'s own list.
+Worked: the human escalated; the standing rule now exists in `AGENTS.md` and
+this record is its provenance.
+Failed: treating lessons as a retro artifact, so failures sat unrecorded for
+hours and the human had to notice them.
+Rule: when a trigger from `AGENTS.md`'s "Record failures immediately" list
+fires, dispatch `archivist` with the evidence before the next task starts;
+do not batch it for the gate retro.
+Evidence: `AGENTS.md:14` ("Record failures immediately"); two human requests
+in this session preceding this record.

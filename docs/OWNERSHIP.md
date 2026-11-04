@@ -36,6 +36,7 @@ than an error.
 
 | Path | Owner |
 | --- | --- |
+| `AGENTS.md` | human — project instructions, dispatched from the studio conventions |
 | `docs/STATE.md`, `docs/adr/**`, `tasks/**` | `studio-lead` |
 | `docs/LESSONS.md`, `docs/lessons/**` | `archivist` |
 | `docs/design/systems/**` | `design/systems` |
@@ -60,6 +61,7 @@ mistaken for routine practice (see L-014).
 | Date | Agent | Paths | Why |
 | --- | --- | --- | --- |
 | 2026-11-04 | `studio-lead` | `docs/CHARTER.md`, `docs/AUDIO.md`, `art/STYLE.md`, `art/manifest.json`, this file, `docs/gates/G0-concept.md` signature block | G0 interview: the human dictated every substantive decision and approved each edit; studio-lead acted as scribe. Ownership of these paths is unchanged — the human still owns them, and this row records an exception, not a reassignment. |
+| 2026-11-05 | `studio-lead` | `AGENTS.md`, this file | The human instructed a standing rule ("record a lesson any time something fails"), and the lead scribed the wording plus the ownership row for `AGENTS.md`. Substance is the human's; the paragraph structure is the lead's. |
 
 ## Unassigned paths
 
