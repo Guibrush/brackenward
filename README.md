@@ -1,10 +1,22 @@
-# Godot pilot
+# brackenward
 
-An AI studio building a 2D pixel-art game in Godot 4 (latest stable, currently
-4.7.2). One human signs the gates; a roster of scoped agents does the work.
+A run-based tower defence roguelike in Godot 4. One human signs the gates; a roster
+of scoped agents does the work.
 
-**Status:** G0 — concept. The charter is a template and the game has no name yet.
-The folder name is provisional and is renamed at G1 when the codename exists.
+**Status:** G1 — bootstrap. G0 signed 2026-11-04. The repository is public, CI is
+green on `dev`, branch protection is enforced on `main` and `dev`, and Godot 4.7.2
+is pinned. The game itself does not exist yet: G2 is the vertical slice.
+
+| | |
+| --- | --- |
+| Repository | https://github.com/Guibrush/brackenward |
+| Integration branch | `dev` — pull requests target it; work branches are `task/T-NNNN-<slug>` |
+| Release branch | `main` — protected, one approval required, never pushed directly |
+| Engine | Godot 4.7.2, pinned; see `docs/adr/0001-engine-version-policy.md` |
+
+The local working folder is still named `godot-pilot` while the repository is
+`brackenward`. That mismatch is intentional and harmless; the folder is not the
+identity.
 
 ## Start here
 
@@ -26,7 +38,7 @@ The folder name is provisional and is renamed at G1 when the codename exists.
 | --- | --- |
 | G0 | Concept signed: charter, style lock, audio guide, three codenames |
 | G1 | Bootstrap: repository, protection, CI green, Godot pinned, loop proven |
-| G2 | Vertical slice: 5 minutes of playable game, one complete style, 60 fps |
+| G2 | Vertical slice: one complete run (ADR-0002), one style, 60 fps |
 | G3 | Alpha: all systems present |
 | G4 | Beta: content complete, balanced, accessible |
 | G5 | Gold: reproducible, shippable |
