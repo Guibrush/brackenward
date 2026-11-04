@@ -55,7 +55,9 @@ not started.
 - **Branch protection.** Applies to `main` and `dev` (T-0004 fixed a BOM in the
   request body and a script that exited 0 on failure). Verified by `repo.ps1` 5/5.
 - **A main scene**, so `--quit` cannot run until G2.
-- **G1.8's integration loop** — a task branch has not yet been merged through a PR.
+- **G1.8's integration loop** — proven by PR #1: branch `task/T-0004-protect-fix`,
+  `gates` green in 31 s, squash-merged into `dev` as `7467f9e`, remote branch
+  deleted. Evidence: `gh pr view 1` → `MERGED`.
 
 ## Blockers
 
@@ -79,6 +81,7 @@ paid call.
 
 ## Next action
 
-G1 — Bootstrap, nearly closed: repository, CI, engine pin, and protection are in
-place and `repo.ps1` is 5/5. Remaining: prove the integration loop with one PR into
-`dev` (G1.8), then run the full gate and hand it to the human.
+G1 — Bootstrap is complete in evidence: repository, protection, CI, engine pin, and
+the integration loop all pass (`all.ps1 -Gate G1`: 7 scripts, 0 fail). PR #1 proved
+G1.8 — branch → PR → green `gates` → squash-merge into `dev` → branch deleted.
+Awaiting the human signature on G1, then the G1 retro, then G2 planning.
