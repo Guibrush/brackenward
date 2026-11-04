@@ -32,6 +32,10 @@ not started.
 - **ADRs**: 0001 engine version policy (accepted), 0002 G2 slice is one complete run
   (accepted), 0003 no calendar budget (accepted).
 - **Gate evidence**: `docs/gates/G0-result.md`.
+- **Repository**: `https://github.com/Guibrush/brackenward` — public, `main` and
+  `dev` exist, default branch `dev`, 92 files in the initial commit `ee2efb4`.
+- **CI**: `.github/workflows/gates.yml` runs on `dev`, `main`, and PRs to `dev`; the
+  `gates` check is registered and green on both branches.
 - **Studio core**: 8 agents, 4 commands, permission baseline, memory protocol.
 - **Full roster**: the 10 specialists exist as project agents in
   `.opencode/agents/` (art/pixel, art/director, audio/sfx, audio/music,
@@ -48,19 +52,17 @@ not started.
 
 ## What does not exist yet
 
-- **Repository.** The codename is chosen; the repo is created at G1.
-- **CI workflow.** `.github/` does not exist, so G1.4 has nothing to run yet.
+- **Branch protection.** Applies to `main` and `dev` (T-0004 fixed a BOM in the
+  request body and a script that exited 0 on failure). Verified by `repo.ps1` 5/5.
 - **A main scene**, so `--quit` cannot run until G2.
-- **Gate scripts beyond G0's three** have never been exercised against a real
-  project. `charter.ps1`, `style.ps1`, and `audio_spec.ps1` run green; everything
-  else is unproven until G1.
+- **G1.8's integration loop** — a task branch has not yet been merged through a PR.
 
 ## Blockers
 
 | Blocker | Waiting on |
 | --- | --- |
-| No repository | `eng/tools` at G1: `scripts/git/init-repo.ps1` with codename `brackenward` |
 | No main scene | G2; `--quit` stays unusable until then |
+| G1.8 not yet proven | one PR into `dev`, green CI, squash-merged (T-0005) |
 
 Art budget is **not** a blocker: 31 free PixelLab generations remain on top of $10
 credit, and the human has confirmed credit is consumed only after the free
@@ -77,5 +79,6 @@ paid call.
 
 ## Next action
 
-G1 — Bootstrap: create the `brackenward` repository from `dev`, pin Godot 4.7.2,
-write the 10 specialist agents, then run the G1 gate.
+G1 — Bootstrap, nearly closed: repository, CI, engine pin, and protection are in
+place and `repo.ps1` is 5/5. Remaining: prove the integration loop with one PR into
+`dev` (G1.8), then run the full gate and hand it to the human.
