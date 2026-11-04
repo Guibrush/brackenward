@@ -1,0 +1,23 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  // The studio lead owns this project's process. Select it explicitly to work
+  // in the studio; switch agents to work as a specialist directly.
+  "default_agent": "studio-lead",
+
+  // Project-local allowances on top of the global baseline. The global config
+  // asks before shell commands; these are the ones this project needs often
+  // enough that prompting would only train us to click through.
+  "permissions": [
+    { "action": "shell", "resource": "godot *", "effect": "allow" },
+    { "action": "shell", "resource": "pwsh -File scripts/*", "effect": "allow" },
+    { "action": "shell", "resource": "pwsh -NoProfile -File scripts/*", "effect": "allow" },
+    { "action": "shell", "resource": "powershell -NoProfile -File scripts/*", "effect": "allow" },
+    { "action": "shell", "resource": "powershell -File scripts/*", "effect": "allow" },
+    { "action": "shell", "resource": "ffmpeg *", "effect": "allow" },
+    { "action": "shell", "resource": "ffprobe *", "effect": "allow" }
+
+    // PixelLab access is denied in the global baseline and re-allowed only for
+    // art/pixel, so the boundary holds in every project rather than just here.
+  ]
+}

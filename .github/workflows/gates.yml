@@ -1,0 +1,100 @@
+name: gates
+
+# The single CI context this repository has.
+#
+# Branch protection on main and dev requires exactly the status check "gates"
+# (docs/gates/G1-bootstrap.md, G1.2/G1.3). The workflow name and the one job name
+# are therefore both `gates`: GitHub registers a check run named after the job, and a
+# mismatch between that name and the required context leaves a pull request waiting
+# forever on a check that will never report. Do not add a second workflow, a lint
+# job, or rename either name.
+#
+# Runner is windows-latest on purpose. The gate scripts are Windows PowerShell 5.1
+# and invoke each other as `powershell -NoProfile -File`; a Linux or pwsh runner
+# would exercise a different code path and hide the very divergence that G1.7
+# compares. `shell: powershell` is stated explicitly for the same reason.
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev]
+
+# The workflow reads the repository and runs the gate scripts. Nothing else.
+# engine.ps1 (G1.5) asks the Godot release API what the latest stable version is and
+# compares it with the installed engine. GH_TOKEN below is issued to every run
+# automatically and is not a configured repository secret; it only lifts that one
+# public API call above the anonymous rate limit. Without it `gh` refuses to run in
+# Actions and engine.ps1 reports G1.5 as blocked.
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    name: gates
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Godot is pinned, never resolved from "latest" at run time: ADR-0001 makes an
+      # engine change a deliberate, signed event, and G1.7 is only meaningful when
+      # local and CI run the same binary. The version here must equal the one in
+      # docs/STATE.md and the version the developer machine reports.
+      - name: Install Godot 4.7.2
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference    = 'SilentlyContinue'
+
+          $version = '4.7.2'
+          $asset   = "Godot_v$version-stable_win64.exe.zip"
+          $url     = "https://github.com/godotengine/godot/releases/download/$version-stable/$asset"
+
+          # Install into %LOCALAPPDATA%\Programs\Godot\<version>\ because that is where
+          # gate.config.ps1's Get-GodotConsole looks, choosing the highest version
+          # directory. Installing there rather than exporting GODOT_BIN means CI walks
+          # the same resolution path as the developer machine, including its
+          # "no engine installed" failure mode.
+          $dest = Join-Path $env:LOCALAPPDATA "Programs\Godot\$version"
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+
+          $zip = Join-Path $env:RUNNER_TEMP $asset
+          Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+          Expand-Archive -LiteralPath $zip -DestinationPath $dest -Force
+          Remove-Item -LiteralPath $zip
+
+          # Assert the pin instead of trusting the download. A wrong or substituted
+          # engine must fail loudly here, not surface later as a confusing gate
+          # result that looks like a problem in the code.
+          $exe = Join-Path $dest "Godot_v$version-stable_win64_console.exe"
+          if (-not (Test-Path -LiteralPath $exe)) {
+            throw "Godot console executable missing after extraction: $exe"
+          }
+          $reported = (& $exe --version | Out-String).Trim()
+          Write-Host "engine:   $exe"
+          Write-Host "reported: $reported"
+          if ($reported -notmatch ('^' + [regex]::Escape($version) + '\.')) {
+            throw "expected Godot $version, got '$reported'"
+          }
+
+      # One command, byte-identical to the local run recorded in tasks/T-0002.md.
+      #
+      # `repo` is skipped deliberately and must stay skipped: repo.ps1 reads branch
+      # protection through `gh api`, which needs admin scope a workflow token never
+      # has, so it would fail with 403 on every run forever. G1.2/G1.3 are verified
+      # locally by the human instead (docs/gates/G1-bootstrap.md, G1.7). The gate
+      # definition is unchanged; only this environment declines to run a check it
+      # cannot perform. Do not "fix" CI by adding `repo` back.
+      #
+      # Exit codes: 0 pass, 1 fail, 3 blocked. All three propagate to the job, so a
+      # blocked gate - engine missing, scene absent - can never show up as green.
+      # Nothing here rewrites 3 into 0, because that would report a check that never
+      # ran as a check that passed.
+      - name: Gate suite
+        shell: powershell
+        run: |
+          powershell -NoProfile -File scripts/gate/all.ps1 -Gate G1 -Skip repo
+          exit $LASTEXITCODE

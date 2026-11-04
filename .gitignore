@@ -1,0 +1,26 @@
+# Godot 4
+.godot/
+*.translation
+
+# Builds and exports
+build/
+*.exe
+*.pck
+*.zip
+
+# Secrets — never commit these
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets/
+
+# OS and editor noise
+Thumbs.db
+desktop.ini
+.DS_Store
+*.swp
+
+# Local tooling scratch
+.tmp/

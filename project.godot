@@ -1,0 +1,14 @@
+; Godot project configuration for brackenward.
+;
+; Hand-authored and deliberately minimal: this file makes the project exist and
+; nothing more. G1.6 only needs a project the engine can import. No main scene is
+; declared (G2 creates it) and there are no autoloads.
+;
+; Engine in use: Godot 4.7.2 stable (ADR-0001). config_version=5 is the Godot 4
+; format. See tasks/T-0001.md.
+
+config_version=5
+
+[application]
+
+config/name="brackenward"

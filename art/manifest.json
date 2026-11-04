@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "palette": [
+    "#1b1a26",
+    "#2e2a3b",
+    "#4a3b52",
+    "#6b4a5a",
+    "#8c5a4a",
+    "#b06a3b",
+    "#d08a4a",
+    "#edb05f",
+    "#f6d9a0",
+    "#fff4d6",
+    "#2f4a55",
+    "#5b8a8c",
+    "#3a4a3a",
+    "#8b8291",
+    "#6f8f4a",
+    "#9ab55c"
+  ],
+  "assets": [
+    {
+      "id": "probe-topdown-01",
+      "file": "art/style/probe-topdown-01.png",
+      "size": "64x64",
+      "purpose": "Projection probe: create_map_object with view=high top-down, snapped to palette and ink-outlined. Evidence for the projection decision, not a shipping asset.",
+      "placeholder": true,
+      "status": "probe",
+      "frames": 1,
+      "directions": 1,
+      "generator": "pixellab.create_map_object",
+      "object_id": "1b926e31-5b61-4ebb-8615-81552d0147d2",
+      "view_requested": "high top-down",
+      "generations_spent": 1,
+      "post_processing": [
+        "pixelart_workbench map_colors (12 tones, luminance-preserving ladder)",
+        "pixelart_workbench outline outside 1px #1b1a26"
+      ],
+      "tones": 12,
+      "off_palette_colours": 0,
+      "binary_alpha": true,
+      "verified": "2026-11-04",
+      "raw": "art/style/probe-topdown-01-raw.png"
+    },
+    {
+      "id": "probe-topdown-01-raw",
+      "file": "art/style/probe-topdown-01-raw.png",
+      "size": "64x64",
+      "purpose": "Unmodified generator output for probe-topdown-01, kept as evidence of the pre-snap colour set.",
+      "placeholder": true,
+      "status": "raw-evidence",
+      "frames": 1,
+      "directions": 1,
+      "generator": "pixellab.create_map_object",
+      "object_id": "1b926e31-5b61-4ebb-8615-81552d0147d2",
+      "view_requested": "high top-down",
+      "tones": 41,
+      "off_palette_colours": 41,
+      "binary_alpha": true,
+      "verified": "2026-11-04"
+    },
+    {
+      "id": "style-anchor-bracken-tower",
+      "type": "prop",
+      "file": "art/style/anchor.png",
+      "width": 64,
+      "height": 64,
+      "purpose": "Approved style anchor. Passed as the style reference on every later generation. Read-only reference, never drawn in a scene.",
+      "placeholder": false,
+      "status": "anchor",
+      "frames": 1,
+      "directions": 1,
+      "generator": "pixellab.create_map_object",
+      "derived_from": "art/style/candidate-tower-02.png",
+      "post_processing": [
+        "palette snap to the locked 16 (done when candidate-tower-02 was produced)",
+        "moss #4f6b3f remapped to leaf #6f8f4a after moss was retired from the palette (11 px, 2026-11-04)"
+      ],
+      "generations_spent": 0,
+      "tones": 10,
+      "off_palette_colours": 0,
+      "binary_alpha": true,
+      "license": "generated: PixelLab, commercial use",
+      "prompt": "tall crenellated stone watchtower, low top-down, no ground tile",
+      "note": "Deliberately keeps the generator's grass pad: the ground-pad rule applies to shipped sprites, and the anchor exists to document what the generator actually returns. Every shipped asset crops the pad in post.",
+      "verified": "2026-11-04"
+    }
+  ]
+}
