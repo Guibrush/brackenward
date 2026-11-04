@@ -20,13 +20,25 @@ $patterns = @(
 
 $skipExtensions = @('.png', '.jpg', '.jpeg', '.gif', '.ogg', '.wav', '.mp3', '.zip', '.exe', '.dll', '.pck', '.ttf', '.otf', '.res', '.import')
 
+# $files must hold FileInfo objects, not strings: the scanner needs .Extension and
+# .FullName. Building it from `git ls-files` text gives strings, on which both
+# properties are $null - the loop then threw once per file and scanned nothing
+# while still counting every file (T-0006). Anything added here must stay a
+# FileInfo.
 $files = @()
 $gitDir = Join-Path $StudioRoot '.git'
 $gitExe = Get-GitPath
 if ((Test-Path $gitDir) -and $gitExe) {
-    $tracked = Invoke-Native -Exe $gitExe -Arguments @('ls-files')
+    # -z keeps paths literal. Without it git quotes names that contain non-ASCII
+    # bytes, Test-Path then rejects the quoted string, and the file is silently
+    # dropped from the scan.
+    $tracked = Invoke-Native -Exe $gitExe -Arguments @('ls-files', '-z')
     if ($tracked.ExitCode -eq 0) {
-        $files = @($tracked.Output -split "`n" | Where-Object { $_.Trim() -ne '' } | ForEach-Object { Join-Path $StudioRoot $_.Trim() } | Where-Object { Test-Path $_ })
+        $files = @($tracked.Output -split "`0" |
+            Where-Object { $_.Trim() -ne '' } |
+            ForEach-Object { Join-Path $StudioRoot ($_.Trim() -replace '/', '\') } |
+            Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+            ForEach-Object { Get-Item -LiteralPath $_ })
     }
 }
 if ($files.Count -eq 0) {
@@ -35,15 +47,23 @@ if ($files.Count -eq 0) {
 }
 
 $findings = @()
+$unreadable = @()
 $scanned = 0
+$skipped = 0
 foreach ($f in $files) {
-    if ($skipExtensions -contains $f.Extension.ToLower()) { continue }
+    $ext = $f.Extension.ToLowerInvariant()
+    if ($skipExtensions -contains $ext) { $skipped++; continue }
     if ($f.FullName -match '\\scripts\\gate\\') { continue }   # this scanner describes the patterns
     if ($f.FullName -match '\\scripts\\lib\\') { continue }
-    $scanned++
     try {
-        $content = Get-Content $f.FullName -Raw -ErrorAction Stop
-    } catch { continue }
+        $content = Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8 -ErrorAction Stop
+    } catch {
+        # Not counted as scanned: a file we could not read was not regex-tested,
+        # and reporting it as covered is the failure T-0006 exists to remove.
+        $unreadable += $f.FullName.Replace($StudioRoot + '\', '')
+        continue
+    }
+    $scanned++
     if ([string]::IsNullOrEmpty($content)) { continue }
     foreach ($p in $patterns) {
         if ($content -match $p.Regex) {
@@ -53,10 +73,15 @@ foreach ($f in $files) {
     }
 }
 
-if ($findings.Count -eq 0) {
-    Add-Result 'G1.9' 'No key-shaped strings in tracked files' 'pass' ($scanned.ToString() + ' files scanned')
-} else {
+$coverage = ($scanned.ToString() + ' files scanned, ' + $skipped.ToString() + ' skipped by extension')
+
+if ($findings.Count -gt 0) {
     Add-Result 'G1.9' 'No key-shaped strings in tracked files' 'fail' (($findings | Select-Object -First 6) -join '; ')
+} elseif ($unreadable.Count -gt 0) {
+    # Cannot evaluate is blocked, never pass: an unread scannable file is a hole.
+    Add-Result 'G1.9' 'No key-shaped strings in tracked files' 'blocked' ('unreadable: ' + (($unreadable | Select-Object -First 6) -join '; '))
+} else {
+    Add-Result 'G1.9' 'No key-shaped strings in tracked files' 'pass' $coverage
 }
 
 $ignorePath = Join-Path $StudioRoot '.gitignore'
