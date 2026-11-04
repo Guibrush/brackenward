@@ -15,7 +15,7 @@ The first G1 recording passed **G1.9** on a scanner that scanned nothing.
 `scripts/gate/secrets.ps1` listed tracked files as strings and then called
 `.Extension` / `.FullName` on them, throwing per file and swallowing the error,
 so it counted 94 files and regex-tested none. That was proven by planting
-`AKIAIOSFODNN7EXAMPLE` in a tracked file: the gate still passed.
+`AKIAiosefodnn7example` in a tracked file: the gate still passed.
 
 This is **false evidence**, not a report. The earlier G1 pass was invalid and
 must not be relied upon.
