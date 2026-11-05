@@ -86,6 +86,40 @@
       "prompt": "tall crenellated stone watchtower, low top-down, no ground tile",
       "note": "Deliberately keeps the generator's grass pad: the ground-pad rule applies to shipped sprites, and the anchor exists to document what the generator actually returns. Every shipped asset crops the pad in post.",
       "verified": "2026-11-04"
+    },
+    {
+      "id": "tower-arrow-idle-south",
+      "type": "prop",
+      "file": "assets/art/towers/arrow/idle/south.png",
+      "width": 64,
+      "height": 64,
+      "purpose": "Basic arrow tower, idle, single direction. First real generated sprite put through scripts/gate/assets.ps1 (T-0016 probe, so the gate is tested on art rather than fixtures). Placeholder: the subject fills only 32x41 of the 64x64 canvas and its silhouette reads as a squat block, so it is not a shipping tower.",
+      "placeholder": true,
+      "status": "placeholder-probe",
+      "directions": 1,
+      "actions": ["idle"],
+      "frames": ["assets/art/towers/arrow/idle/south.png"],
+      "license": "generated: PixelLab, commercial use",
+      "prompt": "basic arrow tower, tall square stone watchtower, crenellated parapet, narrow arrow-slit windows, dark timber door at the base, warm dusk light from the upper left, isolated object",
+      "generator": "pixellab.create_map_object",
+      "object_id": "612d0ba2-8196-4ab4-bf4a-1dd5f1d45a3e",
+      "view_requested": "low top-down",
+      "style_reference": "art/style/anchor.png",
+      "style_mode": "style-match, oval 60% (anchor.png passed as background_image)",
+      "cost": "1 generation",
+      "generations_spent": 1,
+      "tones": 10,
+      "off_palette_colours": 0,
+      "binary_alpha": true,
+      "content_size": "32x41",
+      "post_processing": [
+        "ground removal: erased the 4 grass pixels #6A853D at (18,43),(17,44),(18,44),(18,45) - the whole of the generator's ground in this render; no diamond plinth or base shadow was produced",
+        "pixelart_workbench map_colors: 25 raw colours mapped onto 10 locked tones (573 px changed), warm ramp rust/clay/amber/candlelight for the lit face, cool ramp ink/shadow/dusk/mauve for the shaded face",
+        "pixelart_workbench outline outside 1px #1b1a26 (143 px added); silhouette boundary is 117/117 ink",
+        "translate +11 y so the base sits on the canvas baseline: bbox (17,13)-(46,51) -> (16,23)-(47,63)"
+      ],
+      "raw": "assets/art/towers/arrow/idle/south-raw.png",
+      "verified": "2026-11-05"
     }
   ]
 }
