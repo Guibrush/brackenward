@@ -86,12 +86,22 @@ if ($runs.ExitCode -ne 0) {
     $list = @($runs.Output | ConvertFrom-Json)
     if ($list.Count -eq 0) {
         Add-Result 'G1.4' 'CI is green on dev' 'fail' 'no workflow runs on dev'
-    } elseif ($list[0].conclusion -eq 'success') {
-        $sha = [string]$list[0].headSha
-        if ($sha.Length -gt 7) { $sha = $sha.Substring(0, 7) }
-        Add-Result 'G1.4' 'CI is green on dev' 'pass' ([string]$list[0].workflowName + ' @ ' + $sha)
     } else {
-        Add-Result 'G1.4' 'CI is green on dev' 'fail' ('last run: ' + $list[0].status + '/' + $list[0].conclusion)
+        $run = $list[0]
+        $sha = [string]$run.headSha
+        if ($sha.Length -gt 7) { $sha = $sha.Substring(0, 7) }
+        if ($run.status -ne 'completed') {
+            # An unfinished run is unknown, not failed. Reporting fail here turns G1
+            # red for the minutes after every merge, which teaches people to ignore
+            # a red gate (L-019).
+            Add-Result 'G1.4' 'CI is green on dev' 'blocked' ('run still ' + $run.status + ' on ' + $sha)
+        } elseif ($run.conclusion -eq 'success') {
+            Add-Result 'G1.4' 'CI is green on dev' 'pass' ([string]$run.workflowName + ' @ ' + $sha)
+        } elseif ($run.conclusion -eq 'cancelled') {
+            Add-Result 'G1.4' 'CI is green on dev' 'blocked' ('run cancelled on ' + $sha + ' - re-run it')
+        } else {
+            Add-Result 'G1.4' 'CI is green on dev' 'fail' ('run ' + $run.conclusion + ' on ' + $sha)
+        }
     }
 }
 
