@@ -9,7 +9,7 @@
                         "target_lufs":  -16,
                         "max_seconds":  1,
                         "license":  "ElevenLabs generated",
-                        "prompt":  "One single short, dry user-interface button click: a crisp, tight tick with a small warm wooden body, like a fingernail tapping a hollow wooden bead, sharp attack at the very beginning, quick clean decay, no reverb, no room, no tail, no background noise, no music, close-miked.",
+                        "prompt":  "A single short, dry wooden user-interface button click: a crisp sharp attack followed immediately by a small warm wooden body resonance, like a fingernail tapping a hollow wooden bead, the body decaying over roughly a quarter of a second so the sound has weight, close-miked with no reverb, no room ambience, no background noise, no music, and no silence before or after the sound.",
                         "generator":  "elevenlabs/text_to_sound_effects",
                         "cost":  "1 sound effect generation",
                         "placeholder":  true
