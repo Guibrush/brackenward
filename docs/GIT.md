@@ -109,6 +109,29 @@ chore(tools): add ffmpeg path resolution to gate config
 
 Body explains *why*, not what. The diff already says what.
 
+## Who commits
+
+Only `studio-lead` runs git write commands. Specialists return `FILES TOUCHED`, and
+their permissions deny `git add`, `git commit`, `git switch`, `git checkout`, and
+`git stash`; they keep read-only inspection for evidence.
+
+This is what makes parallel work safe. Three agents can edit disjoint paths in one
+checkout because exactly one process ever writes the index. It also stops an agent
+committing a file it was not asked to touch, which is a failure that review rarely
+catches.
+
+Every commit carries trailers:
+
+```
+feat(perf): add the benchmark scene and frame-time harness
+
+Agent: eng/tools
+Task: T-0011
+```
+
+Attribution without one GitHub account per agent. `git log --format='%h %s%n%(trailers)'`
+then answers "which role produced this" for the whole history.
+
 ## Pull requests
 
 - Target `dev`, never `main`.
