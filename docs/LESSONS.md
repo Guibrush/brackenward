@@ -6,77 +6,8 @@ Keep this file near 100 lines; archive the oldest entries to
 Entries L-001 … L-008 (2026-11-02 → 2026-11-03) live in
 `docs/lessons/archive-G0.md`; entries L-009 … L-012 (2026-11-04) live in
 `docs/lessons/archive-G1.md`; entries L-013 … L-014 (2026-11-04) live in
-`docs/lessons/archive-2026-11-04.md`; entries L-015 … L-017 (2026-11-05) and
-L-024 (2026-11-05) live in `docs/lessons/archive-2026-11-05.md` (which also holds a copy of
-still-active L-021). Their rules remain in force.
-
-## L-021 — 2026-11-05 — A check that has never been observed failing is not evidence
-Situation: `secrets.ps1` passed G1.9 while scanning zero files: it counted
-every tracked file and regex-tested none. A planted AWS-key-shaped string
-passed the gate.
-Worked: planting a fixture proved the pass was empty; the fix (PR #3) reports
-coverage and now fails on the same probe.
-Failed: accepting a green result as evidence without ever seeing the check fail.
-Rule: every gate check must be demonstrated failing once against a planted
-fixture before its passing result may be recorded as evidence; a check whose
-only observation is "pass" proves nothing.
-Evidence: `tasks/T-0006.md:12,33`; `docs/gates/G1-result.md:14-30`; corrected
-`scripts/gate/secrets.ps1:23-27,58-65,76`. Archived copy:
-`docs/lessons/archive-2026-11-05.md`.
-
-## L-023 — 2026-11-05 — Gate evidence and the signed commit must be the same commit
-Situation: G1's recorded evidence was taken at `562572f`; three documentation
-commits followed before the human signature, so the gate record and `dev` head
-diverged. Nothing wrong was signed, but the signer had to reason about whether
-the divergence mattered.
-Worked: the divergence was visible in the result file itself (commit field vs.
-actual head), so it could be reasoned about.
-Failed: letting evidence and signature reference different commits without the
-record acknowledging it.
-Rule: either re-run the gate at the final commit before signing, or state the
-divergence (commits since evidence, what they touched) in the result file
-itself; never leave the signer to reconstruct the gap.
-Evidence: `docs/gates/G1-result.md:4` (`562572f`) and :8 (`Signed: no`) —
-the recorded commit predates the signature and the later docs commits are not
-in the record.
-
-## L-025 — 2026-11-05 — A milestone can be signed while a gate the next milestone depends on is an unimplemented stub
-Situation: G1 was signed clean, but `scripts/gate/perf.ps1` implements nothing
-— it reports `blocked` for both G2.3 checks and always will, because
-`scripts/perf/benchmark.tscn` does not exist and the measurement harness was
-never written (the file documents the intended method at lines 4-16). Nothing
-in G1 checked whether the scripts G2's criteria depend on were implemented, so
-the gap surfaced only when the human verified externally after signing.
-Worked: the human's external verification caught it; the script is honest
-about being blocked rather than guessing a measurement.
-Failed: treating "gate scripts exist on disk" as "the next gate is runnable".
-Rule: before signing any gate, enumerate the gate scripts the next milestone's
-criteria reference and verify each either exists with its inputs implemented
-(scenes, manifests, harnesses) or is listed as a known blocker in
-`docs/STATE.md` — mechanically: for every `scripts/gate/*.ps1` named in the
-next gate's criteria table, grep its `blocked`/`Add-Result` paths and
-`Test-Path` targets and confirm each target exists.
-Evidence: `scripts/gate/perf.ps1:22-28` (both G2.3 checks report `blocked`);
-`docs/gates/G2-vertical-slice.md:20` (G2.3 depends on it); `scripts/perf/`
-directory absent.
-
-## L-026 — 2026-11-05 — A pipeline verified only against fixtures is unverified
-Situation: the audio pipeline (`scripts/audio/gen-sfx.ps1`, `post.ps1`,
-`scripts/gate/audio.ps1`) passes 6/6 against fixtures and has never processed
-real ElevenLabs output. Fixtures encode our assumptions about the vendor's
-format; only a real call can falsify them.
-Worked: the gap was recognised at planning time and captured as task T-0012 —
-one real, cheap placeholder asset through the full pipeline and gate before
-batch production, with an explicit stop-and-report rule on rejection.
-Failed: treating fixture passes as pipeline passes; a fixture can only confirm
-what we already assumed about the vendor.
-Rule: before authorising any batch paid generation, run exactly one real,
-cheap, placeholder asset through the full pipeline and its gate; if the gate
-rejects the real output, stop work on that pipeline entirely and report —
-never retry or loosen tolerances on the first real failure.
-Evidence: `tasks/T-0015.md:11-16` (goal, budget 1, stop rule), :57-61
-(rejection is a stop-work signal; brief renumbered from T-0012 by L-027);
-extends L-021 from checks to whole pipelines.
+`docs/lessons/archive-2026-11-04.md`; entries L-015 … L-026 (2026-11-05) live
+in `docs/lessons/archive-2026-11-05.md`. Their rules remain in force.
 
 ## L-027 — 2026-11-05 — Task ids allocated from local memory collide with merged briefs on `origin/dev`
 Situation: while planning G2, new briefs were written into `tasks/T-0011.md`
@@ -98,3 +29,65 @@ Evidence: `git ls-tree --name-only origin/dev tasks/` (T-0011, T-0012,
 T-0013 present); `git log --oneline -4 origin/dev` at `28251c4` (PRs #8-#10);
 overwritten-then-restored briefs; renumbered `tasks/T-0014.md` …
 `tasks/T-0016.md` on `dev`.
+
+## L-028 — 2026-11-05 — A task dispatched without a brief has no definition of done
+Situation: T-0005, T-0007, T-0008, T-0009 and T-0010 were dispatched without
+briefs; no such files were ever committed, and `git log --diff-filter=D` is
+empty — they never existed, so nothing was lost. The commits are the only
+evidence of what those tasks were.
+Worked: git archaeology (`ls-tree` against `origin/dev`, the deletion log)
+established the gap honestly instead of reconstructing the briefs.
+Failed: treating "the work looks obvious" as a substitute for a written brief.
+Rule: write the brief before dispatch, even when the work looks obvious — a
+task without a brief has no definition of done and its acceptance cannot be
+reviewed; never backfill a missing brief, because a reconstructed one
+fabricates evidence.
+Evidence: `git ls-tree --name-only origin/dev tasks/` (T-0005, T-0007 …
+T-0010 absent; T-0006 present); empty `git log --oneline --diff-filter=D -- tasks/`.
+
+## L-029 — 2026-11-05 — A brief granted a path that no owner and no permission allows
+Situation: T-0014 granted `scripts/perf/**` in prose; `docs/OWNERSHIP.md` has
+no row for it and `.opencode/agents/eng/tools.md` denies `edit` there. The
+agent correctly blocked rather than routing around the permission. Same
+family as L-025: runnability assumed, not checked.
+Worked: the agent blocked on the missing ownership row instead of
+improvising an unauthorised write path.
+Failed: granting a path in a brief without making it real in ownership and
+permissions in the same change.
+Rule: a brief that grants a new path must add the `docs/OWNERSHIP.md` row and
+the agent permission line in the same change, and the dispatcher verifies
+both before dispatch.
+Evidence: `tasks/T-0014.md` (grants `scripts/perf/**`); `docs/OWNERSHIP.md`
+(no row for the path); `.opencode/agents/eng/tools.md` (`edit` denied there).
+
+## L-030 — 2026-11-05 — A loudness target was arithmetically unreachable for the shortest asset class
+Situation: one real ElevenLabs click measured −29.1 LUFS against the −16 ±2
+LUFS target: a 20 ms transient inside a 400 ms gating block cannot be lifted
+to −16 without peaks exceeding +11 dBTP. Format, sample rate and peak checks
+passed; loudness could not pass. `post.ps1`'s gain-then-limit undid 13.1 of
+the needed 17 dB.
+Worked: the one-real-asset probe (per L-026) exposed the impossibility
+instead of a paid batch finding out.
+Failed: writing a loudness target into a style guide and gate without
+validating it against the shortest asset the game ships.
+Rule: before a loudness target is written into a style guide or gated,
+validate it against the shortest asset class the game will ship using one
+real example; if the arithmetic says unreachable, change the target or the
+gate, not the asset.
+Evidence: measured −29.1 LUFS vs −16 ±2 target; 20 ms transient in a 400 ms
+gating block; `post.ps1` gain-then-limit recovers only 3.9 of 17 dB.
+
+## L-031 — 2026-11-05 — A gate that exempts placeholders cannot police placeholders
+Situation: `scripts/gate/assets.ps1:133` skips assets marked
+`placeholder: true`, and every G2 asset except the anchor is a placeholder,
+so the green G2.5 run scanned exactly one image.
+Worked: reading the gate against the manifest showed the pass covered a
+single file.
+Failed: an exemption flag able to make an entire category invisible to the
+gate it is supposed to police.
+Rule: an exemption flag must not be able to make a whole category invisible
+to a gate; if placeholders are exempt, the gate (or a named companion check)
+must state what checks them instead.
+Evidence: `scripts/gate/assets.ps1:133` (`placeholder: true` skip); manifest
+in which all assets but the anchor are placeholders; G2.5 green with one
+image scanned.
