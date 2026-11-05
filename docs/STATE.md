@@ -47,31 +47,29 @@ begun.
   `brackenward`, no main scene, no autoloads). `import.ps1` passes 2/2
   deterministically.
 - **Generation pipelines**: `scripts/audio/*` and `scripts/art/build_frames.gd`
-  verified against fixtures; the audio gate passes 6/6.
-- **Spend to date**: 6 PixelLab generations of the 40-generation trial (31 remain);
-  credits untouched at $10. ElevenLabs: 1 SFX and 1 music pass consumed.
+  verified against fixtures. **One real asset has now been through each pipeline
+  (G2 Wave 1), and neither passed cleanly** — see blockers.
+- **G2 Wave 1 probes**: one real tower sprite accepted by `assets.ps1` (10 tones,
+  zero off-palette) at `assets/art/towers/arrow/idle/south.png`; one real ElevenLabs
+  click that fails loudness at −29.1 LUFS.
+- **Spend to date**: 7 PixelLab generations (30 free remain, 10 of 40 used); credits
+  untouched at $10. ElevenLabs: 2 SFX passes and 1 music pass consumed.
 
 ## What does not exist yet
 
-- **Branch protection.** Applies to `main` and `dev` (T-0004 fixed a BOM in the
-  request body and a script that exited 0 on failure). Verified by `repo.ps1` 5/5.
 - **A main scene**, so `--quit` cannot run until G2.
-- **G1.8's integration loop** — proven by PR #1: branch `task/T-0004-protect-fix`,
-  `gates` green in 31 s, squash-merged into `dev` as `7467f9e`, remote branch
-  deleted. Evidence: `gh pr view 1` → `MERGED`.
+- **A perf harness.** `scripts/gate/perf.ps1` still only blocks; the method is proven
+  by probe but cannot be implemented until the path is owned and permitted.
 
 ## Blockers
 
 | Blocker | Waiting on |
 | --- | --- |
-| No main scene | G2; `--quit` stays unusable until then |
-| G2 not scoped | `leads/tech`, `leads/design`, `leads/art` — deliberately not started, resumes next session |
-
-Art budget is **not** a blocker: 31 free PixelLab generations remain on top of $10
-credit, and the human has confirmed credit is consumed only after the free
-generations run out. Scope is not being cut. Unverified: how many generations $10
-buys — the credit balance has not moved yet, so the rate is unknown until the first
-paid call.
+| `scripts/perf/**` has no owner in `OWNERSHIP.md`, and `eng/tools` is denied `edit` there | **human**: add the ownership row and the permission line, then re-dispatch T-0014 |
+| The −16 LUFS target is unreachable for short high-crest SFX (−29.1 measured) | **human**: ADR choosing a different target or a different metric for sub-second SFX |
+| G2.5 skips `placeholder: true`, so the asset gate scanned one image | **human**: ADR on whether placeholders are scanned or which companion check covers them |
+| Batch audio blocked | resolution of the loudness target, plus `post.ps1` fixes (sub-400 ms input reads the −70 LUFS floor; trailing silence never trimmed) |
+| Batch art blocked on quality, not mechanics | one more probe to solve canvas fill before 30 sprites inherit a squat silhouette |
 
 ## Known divergences
 
@@ -82,7 +80,8 @@ paid call.
 
 ## Next action
 
-**Nothing is in flight.** G1 is signed; G2 planning is deliberately not started, to
-resume next session. When it does start: scope with `leads/tech`, `leads/design`, and
-`leads/art` from the fun hypothesis and the 10-system budget, then the first G2
-briefs. Art generation still has 31 free PixelLab generations plus $10 credit.
+Three human decisions unblock G2: own `scripts/perf/**` and permit `eng/tools` to
+write it; decide the loudness target for sub-second SFX; decide whether the asset gate
+scans placeholders. Once the first is done, T-0014 re-dispatches immediately — its
+method, flags and load curve are already verified. Batch art and batch audio stay
+stopped until their blockers clear.
