@@ -49,27 +49,28 @@ begun.
 - **Generation pipelines**: `scripts/audio/*` and `scripts/art/build_frames.gd`
   verified against fixtures. **One real asset has now been through each pipeline
   (G2 Wave 1), and neither passed cleanly** — see blockers.
-- **G2 Wave 1 probes**: one real tower sprite accepted by `assets.ps1` (10 tones,
-  zero off-palette) at `assets/art/towers/arrow/idle/south.png`; one real ElevenLabs
-  click that fails loudness at −29.1 LUFS.
-- **Spend to date**: 7 PixelLab generations (30 free remain, 10 of 40 used); credits
-  untouched at $10. ElevenLabs: 2 SFX passes and 1 music pass consumed.
+- **G2 Wave 1 probes**: tower sprite accepted by `assets.ps1` (10 tones, zero
+  off-palette); UI click regenerated and passing the peak rule at −1.5 dBTP.
+- **Perf harness**: `scripts/gate/perf.ps1` measures a rendered windowed scene at
+  1920×1080/2× — 651.5 fps at 1000 entities, and 21.7 fps when stressed, both
+  observed. G2.3 is a measurement now, not a stub.
+- **Audio gate (ADR-0004)**: one-shots gate on true peak, beds on integrated LUFS,
+  with LUFS printed as advisory; a check with nothing to check reports N/A.
+- **Spend to date**: 10 PixelLab generations of 40 used (30 free remain), credits
+  untouched at $10. ElevenLabs: 3 SFX passes and 1 music pass consumed.
 
 ## What does not exist yet
 
-- **A main scene**, so `--quit` cannot run until G2.
-- **A perf harness.** `scripts/gate/perf.ps1` still only blocks; the method is proven
-  by probe but cannot be implemented until the path is owned and permitted.
+- **A main scene**, so `--quit`, `smoke.ps1`, and `tests.ps1` stay blocked until G2.
+- **The game itself**: no towers, waves, map graph, or run loop yet.
 
 ## Blockers
 
 | Blocker | Waiting on |
 | --- | --- |
-| `scripts/perf/**` has no owner in `OWNERSHIP.md`, and `eng/tools` is denied `edit` there | **human**: add the ownership row and the permission line, then re-dispatch T-0014 |
-| The −16 LUFS target is unreachable for short high-crest SFX (−29.1 measured) | **human**: ADR choosing a different target or a different metric for sub-second SFX |
-| G2.5 skips `placeholder: true`, so the asset gate scanned one image | **human**: ADR on whether placeholders are scanned or which companion check covers them |
-| Batch audio blocked | resolution of the loudness target, plus `post.ps1` fixes (sub-400 ms input reads the −70 LUFS floor; trailing silence never trimmed) |
 | Batch art blocked on quality, not mechanics | one more probe to solve canvas fill before 30 sprites inherit a squat silhouette |
+| G2.3 is measured on a synthetic scene | the real scene must be measured at its own entity count before the gate is signed |
+| G2.9 and G2.1 blocked | a main scene, which is G2 work |
 
 ## Known divergences
 
