@@ -1,0 +1,14 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/gameplay/lane_walker.gd" id="1_walker"]
+
+[node name="LaneWalker" type="Node2D"]
+script = ExtResource("1_walker")
+
+[node name="Outline" type="Polygon2D" parent="."]
+color = Color(0.10588, 0.10196, 0.14902, 1)
+polygon = PackedVector2Array(-13, -13, 13, -13, 13, 13, -13, 13)
+
+[node name="Body" type="Polygon2D" parent="."]
+color = Color(0.6902, 0.41569, 0.23137, 1)
+polygon = PackedVector2Array(-10, -10, 10, -10, 10, 10, -10, 10)
