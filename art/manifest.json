@@ -35,12 +35,13 @@
       "generations_spent": 1,
       "post_processing": [
         "pixelart_workbench map_colors (12 tones, luminance-preserving ladder)",
-        "pixelart_workbench outline outside 1px #1b1a26"
+        "pixelart_workbench outline outside 1px #1b1a26",
+        "moss #4f6b3f remapped to leaf #6f8f4a after moss was retired from the palette (118 px, 2026-11-05), the same substitution already applied to the anchor; this left 11 distinct tones"
       ],
-      "tones": 12,
+      "tones": 11,
       "off_palette_colours": 0,
       "binary_alpha": true,
-      "verified": "2026-11-04",
+      "verified": "2026-11-05",
       "raw": "art/style/probe-topdown-01-raw.png"
     },
     {

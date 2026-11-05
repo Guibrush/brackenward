@@ -125,20 +125,28 @@ if ($palette.Count -lt 3) {
     Add-Type -AssemblyName System.Drawing
     $offenders = @()
     $scannedImages = 0
+    $rawSkipped = @()
     foreach ($a in $assets) {
         if (-not ($a.PSObject.Properties.Name -contains 'file')) { continue }
         if ($a.file -notmatch '\.png$') { continue }
-        # Placeholders and probe evidence are not shipping assets. G2.5 is about
-        # what the game draws; G4.8 is what forbids placeholders surviving.
-        if ($a.PSObject.Properties.Name -contains 'placeholder' -and $a.placeholder -eq $true) { continue }
+        # The one exempt entry is the unmodified generator dump, `status` =
+        # 'raw-evidence'. It exists to document the pre-snap colour set, so it is
+        # off-palette by definition and scanning it could only ever fail.
+        # Placeholders are scanned: exempting them made G2.5 green while a single
+        # image was seen (L-031). Do not key this on `placeholder` again.
+        $status = ''
+        if ($a.PSObject.Properties.Name -contains 'status') { $status = [string]$a.status }
+        if ($status -eq 'raw-evidence') { $rawSkipped += [string]$a.id; continue }
         $file = [string]$a.file
         if (-not [System.IO.Path]::IsPathRooted($file)) { $file = Join-Path $StudioRoot $file }
         if (-not (Test-Path $file)) { continue }
         $size = Get-PngSize $file
         if (-not $size) { continue }
         if ($size.Width -gt 512 -or $size.Height -gt 512) { continue }
-        $scannedImages++
+        # Counted only once the bitmap is actually open: an unreadable file is
+        # not scanned, and a count that includes it understates the hole.
         try { $bmp = [System.Drawing.Bitmap]::FromFile($file) } catch { continue }
+        $scannedImages++
         $bad = New-Object 'System.Collections.Generic.HashSet[string]'
         for ($y = 0; $y -lt $bmp.Height; $y++) {
             for ($x = 0; $x -lt $bmp.Width; $x++) {
@@ -154,10 +162,16 @@ if ($palette.Count -lt 3) {
             $offenders += ($a.id + ': ' + ($sample -join ','))
         }
     }
+    # The count and the exempt list are printed so an exemption is never silent.
+    $scannedDetail = $scannedImages.ToString() + ' images within palette'
+    if ($rawSkipped.Count -gt 0) {
+        $scannedDetail = $scannedDetail + '; skipped raw-evidence: ' + ((@($rawSkipped) | Sort-Object) -join ', ')
+    }
+
     if ($scannedImages -eq 0) {
         Add-Result 'G2.5' 'Sprite palette matches the style guide' 'blocked' 'no scannable PNG assets'
     } elseif ($offenders.Count -eq 0) {
-        Add-Result 'G2.5' 'Sprite palette matches the style guide' 'pass' ($scannedImages.ToString() + ' images within palette')
+        Add-Result 'G2.5' 'Sprite palette matches the style guide' 'pass' $scannedDetail
     } else {
         Add-Result 'G2.5' 'Sprite palette matches the style guide' 'fail' ($offenders -join '; ')
     }
