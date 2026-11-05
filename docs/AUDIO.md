@@ -18,10 +18,18 @@ the post step.
 
 | Element | Target | Peak |
 | --- | --- | --- |
-| Music bed | −18 LUFS integrated | ≤ −1 dBTP |
-| Ambience | −20 LUFS | ≤ −1 dBTP |
-| One-shot SFX | −16 LUFS | ≤ −1 dBTP |
+| Music bed (≥ 1 s) | −18 LUFS integrated | ≤ −1 dBTP |
+| Ambience (≥ 1 s) | −20 LUFS integrated | ≤ −1 dBTP |
+| One-shot SFX (< 1 s) | integrated LUFS **advisory only** — does not gate | ≤ −1 dBTP, aim −1.5 |
 | Master | −16 LUFS | ≤ −1 dBTP |
+
+Since ADR-0004, integrated loudness gates beds and loops only. One-shots are gated
+on true peak, because R128 integrates over 400 ms gating blocks and a transient is
+not describable that way: the first real probe measured −29.1 LUFS for a 20 ms
+click whose peak was already −2.0 dBTP. Short assets still have their LUFS
+measured and printed, labelled advisory — an unreadable number is worse than none,
+but a number that silently gates would be worse still. Duration is read from the
+file, not from the manifest.
 
 Music sits under effects. Mixing by ear at the end is what makes a game sound
 amateur; these numbers are the baseline, and the gate checks them.

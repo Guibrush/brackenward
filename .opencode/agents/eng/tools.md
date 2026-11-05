@@ -12,6 +12,9 @@ permissions:
     resource: "scripts/*"
     effect: allow
   - action: edit
+    resource: "scripts/perf/*"
+    effect: allow
+  - action: edit
     resource: "project.godot"
     effect: allow
   - action: edit
