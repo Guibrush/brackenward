@@ -8,6 +8,17 @@
 #
 # Blocked is deliberately distinct from fail: "Godot is not installed" must never
 # look like "the code is broken".
+#
+# Four statuses, and every summary prints all four:
+#   pass      the criterion was evaluated and holds
+#   fail      the criterion was evaluated and does not hold
+#   blocked   the criterion could not be evaluated; content or tooling is missing
+#   n/a       the criterion has nothing to be true or false of in this tree
+#
+# n/a carries no exit code of its own. It is not pass - it claims no evidence - and
+# it is not blocked, because an empty category would otherwise hold a whole gate at
+# exit 3 until content exists. Counting it separately is the point: a reader must be
+# able to tell "it ran and passed" from "it did not run" (L-021, L-031).
 
 $script:GateResults = New-Object System.Collections.ArrayList
 
@@ -15,14 +26,15 @@ function Add-Result {
     param(
         [Parameter(Mandatory = $true)][string]$Id,
         [Parameter(Mandatory = $true)][string]$Name,
-        [Parameter(Mandatory = $true)][ValidateSet('pass', 'fail', 'blocked')][string]$Status,
+        [Parameter(Mandatory = $true)][ValidateSet('pass', 'fail', 'blocked', 'n/a')][string]$Status,
         [string]$Detail = ''
     )
     [void]$script:GateResults.Add([pscustomobject]@{ Id = $Id; Name = $Name; Status = $Status; Detail = $Detail })
 
     if ($Status -eq 'pass') { $label = 'PASS ' }
     elseif ($Status -eq 'fail') { $label = 'FAIL ' }
-    else { $label = 'BLOCK' }
+    elseif ($Status -eq 'blocked') { $label = 'BLOCK' }
+    else { $label = 'N/A  ' }
 
     $line = '  [' + $label + '] ' + $Id.PadRight(7) + ' ' + $Name
     if ($Detail -ne '') { $line = $line + ' - ' + $Detail }
@@ -34,10 +46,14 @@ function Complete-Gate {
     $pass = @($script:GateResults | Where-Object { $_.Status -eq 'pass' }).Count
     $fail = @($script:GateResults | Where-Object { $_.Status -eq 'fail' }).Count
     $block = @($script:GateResults | Where-Object { $_.Status -eq 'blocked' }).Count
+    $na = @($script:GateResults | Where-Object { $_.Status -eq 'n/a' }).Count
 
     Write-Host ''
-    Write-Host ('{0}: {1} pass, {2} fail, {3} blocked' -f $Title, $pass, $fail, $block)
+    Write-Host ('{0}: {1} pass, {2} fail, {3} blocked, {4} n/a' -f $Title, $pass, $fail, $block, $na)
 
+    # Exit codes are decided by fail and blocked alone. The n/a count is reported so
+    # the four numbers add up to the number of checks printed, and so a check that
+    # did not run can never be mistaken for one that passed.
     if ($fail -gt 0) { exit 1 }
     if ($block -gt 0) { exit 3 }
     exit 0
