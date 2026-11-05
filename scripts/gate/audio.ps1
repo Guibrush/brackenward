@@ -26,23 +26,11 @@
 . (Join-Path $PSScriptRoot '..\lib\common.ps1')
 . (Join-Path $PSScriptRoot 'gate.config.ps1')
 
-$script:NotApplicable = New-Object System.Collections.ArrayList
-
 # Numbers go into output text, so they are formatted with the invariant culture or
 # the same run would read differently on a machine with a decimal comma.
 function Format-Db {
     param([double]$Value, [string]$Pattern = '0.0')
     return $Value.ToString($Pattern, [System.Globalization.CultureInfo]::InvariantCulture)
-}
-
-function Add-NotApplicableResult {
-    param(
-        [Parameter(Mandatory = $true)][string]$Id,
-        [Parameter(Mandatory = $true)][string]$Name,
-        [Parameter(Mandatory = $true)][string]$Detail
-    )
-    [void]$script:NotApplicable.Add($Id)
-    Write-Host ('  [N/A  ] ' + $Id.PadRight(7) + ' ' + $Name + ' - not applicable: ' + $Detail)
 }
 
 # Loop-seam analysis runs in compiled code: 160k samples in a PowerShell loop is
@@ -245,7 +233,7 @@ else { Add-Result 'G2.7.r' 'Sample rate is 48 kHz' 'fail' (($rateBad | Select-Ob
 if ($loudBad.Count -gt 0) {
     Add-Result 'G2.7.l' 'Loudness within tolerance' 'fail' (($loudBad | Select-Object -First 5) -join '; ')
 } elseif ($beds -eq 0) {
-    Add-NotApplicableResult 'G2.7.l' 'Loudness within tolerance' ('no asset at or above 1 s; ' + $oneShots + ' one-shot(s) report LUFS as advisory only')
+    Add-Result 'G2.7.l' 'Loudness within tolerance' 'n/a' ('no asset at or above 1 s; ' + $oneShots + ' one-shot(s) report LUFS as advisory only')
 } else {
     Add-Result 'G2.7.l' 'Loudness within tolerance' 'pass' ($beds.ToString() + ' assets >= 1 s, +/- ' + (Format-Db $LoudnessTolerance) + ' LU')
 }
@@ -254,7 +242,7 @@ if ($peakBad.Count -eq 0) { Add-Result 'G2.7.p' 'Peak below ceiling' 'pass' ($ch
 else { Add-Result 'G2.7.p' 'Peak below ceiling' 'fail' (($peakBad | Select-Object -First 5) -join '; ') }
 
 if ($lenBad.Count -gt 0) { Add-Result 'G2.7.d' 'Durations within budget' 'fail' (($lenBad | Select-Object -First 5) -join '; ') }
-elseif ($lenChecked -eq 0) { Add-NotApplicableResult 'G2.7.d' 'Durations within budget' 'no entry declares max_seconds' }
+elseif ($lenChecked -eq 0) { Add-Result 'G2.7.d' 'Durations within budget' 'n/a' 'no entry declares max_seconds' }
 else { Add-Result 'G2.7.d' 'Durations within budget' 'pass' ($lenChecked.ToString() + ' declared budgets') }
 
 # A seam can only be measured on a loop. Empty is not applicable, not blocked: the
@@ -263,15 +251,12 @@ else { Add-Result 'G2.7.d' 'Durations within budget' 'pass' ($lenChecked.ToStrin
 if ($seamBad.Count -gt 0) {
     Add-Result 'G2.7.s' 'Loop seams measured after processing' 'fail' ($seamBad -join '; ')
 } elseif ($loops -eq 0) {
-    Add-NotApplicableResult 'G2.7.s' 'Loop seams measured after processing' 'no looping entries declared, so no seam exists to measure'
+    Add-Result 'G2.7.s' 'Loop seams measured after processing' 'n/a' 'no looping entries declared, so no seam exists to measure'
 } else {
     Add-Result 'G2.7.s' 'Loop seams measured after processing' 'pass' ($loops.ToString() + ' loops')
 }
 
 Write-Host ''
 Write-Host ('G2.7 measured ' + $checked + ' asset(s): ' + $beds + ' at or above 1 s (LUFS gating), ' + $oneShots + ' under 1 s (peak gating, LUFS advisory).')
-if ($script:NotApplicable.Count -gt 0) {
-    Write-Host ('G2.7 not applicable, recorded above: ' + ($script:NotApplicable -join ', '))
-}
 
 Complete-Gate 'G2 audio'
