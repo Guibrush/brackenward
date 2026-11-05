@@ -24,6 +24,12 @@ repository, no engine install, no generated assets.
 | G0.9 | Three codename candidates exist, each valid as a repository name (lowercase, hyphenated, no trademark) | `human` | Read the codename section; reject any name you would not want public |
 | G0.10 | The charter's scope is believable for the stated calendar budget | `taste` | Human judgement. This is the criterion most likely to be wrong, and the cheapest place to be wrong |
 
+**Note on G0.10.** The charter now states **no calendar budget** (ADR-0003). This
+criterion was signed on the ADR's reading of it — "believable at the owner's pace,
+with no deadline committed" — and its wording is not rewritten, because G0 is signed
+and a signed criterion is history, not a draft.
+
+
 ## Why these are mostly human
 
 G0 is judgement, not measurement. A script can confirm the document is filled in;
