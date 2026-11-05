@@ -9,22 +9,7 @@ permissions:
     resource: "*"
     effect: deny
   - action: edit
-    resource: "scripts/gate/*"
-    effect: allow
-  - action: edit
-    resource: "scripts/audio/*"
-    effect: allow
-  - action: edit
-    resource: "scripts/art/*"
-    effect: allow
-  - action: edit
-    resource: "scripts/tests/*"
-    effect: allow
-  - action: edit
-    resource: "scripts/build/*"
-    effect: allow
-  - action: edit
-    resource: "scripts/lib/*"
+    resource: "scripts/*"
     effect: allow
   - action: edit
     resource: "project.godot"
