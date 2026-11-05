@@ -2,7 +2,7 @@
 
 Only `studio-lead` writes this file. Every other agent reads it.
 
-Last updated: 2026-11-04
+Last updated: 2026-11-05
 
 ## Milestone
 
@@ -37,7 +37,7 @@ begun.
   `dev` exist, default branch `dev`, 92 files in the initial commit `ee2efb4`.
 - **CI**: `.github/workflows/gates.yml` runs on `dev`, `main`, and PRs to `dev`; the
   `gates` check is registered and green on both branches.
-- **Studio core**: 8 agents, 4 commands, permission baseline, memory protocol.
+- **Studio core**: 8 agents, 5 commands, permission baseline, memory protocol.
 - **Full roster**: the 10 specialists exist as project agents in
   `.opencode/agents/` (art/pixel, art/director, audio/sfx, audio/music,
   design/level, design/narrative, design/systems, eng/gameplay, eng/systems,

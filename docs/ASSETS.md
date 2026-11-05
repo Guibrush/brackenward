@@ -35,15 +35,20 @@ lie. `scripts/gate/assets.ps1` and `scripts/gate/audio.ps1` check both direction
 
 ### Rules
 
-- `id` unique across the manifest. Renaming an id means renaming files.
-- `file` and every entry in `frames` are project-relative, forward slashes.
-- `width` and `height` are the real pixel dimensions of `file`, not the canvas.
-- `directions` and `actions` must both be present on a `character`; the gate
-  checks that frames exist for the combination, not that the count matches.
-- `placeholder: true` is honest and allowed until G4; a placeholder that claims
-  to be final is a G4.8 failure.
-- `license` is required from the first entry, because retro-fitting licences to
-  200 assets is the least pleasant week of a project.
+- `id` and `file` are required. Everything else is metadata: useful, but the gate
+  does not depend on it.
+- `type` is recommended (`character`, `tile`, `ui`, `vfx`, `prop`, `probe`) and is
+  used for filtering and review, not for validation.
+- `width` and `height` are optional. When present they are checked against the PNG
+  header; a descriptive `size` string like `"64x64"` is not checked.
+- `frames` is either a **list of frame files** or a **count** of frames inside
+  `file`. A count is not treated as a path.
+- `placeholder: true` exempts an asset from the palette check in G2.5. Placeholders
+  are not shipping assets; G4.8 is the criterion that forbids them surviving.
+- `license` is required from the first entry, including probes. Retro-fitting
+  licences to 200 assets is the least pleasant week of a project.
+- `status` is free text (`probe`, `raw-evidence`, `anchor`, `final`). It is for
+  humans and reviewers, and carries no gate behaviour.
 
 ## audio/manifest.json
 

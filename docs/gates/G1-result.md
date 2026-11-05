@@ -1,5 +1,10 @@
 # G1 — Bootstrap — Gate Result (final re-record)
 
+> **Signature:** this gate was signed on 2026-11-05 by Guybrush Threepwood in
+> `docs/gates/G1-bootstrap.md`, which holds the canonical signature record. This file is the
+> evidence snapshot and is not re-signed. See "Where the signature lives" in
+> `docs/gates/README.md`.
+
 Date: 2026-11-05
 Commit: `889d7dc27828597fbabe3b450f4abae6dc847dca` (`889d7dc`)
 Branch: `dev`
