@@ -1,8 +1,11 @@
 ; Godot project configuration for brackenward.
 ;
-; Hand-authored and deliberately minimal: this file makes the project exist and
-; nothing more. G1.6 only needs a project the engine can import. No main scene is
-; declared (G2 creates it) and there are no autoloads.
+; Hand-authored and deliberately minimal: this file makes the project exist, name
+; itself, and declare the scene the game boots into. There are no autoloads.
+;
+; `run/main_scene` is what `scripts/gate/smoke.ps1` runs (G2.1). It points at the
+; arena, which prints ARENA_SUMMARY so the gate can check the scene's own
+; counters instead of trusting the exit code (L-035). See tasks/T-0026.md.
 ;
 ; Engine in use: Godot 4.7.2 stable (ADR-0001). config_version=5 is the Godot 4
 ; format. See tasks/T-0001.md.
@@ -12,3 +15,4 @@ config_version=5
 [application]
 
 config/name="brackenward"
+run/main_scene="res://scenes/main.tscn"
