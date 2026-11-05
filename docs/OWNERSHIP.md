@@ -46,12 +46,11 @@ than an error.
 | `docs/gates/G[0-5]*.md` (the definitions) | human |
 | `docs/CHARTER.md`, `docs/AUDIO.md`, `art/STYLE.md` | human |
 | `docs/{OWNERSHIP,MODELS,GIT,NIGHTSHIFT}.md` | human |
+| `docs/ASSETS.md` | human — the manifest schema the gates enforce |
 | `README.md` | `studio-lead` |
 | `opencode.jsonc`, `.opencode/agents/**` | human — agents must not edit the config that grants them permissions or the prompts that govern other agents |
 | `docs/reviews/**` | `qa/critic` |
-| `scripts/gate/**`, `scripts/build/**` | `eng/tools` |
-| `scripts/audio/**`, `scripts/art/**` | `eng/tools` |
-| `scripts/git/**`, `scripts/lib/**` | `eng/tools` |
+| `scripts/**` | `eng/tools` — every script is tooling; one owner, no drift when a directory is added |
 
 ## Noted exceptions
 
