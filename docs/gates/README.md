@@ -31,6 +31,20 @@ honest.
 6. **Scripts referenced here are implemented in `scripts/gate/`.** Until a script
    exists, its criterion reports `missing`, which is a failure.
 
+## Where the signature lives
+
+The **gate definition** (`docs/gates/G2-vertical-slice.md` and its siblings) holds
+the canonical Signature block. That file is human-owned, and `gatekeeper` cannot
+write to it, which is the point: the agent that produces evidence must not be able
+to record the verdict.
+
+The **result file** (`docs/gates/G2-result.md`) is the evidence snapshot written by
+`gatekeeper`. It records what was run and what it returned, and it is **not
+re-signed** afterwards. A result file that reads "awaiting human signature" means
+"this was the state when the evidence was collected", not "this gate is unsigned".
+
+If the two ever disagree, the definition file is authoritative.
+
 ## Result file format
 
 `gatekeeper` writes `docs/gates/<gate>-result.md`:

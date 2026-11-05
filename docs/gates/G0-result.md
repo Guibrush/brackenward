@@ -1,5 +1,10 @@
 # G0 — Concept — Result
 
+> **Signature:** this gate was signed on 2026-11-04 by Guybrush Threepwood in
+> `docs/gates/G0-concept.md`, which holds the canonical signature record. This file is the
+> evidence snapshot and is not re-signed. See "Where the signature lives" in
+> `docs/gates/README.md`.
+
 Gate: G0 — Concept
 Run date: 2026-11-04
 Commit: none — project root is not a git repository (`git rev-parse HEAD` → `fatal: not a git repository or any of the parent directories`)

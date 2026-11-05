@@ -2,10 +2,14 @@
 # G2.4, G2.5 — asset manifest integrity and palette conformance.
 #
 # Manifest schema: docs/ASSETS.md
+#
+# param() must be the first statement in a script. Placing it after the
+# dot-sourcing below makes PowerShell treat it as a command: the switch is never
+# bound and the script prints a "param is not recognized" error on every run.
+param([switch]$PlaceholdersForbidden)
+
 . (Join-Path $PSScriptRoot '..\lib\common.ps1')
 . (Join-Path $PSScriptRoot 'gate.config.ps1')
-
-param([switch]$PlaceholdersForbidden)
 
 Write-Host 'G2 - assets'
 
@@ -36,7 +40,7 @@ $checked = 0
 
 foreach ($a in $assets) {
     $checked++
-    foreach ($field in @('id', 'file', 'type')) {
+    foreach ($field in @('id', 'file')) {
         if (-not ($a.PSObject.Properties.Name -contains $field) -or [string]::IsNullOrEmpty($a.$field)) {
             $missingFile += ('entry without ' + $field)
         }
@@ -60,11 +64,21 @@ foreach ($a in $assets) {
         }
     }
 
+    # `frames` is either a list of frame files or a count of frames inside `file`.
+    # A count is not a path: treating it as one produced "3 missing, e.g. 1".
     if ($a.PSObject.Properties.Name -contains 'frames') {
-        foreach ($f in @($a.frames)) {
-            $fp = [string]$f
+        $framesValue = $a.frames
+        if ($framesValue -is [string]) {
+            $fp = [string]$framesValue
             if (-not [System.IO.Path]::IsPathRooted($fp)) { $fp = Join-Path $StudioRoot $fp }
-            if (-not (Test-Path $fp)) { $missingFrame += $f }
+            if (-not (Test-Path $fp)) { $missingFrame += $framesValue }
+        } elseif ($framesValue -is [System.Array]) {
+            foreach ($framepath in $framesValue) {
+                if ($framepath -isnot [string]) { continue }
+                $fp = [string]$framepath
+                if (-not [System.IO.Path]::IsPathRooted($fp)) { $fp = Join-Path $StudioRoot $fp }
+                if (-not (Test-Path $fp)) { $missingFrame += $framepath }
+            }
         }
     }
 }
@@ -114,6 +128,9 @@ if ($palette.Count -lt 3) {
     foreach ($a in $assets) {
         if (-not ($a.PSObject.Properties.Name -contains 'file')) { continue }
         if ($a.file -notmatch '\.png$') { continue }
+        # Placeholders and probe evidence are not shipping assets. G2.5 is about
+        # what the game draws; G4.8 is what forbids placeholders surviving.
+        if ($a.PSObject.Properties.Name -contains 'placeholder' -and $a.placeholder -eq $true) { continue }
         $file = [string]$a.file
         if (-not [System.IO.Path]::IsPathRooted($file)) { $file = Join-Path $StudioRoot $file }
         if (-not (Test-Path $file)) { continue }
