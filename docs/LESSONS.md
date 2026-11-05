@@ -6,56 +6,8 @@ Keep this file near 100 lines; archive the oldest entries to
 Entries L-001 … L-008 (2026-11-02 → 2026-11-03) live in
 `docs/lessons/archive-G0.md`; entries L-009 … L-012 (2026-11-04) live in
 `docs/lessons/archive-G1.md`; entries L-013 … L-014 (2026-11-04) live in
-`docs/lessons/archive-2026-11-04.md`; entries L-015 … L-026 (2026-11-05) live
-in `docs/lessons/archive-2026-11-05.md`; entries L-027 … L-028 (2026-11-05)
-live in `docs/lessons/archive-2026-11-05.md`. Their rules remain in force.
-
-## L-029 — 2026-11-05 — A brief granted a path that no owner and no permission allows
-Situation: T-0014 granted `scripts/perf/**` in prose; `docs/OWNERSHIP.md` has
-no row for it and `.opencode/agents/eng/tools.md` denies `edit` there. The
-agent correctly blocked rather than routing around the permission. Same
-family as L-025: runnability assumed, not checked.
-Worked: the agent blocked on the missing ownership row instead of
-improvising an unauthorised write path.
-Failed: granting a path in a brief without making it real in ownership and
-permissions in the same change.
-Rule: a brief that grants a new path must add the `docs/OWNERSHIP.md` row and
-the agent permission line in the same change, and the dispatcher verifies
-both before dispatch.
-Evidence: `tasks/T-0014.md` (grants `scripts/perf/**`); `docs/OWNERSHIP.md`
-(no row for the path); `.opencode/agents/eng/tools.md` (`edit` denied there).
-
-## L-030 — 2026-11-05 — A loudness target was arithmetically unreachable for the shortest asset class
-Situation: one real ElevenLabs click measured −29.1 LUFS against the −16 ±2
-LUFS target: a 20 ms transient inside a 400 ms gating block cannot be lifted
-to −16 without peaks exceeding +11 dBTP. Format, sample rate and peak checks
-passed; loudness could not pass. `post.ps1`'s gain-then-limit undid 13.1 of
-the needed 17 dB.
-Worked: the one-real-asset probe (per L-026) exposed the impossibility
-instead of a paid batch finding out.
-Failed: writing a loudness target into a style guide and gate without
-validating it against the shortest asset the game ships.
-Rule: before a loudness target is written into a style guide or gated,
-validate it against the shortest asset class the game will ship using one
-real example; if the arithmetic says unreachable, change the target or the
-gate, not the asset.
-Evidence: measured −29.1 LUFS vs −16 ±2 target; 20 ms transient in a 400 ms
-gating block; `post.ps1` gain-then-limit recovers only 3.9 of 17 dB.
-
-## L-031 — 2026-11-05 — A gate that exempts placeholders cannot police placeholders
-Situation: `scripts/gate/assets.ps1:133` skips assets marked
-`placeholder: true`, and every G2 asset except the anchor is a placeholder,
-so the green G2.5 run scanned exactly one image.
-Worked: reading the gate against the manifest showed the pass covered a
-single file.
-Failed: an exemption flag able to make an entire category invisible to the
-gate it is supposed to police.
-Rule: an exemption flag must not be able to make a whole category invisible
-to a gate; if placeholders are exempt, the gate (or a named companion check)
-must state what checks them instead.
-Evidence: `scripts/gate/assets.ps1:133` (`placeholder: true` skip); manifest
-in which all assets but the anchor are placeholders; G2.5 green with one
-image scanned.
+`docs/lessons/archive-2026-11-04.md`; entries L-015 … L-031 (2026-11-05) live
+in `docs/lessons/archive-2026-11-05.md`. Their rules remain in force.
 
 ## L-032 — 2026-11-05 — A transient vendor outage presented as a red gate on a pull request
 Situation: PR #12 failed CI twice; the first failure was not its contents.
@@ -79,3 +31,54 @@ Evidence: `.github/workflows/gates.yml:65` (`Invoke-WebRequest`, no retry in
 the workflow); `gh run list --branch task/T-0016-art-probe` showing run
 42046676819 pass 35s after the failed run; PR #12 `mergeStateStatus: BLOCKED`
 then clean on re-run.
+
+## L-033 — 2026-11-05 — "Code written" is not "code runs"
+Situation: a dispatch returned with `src/gameplay/arena.gd` calling an
+undeclared identifier (`hq` where the member was `_hq`), so every run of the
+scene failed to load. The same dispatch also left a scene property pointing at
+a renamed export. Nothing had been executed; the envelope described the files
+as written.
+Worked: a follow-up pass ran `--check-only` per script, found
+`Parse Error: Identifier "hq" not declared in the current scope`, and the
+scene then ran headless clean.
+Failed: accepting "files created" as a delivery when no script had been parsed
+and no scene had been loaded.
+Rule: no GDScript deliverable is complete without pasted
+`--check-only --script res://…` output for every script it touched, and a
+scene-level run for anything that claims a scene works. A brief that allows
+otherwise is defective; this is the brief's job, not the reviewer's.
+Evidence: `src/gameplay/arena.gd:188` before fix; `--check-only` exit 1 with
+the parse error; commits `ef84fec`/`0bd657b`. See L-005 (the check exists) and
+L-017 (delivery steps get skipped) — this is the case where the *first* step
+was skipped.
+
+## L-034 — 2026-11-05 — A generated sprite's raw bounding box is meaningless
+Situation: two tower candidates measured an identical **48×58** raw bounding
+box on a 64×64 canvas, which looked like a tie. After removing the generator's
+ground pad they were **30×53** and **38×56**: not a tie at all, and the
+smaller one was top-heavy with a wide canopy.
+Worked: measuring content with the ground removed before comparing candidates.
+Failed: comparing raw bounding boxes, where the grass pad is the widest and
+tallest element and therefore dominates every measurement.
+Rule: compare generated sprites only after the generator ground is removed;
+report the pad-free content box, and never select between candidates on a raw
+box. Same family as L-010 (the generator returns what it wants, not what you
+asked for).
+Evidence: `assets/art/towers/arrow/idle/south-v2-raw.png` (30×53 pad-free),
+`south-v3-raw.png` (38×56 pad-free), both 48×58 raw.
+
+## L-035 — 2026-11-05 — A runtime that exits 0 while printing errors defeats an exit-code gate
+Situation: the arena scene quits on its run timer with `quit(0)` and reports
+failures through `push_error` and a `stuck` counter. With the walker's despawn
+handler disabled it produced three `ARENA_STUCK` lines and three `ERROR:` lines
+and still exited **0**.
+Worked: reading the output, not the status code, separated the broken run
+(`stuck: 3`, `despawned: 0`) from the good one (`stuck: 0`, `despawned: 3`).
+Failed: assuming a gate that checks `$LASTEXITCODE` can police a runtime whose
+normal path is a clean exit.
+Rule: a gate wrapping a self-quitting runtime must assert on its output —
+specific lines and counted values — as well as its exit code; state in the gate
+which lines are failure signals. Distinct from L-016: there the script never
+propagated failure, here a healthy exit code coexists with errors.
+Evidence: `tasks/T-0026.md` (the required contract); commit `0bd657b` message;
+arena run with `_despawn()` disabled, exit 0 with three `ERROR:` lines.
