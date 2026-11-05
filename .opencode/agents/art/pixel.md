@@ -17,6 +17,21 @@ permissions:
   - action: edit
     resource: "art/prompts/*"
     effect: allow
+  - action: shell
+    resource: "git add *"
+    effect: deny
+  - action: shell
+    resource: "git commit *"
+    effect: deny
+  - action: shell
+    resource: "git switch *"
+    effect: deny
+  - action: shell
+    resource: "git checkout *"
+    effect: deny
+  - action: shell
+    resource: "git stash *"
+    effect: deny
   - action: subagent
     resource: "*"
     effect: deny
