@@ -10,16 +10,22 @@ extends RefCounted
 ##   not a node, no global. The code that starts the run owns the instance, and
 ##   there is exactly one per run.
 ## * This object owns three pieces of mutable state and nothing else owns them:
-##   the current level index, the gold in hand, and the run's HQ health. The
-##   level's `Hq` node is a per-level *view* of the same health, not a second
-##   owner (see CALLERS MUST).
+##   how many levels the run has completed, the gold in hand, and the run's HQ
+##   health. The level's `Hq` node is a per-level *view* of the same health, not a
+##   second owner (see CALLERS MUST).
+## * A run has **no level total** (ADR-0006). `level_index()` counts levels
+##   *finished*; there is no constructor count, no "final level" and no progress
+##   fraction here, because how many levels a run contains is a property of the
+##   route the player takes. The map is the authority on progress.
 ## * Gold exists only inside a run, can never go below zero, is earned by the
 ##   caller (kills) and by `complete_level()` (level clear), and is spent through
 ##   `spend_gold()`. `start()` after a finished run resets gold and HQ instead of
 ##   inheriting them; `start()` during a live run is refused, so restarting is
 ##   never a way to top up.
-## * A run ends in exactly one of two ways: `complete_level()` on the final level
-##   (victory), or HQ reaching zero at any point (defeat). Once over, every
+## * A run ends in exactly one of two ways: `win_run()` (victory), or HQ reaching
+##   zero at any point (defeat). `complete_level()` never ends a run by itself -
+##   this object does not know which level is last, so whoever owns the map calls
+##   `complete_level()` for the boss's level and then `win_run()`. Once over, every
 ##   mutation is refused and `last_refusal()` carries the reason; the level index
 ##   cannot advance and no level-clear gold is paid.
 ## * Nothing is written to disk. Meta-progression persistence is deferred to G3
@@ -35,9 +41,18 @@ extends RefCounted
 ## * Check the bool returned by every mutation, and surface `last_refusal()` to
 ##   the player or the log instead of ignoring it. A refusal is never silent:
 ##   it is stored and also emitted on `refused`.
+## * Call `complete_level()` once per *played* level, and only for a level-type
+##   node. A `store`, `rest`, `treasure`, `event` or boss-preview stop is not a
+##   level and must not call it: the index would then count stops instead of
+##   levels, which is the defect ADR-0006 removes. Those stops are the map's
+##   business; they change gold and HQ at most, never the level index.
+## * Call `win_run()` when the boss node is finished (after `complete_level()` for
+##   that node's level). Nothing here caps how many levels came before it, so a
+##   map that forgets the call leaves a live run standing on its boss.
 ## * Call `is_over()` before asking to advance. Advancement after the run ends is
-##   a programmer error; it is refused loudly (a `WARNING` line) rather than
-##   asserted, because a stray UI event must not crash a run in progress.
+##   a programmer error; it is refused loudly (a greppable `RUN_REFUSED` line on
+##   stdout in a debug build) rather than asserted, because a stray UI event must
+##   not crash a run in progress.
 ##
 ## No number in this file is real. Each is a PLACEHOLDER for T-0035
 ## (`docs/design/systems/economy.md`, `waves.md`) to replace; every one carries
@@ -56,24 +71,24 @@ const GOLD_PER_KILL := 1
 ## PLACEHOLDER (T-0035 economy.md): gold paid for clearing a level, awarded by
 ## `complete_level()` because clearing a level is a run transition.
 const GOLD_PER_LEVEL_CLEAR := 5
-## PLACEHOLDER (T-0035 waves.md): levels in a run. The CHARTER says 5-10; this is
-## one guess inside that range. `start()` takes the real count from the map.
-const DEFAULT_LEVEL_COUNT := 5
 ## PLACEHOLDER (T-0035 economy.md): a run's HQ health when the caller has no
 ## better number. Matches `Hq.max_health`'s placeholder so the two agree.
 const DEFAULT_HQ_MAX := 10
-const MIN_LEVEL_COUNT := 1
 const MIN_HQ_MAX := 1
 
 signal gold_changed(current: int, delta: int)
 signal hq_changed(current: int, maximum: int)
-signal level_changed(index: int, total: int)
+## Emitted with the number of levels *completed* so far. There is no total to
+## pair it with (ADR-0006): anything wanting progress against the route asks the
+## map, which is the only object that knows the remaining layers.
+signal level_changed(levels_completed: int)
 signal run_ended(victory: bool, reason: String)
 signal refused(reason: String)
 
 var _status: int = Status.NOT_STARTED
-var _level_index: int = 0
-var _level_count: int = 0
+## Levels finished this run. Not an index into a fixed list: ADR-0006 defines
+## `level_index()` as this count, and only a completed level-type node moves it.
+var _levels_completed: int = 0
 var _gold: int = 0
 var _hq: int = 0
 var _hq_max: int = 0
@@ -88,20 +103,13 @@ var _ledger: Array[Dictionary] = []
 ## from COMPLETED/DEFEATED (that is how a second run starts); refused while a run
 ## is in progress, because inheriting a live run's gold would make restarting a
 ## way to refill the purse.
-func start(
-	level_count: int = DEFAULT_LEVEL_COUNT,
-	hq_max: int = DEFAULT_HQ_MAX,
-	starting_gold: int = STARTING_GOLD
-) -> bool:
+##
+## There is deliberately no level count (ADR-0006): a run's number of levels is a
+## route outcome, decided after the run has begun, and the map owns it.
+func start(hq_max: int = DEFAULT_HQ_MAX, starting_gold: int = STARTING_GOLD) -> bool:
 	if _status == Status.IN_PROGRESS:
 		return _refuse(
 			"start a run", "a run is already in progress; finish or lose it first", true
-		)
-	if level_count < MIN_LEVEL_COUNT:
-		return _refuse(
-			"start a run",
-			"a run needs at least %d level(s), got %d" % [MIN_LEVEL_COUNT, level_count],
-			true
 		)
 	if hq_max < MIN_HQ_MAX:
 		return _refuse(
@@ -114,8 +122,7 @@ func start(
 			"start a run", "starting gold cannot be negative, got %d" % starting_gold, true
 		)
 
-	_level_count = level_count
-	_level_index = 0
+	_levels_completed = 0
 	_hq_max = hq_max
 	_hq = hq_max
 	_gold = starting_gold
@@ -126,14 +133,14 @@ func start(
 	_record("run_start", starting_gold)
 	gold_changed.emit(_gold, starting_gold)
 	hq_changed.emit(_hq, _hq_max)
-	level_changed.emit(_level_index, _level_count)
+	level_changed.emit(_levels_completed)
 	return true
 
 
-## Clears the level the run is on. Pays the level-clear gold, then either advances
-## to the next level (gold and HQ carry untouched) or, on the final level, wins
-## the run. The final level is the boss level in CHARTER terms; this object only
-## knows it is last.
+## Finishes one level-type node: pays the level-clear gold, then counts the level
+## completed (gold and HQ carry untouched). It never ends the run - victory is the
+## map's call through `win_run()` once the boss node has been finished (ADR-0006),
+## so a run that stops calling this stays live until `win_run()` or defeat.
 func complete_level() -> bool:
 	if _status != Status.IN_PROGRESS:
 		return _refuse(
@@ -149,15 +156,32 @@ func complete_level() -> bool:
 			"complete the current level", "the HQ is empty; a run with no HQ cannot advance", true
 		)
 
-	var cleared := level_number()
 	add_gold(GOLD_PER_LEVEL_CLEAR, "level_clear")
+	_levels_completed += 1
+	level_changed.emit(_levels_completed)
+	return true
 
-	if is_final_level():
-		_end_run(true, "final level %d cleared; the run is won" % cleared)
-		return true
 
-	_level_index += 1
-	level_changed.emit(_level_index, _level_count)
+## Ends the run as a victory. The map calls this once the boss node's level has
+## been completed; nothing here decides that, and nothing here counts the levels
+## that came before. `reason` is free text for the end-of-run line ("the boss node
+## was completed"); a blank reason gets the default sentence.
+func win_run(reason: String = "") -> bool:
+	if _status != Status.IN_PROGRESS:
+		return _refuse(
+			"win the run",
+			"the run is %s (%s)" % [status_name(), _end_reason_or("no run started")],
+			true
+		)
+	if _hq <= 0:
+		# Same defence in depth as `complete_level()`: a run whose HQ is gone
+		# cannot be won, because `damage_hq()` has already made it a defeat.
+		return _refuse(
+			"win the run", "the HQ is empty; a run with no HQ cannot be won", true
+		)
+
+	var why := reason if reason != "" else "the boss node was completed"
+	_end_run(true, "%s after %d level(s) completed; the run is won" % [why, _levels_completed])
 	return true
 
 
@@ -195,22 +219,19 @@ func can_complete_level() -> bool:
 
 # --- levels -----------------------------------------------------------------
 
-## Zero-based index of the level the run is on.
+## How many levels this run has **completed** (ADR-0006). Zero at the start; it
+## moves only on `complete_level()`, so a store, rest, treasure, event or
+## boss-preview stop leaves it exactly where it was.
 func level_index() -> int:
-	return _level_index
+	return _levels_completed
 
 
-## One-based number for display, the same number the ledger records.
+## One-based number of the level in play - the level that has not been completed
+## yet, which makes it the number to show in a HUD and the number the ledger
+## records. It is display arithmetic on a count, never a bound: there is no last
+## level here (ADR-0006).
 func level_number() -> int:
-	return _level_index + 1
-
-
-func level_count() -> int:
-	return _level_count
-
-
-func is_final_level() -> bool:
-	return _level_count > 0 and _level_index >= _level_count - 1
+	return _levels_completed + 1
 
 
 # --- gold -------------------------------------------------------------------
@@ -335,12 +356,13 @@ func last_refusal() -> String:
 
 
 ## Everything a HUD, a log line or a test wants to print, in one dictionary.
+## `level` is the level in play; `levels_completed` is the run's progress. There
+## is no total and no "final level" flag: ask the map (ADR-0006).
 func snapshot() -> Dictionary:
 	return {
 		"status": status_name(),
 		"level": level_number(),
-		"level_count": _level_count,
-		"final_level": is_final_level(),
+		"levels_completed": _levels_completed,
 		"gold": _gold,
 		"hq": _hq,
 		"hq_max": _hq_max,
