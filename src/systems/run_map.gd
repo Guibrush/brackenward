@@ -55,9 +55,9 @@ extends RefCounted
 ##   none, and the client that needs waves asks the wave system.
 ## * Treat `max_levels()` as the ceiling, not the count: a route is 10 layers, but
 ##   store, rest, treasure and event nodes are not levels, so the number of levels
-##   a given route contains depends on the route. `RunState.start()` needs a level
-##   count up front and its index is not the same counter as the layer index; see
-##   the T-0040 return for the owner that decision belongs to.
+##   a given route contains depends on the route. Per ADR-0006, `RunState.start()`
+##   takes no level count and counts completions; the map owns progress and calls
+##   `complete_level()` only for level-type nodes, then `win_run()` on the boss.
 ##
 ## PLACEHOLDER numbers
 ## -------------------
