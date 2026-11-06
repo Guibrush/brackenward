@@ -46,6 +46,27 @@ Evidence: `tasks/T-0032.md` DoD item 1; current
 `assets/art/towers/arrow/idle/south.png` first opaque row is a 12 px bar at
 y=7 (verified 2026-11-06) — the flat crown shipped anyway.
 
+## L-038 — 2026-11-06 — A passing proxy metric is not appearance evidence
+Situation: after the flat-crown rejection, a metric was invented for the fix:
+the first opaque rows must show separated merlon runs, not one flat bar. Three
+hand-authored merlons passed it exactly (runs `[4,4,4]` over four rows, 52 px
+changed, none below the crown), the asset gate went green, and the sprite
+shipped. The human rejected it again: the top is a flat quad with no far wall,
+so the merlons read as three free-standing blocks — the metric counted
+separated runs, not "looks like a battlement". The sprite was reverted.
+Worked: the human's second rejection, which caught what the metric could not.
+Failed: treating a derived statistic as the definition of the fix, and gating
+appearance on it without showing the result to the human first.
+Rule: a metric invented for a visual defect must be validated against a case
+the human has already rejected (here: the flat crown should have been shown
+failing the merlon check) before it can gate anything, and the human's eye on
+the actual image remains the acceptance test for appearance — show the
+candidate to the human for approval before shipping; a green gate is never
+that approval.
+Evidence: `tasks/T-0032.md` DoD item 1 (the profile that caught the first
+regen but blessed the second); L-037 for the converse; reverted sprite in
+`art/manifest.json` `tower-arrow-idle-south`.
+
 ## L-034 — 2026-11-05 — A generated sprite's raw bounding box is meaningless
 Situation: two tower candidates measured an identical **48×58** raw bounding
 box on a 64×64 canvas, which looked like a tie. After removing the generator's
