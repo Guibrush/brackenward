@@ -7,7 +7,7 @@ Entries L-001 … L-008 (2026-11-02 → 2026-11-03) live in
 `docs/lessons/archive-G0.md`; entries L-009 … L-012 (2026-11-04) live in
 `docs/lessons/archive-G1.md`; entries L-013 … L-014 (2026-11-04) live in
 `docs/lessons/archive-2026-11-04.md`; entries L-015 … L-031 (2026-11-05) live
-in `docs/lessons/archive-2026-11-05.md`; entries L-032 … L-033 (2026-11-05)
+in `docs/lessons/archive-2026-11-05.md`; entries L-032 - L-035 (2026-11-05)
 live in `docs/lessons/archive-2026-11-06.md`. Their rules remain in force.
 
 ## L-036 — 2026-11-06 — Identity-preserving img2img preserves the defect too
@@ -67,33 +67,27 @@ Evidence: `tasks/T-0032.md` DoD item 1 (the profile that caught the first
 regen but blessed the second); L-037 for the converse; reverted sprite in
 `art/manifest.json` `tower-arrow-idle-south`.
 
-## L-034 — 2026-11-05 — A generated sprite's raw bounding box is meaningless
-Situation: two tower candidates measured an identical **48×58** raw bounding
-box on a 64×64 canvas, which looked like a tie. After removing the generator's
-ground pad they were **30×53** and **38×56**: not a tie at all, and the
-smaller one was top-heavy with a wide canopy.
-Worked: measuring content with the ground removed before comparing candidates.
-Failed: comparing raw bounding boxes, where the grass pad is the widest and
-tallest element and therefore dominates every measurement.
-Rule: compare generated sprites only after the generator ground is removed;
-report the pad-free content box, and never select between candidates on a raw
-box. Same family as L-010 (the generator returns what it wants, not what you
-asked for).
-Evidence: `assets/art/towers/arrow/idle/south-v2-raw.png` (30×53 pad-free),
-`south-v3-raw.png` (38×56 pad-free), both 48×58 raw.
-
-## L-035 — 2026-11-05 — A runtime that exits 0 while printing errors defeats an exit-code gate
-Situation: the arena scene quits on its run timer with `quit(0)` and reports
-failures through `push_error` and a `stuck` counter. With the walker's despawn
-handler disabled it produced three `ARENA_STUCK` lines and three `ERROR:` lines
-and still exited **0**.
-Worked: reading the output, not the status code, separated the broken run
-(`stuck: 3`, `despawned: 0`) from the good one (`stuck: 0`, `despawned: 3`).
-Failed: assuming a gate that checks `$LASTEXITCODE` can police a runtime whose
-normal path is a clean exit.
-Rule: a gate wrapping a self-quitting runtime must assert on its output —
-specific lines and counted values — as well as its exit code; state in the gate
-which lines are failure signals. Distinct from L-016: there the script never
-propagated failure, here a healthy exit code coexists with errors.
-Evidence: `tasks/T-0026.md` (the required contract); commit `0bd657b` message;
-arena run with `_despawn()` disabled, exit 0 with three `ERROR:` lines.
+## L-039 — 2026-11-06 - A mark on a 3/4-projected face must follow that face's projection
+Situation: T-0034 tried to fix the roofed tower's flat body by post-passing
+masonry detail onto the existing sprite: horizontal course joints and short
+vertical seams in locked palette tones, silhouette untouched, 73 px changed.
+Every measured check passed (0 boundary pixels changed, 8 tones, 0
+off-palette, mask and fill identical), and the human still rejected both
+passes: the straight horizontal course lines read as ruled lines laid over
+the sprite, not as masonry courses, because the tower's faces are in 3/4
+perspective - and on the shaded right face the same straight lines were
+applied to a second plane with a different direction.
+Worked: nothing; the rejection was purely visual and mechanical checks could
+not have caught it.
+Failed: treating an appearance-only edit as verified by per-pixel invariants
+(palette, boundary, layout); those checks measure what did not change, not
+whether the change is drawn correctly on a projected surface.
+Rule: on a 3/4 or isometric sprite, any mark intended to follow a surface
+must follow that surface's projection - courses converge or step per face,
+and a mark carried around a corner changes direction with the plane; a
+straight horizontal rule is only correct on a face drawn head-on. Per-pixel
+checks cannot catch this class of defect, so a face-detail edit needs the
+human's eye on the image before it ships (per L-038; second case today).
+Evidence: tasks/T-0034.md (status: rejected); human rejection of both
+passes: "It added straight lines to the faces of the tower that are in
+perspective. It is wrong."; art/manifest.json tower-arrow-idle-south entry.
