@@ -75,11 +75,13 @@ begun.
 | Metric | Baseline | Target | How it is counted |
 | --- | --- | --- | --- |
 | Dispatch cap-hit rate | **70%** — 7 of the last 10 builder dispatches ended at "maximum steps reached" (2026-11-06) | **under 10%** | envelopes whose final line is a step-cap notice |
+| Usable-delivery rate under a cap hit | **100%** — the two dispatches after the reserve rule both hit 40 steps and both returned complete, verified work (2026-11-06) | keep at 100% | a cap-hit envelope whose files parse and whose evidence is present |
 
-On 2026-11-06 the builder caps were raised from 24–26 to 40, with an 8-step verification
-reserve written into `AGENTS.md` and a split rule keyed on files *and* demonstrations. The
-rate is re-measured against that baseline; the next decision on caps uses this number
-rather than an impression.
+Both post-change dispatches (T-0039 waves, T-0040 run map) still reached the 40-step cap,
+which by the standing rule means **both briefs were too big** — the reserve rule turned
+those hits from wasted work into usable deliveries, but it did not stop them happening.
+Next briefs in this area split further: waves and map were multi-demo tasks and should
+have been two dispatches each.
 
 ## Blockers
 | Blocker | Waiting on |
