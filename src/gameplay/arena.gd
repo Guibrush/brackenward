@@ -24,10 +24,17 @@ extends Node2D
 ## `last_refusal()` so a harness can assert on the words instead of on the
 ## refusal count alone (`run_state.gd` sets the same precedent).
 ##
+## T-0039 adds waves. A level's waves are data (`WavePlan` builds them from
+## `docs/design/systems/waves.md` for `level_index` and nothing else), and
+## `WaveDirector` paces them. The arena owns the one transition that matters: a
+## wave start locks the build phase, a wave clear unlocks it again.
+##
 ## Prints on stdout, in this order:
-##   ARENA_START {json}       values actually in force
+##   ARENA_START {json}       values actually in force, including the wave plan
 ##   ARENA_WALLET {json}      only when the arena had to create the ledger
 ##   ARENA_PHASE {json}       on every build <-> wave transition
+##   ARENA_WAVE {json}        once per wave cleared, with the phase it returned to
+##   ARENA_LEVEL_CLEAR {json} once, when the level's last wave is cleared
 ##   ARENA_LEAK {json}        one line per arrival, with HQ health before and after
 ##   ARENA_STUCK {json}       only when an enemy outlives its arrival (a bug)
 ##   ARENA_PLACED {json}      one line per tower built
@@ -88,6 +95,19 @@ extends Node2D
 ## scheduling arrives with T-0038, which calls `begin_wave` / `end_wave`.
 @export var start_in_wave: bool = false
 
+@export_group("Waves — PLACEHOLDER (T-0039 waves.md)")
+## Which level of the run this arena is, 1-based. Difficulty is a function of this
+## and of nothing else (`docs/CHARTER.md`), so it is the only knob the wave plan
+## reads.
+@export var level_index: int = 1
+## Whether this level is an elite: its final wave carries exactly one sub-boss.
+@export var elite_level: bool = false
+## Whether the arena starts its first wave on its own. False for the tested
+## scene: what starts a level is the run loop's decision and no run loop exists
+## yet, so the gates keep running a scene with nobody playing it. `start_level()`
+## is the public door, and T-0039's demo uses it.
+@export var autostart_waves: bool = false
+
 ## The run's two planning modes. During WAVE, placement, upgrade and sell are
 ## refused; nothing else changes.
 enum Phase { BUILD, WAVE }
@@ -112,6 +132,12 @@ var _reported_stuck: Dictionary = {}
 var _slots: Array[BuildSlot] = []
 var _towers: Array[Tower] = []
 var _phase: Phase = Phase.BUILD
+
+## The level's waves, as data, and the thing that paces them.
+var _plan: WavePlan = null
+var _director: WaveDirector = null
+var _plan_summary: Dictionary = {}
+var _waves_cleared: int = 0
 
 var _spawned: int = 0
 var _despawned: int = 0
@@ -166,6 +192,7 @@ func _ready() -> void:
 	if lane_points.size() > 0:
 		_hq.position = lane_points[lane_points.size() - 1]
 
+	build_level_plan()
 	_start_timers()
 	print("ARENA_START " + JSON.stringify({
 		"lane_points": lane_points.size(),
@@ -179,6 +206,10 @@ func _ready() -> void:
 		"lane_clearance_px": lane_clearance_px,
 		"tower_scene": tower_scene != null,
 		"gold": _ledger.gold(),
+		"level_index": level_index,
+		"elite": elite_level,
+		"plan": _plan_summary,
+		"autostart_waves": autostart_waves,
 		"engine": Engine.get_version_info()["string"],
 		"display": DisplayServer.get_name(),
 	}))
@@ -186,12 +217,21 @@ func _ready() -> void:
 	# One enemy immediately: a short run then observes a full walk plus at least
 	# one clean despawn, instead of starting idle for one spawn interval.
 	spawn_walker()
+	if autostart_waves:
+		start_level()
 
 
 func _exit_tree() -> void:
 	# Covers the `--quit-after` invocation above, where the engine ends the loop
 	# without the arena being asked to.
 	_emit_summary()
+
+
+## Wave pacing only. No policy lives here: what a wave *is* belongs to the plan,
+## what it *does* belongs to the director, and the phase belongs to this node.
+func _physics_process(delta: float) -> void:
+	if _director != null and _director.is_active():
+		_director.tick(delta)
 
 
 func _parse_args() -> void:
@@ -275,6 +315,30 @@ func walkers() -> Array[LaneWalker]:
 
 func _on_spawn_timer_timeout() -> void:
 	spawn_walker()
+
+
+## Instantiates the scene's enemy with one wave line's stats applied. `stats()`
+## is keyed by `LaneWalker`'s export names, so one scene stands for every enemy
+## kind until per-kind art exists - and this is the director's only way onto the
+## lane, so wave enemies are wired exactly like the legacy ones.
+func spawn_from_entry(entry: WaveEntry) -> LaneWalker:
+	if entry == null:
+		push_error("ARENA_ERROR a wave line is null; nothing can spawn")
+		return null
+	if enemy_scene == null:
+		push_error("ARENA_ERROR no enemy_scene is wired; nothing can spawn")
+		return null
+	var walker := enemy_scene.instantiate() as LaneWalker
+	if walker == null:
+		push_error("ARENA_ERROR enemy_scene root is not a LaneWalker")
+		return null
+	# Before `adopt_walker`, because `LaneWalker.setup()` seeds health from
+	# `max_health` and the speed is used from the first physics tick.
+	var stats := entry.stats()
+	for key in stats:
+		walker.set(key, stats[key])
+	adopt_walker(walker)
+	return walker
 
 
 ## A kill pays the run. The walker reports its own reward; the arena owns the
@@ -405,6 +469,92 @@ func _set_phase(next_phase: Phase) -> void:
 	print("ARENA_PHASE " + JSON.stringify({
 		"phase": phase_name(),
 		"walkers": _live_walker_count(),
+		"gold": _ledger.gold() if _ledger != null else _gold_shadow,
+	}))
+
+
+# --- waves -----------------------------------------------------------------
+
+## Builds this level's waves from `level_index` and `elite_level`, and hands them
+## to a fresh director. Public because both the demo and the (future) run loop
+## change `level_index` and then ask for a new plan; the arena never rebuilds a
+## plan behind the caller's back.
+func build_level_plan() -> void:
+	_plan = WavePlan.new()
+	var waves := _plan.build(level_index, elite_level)
+	_plan_summary = _plan.describe_level(waves)
+	_director = WaveDirector.new()
+	_director.setup(spawn_from_entry)
+	_director.set_plan(waves)
+	_director.wave_completed.connect(_on_wave_completed)
+	_director.level_completed.connect(_on_level_completed)
+	_waves_cleared = 0
+
+
+## Starts the level's first wave. The arena's own entry point for "this level has
+## begun", so no caller has to know the plan's index arithmetic.
+func start_level() -> bool:
+	return start_wave(0)
+
+
+## Starts one wave of the plan (0-based) and locks the build phase for its
+## duration. False when the director refused it - the reason is already printed,
+## and the phase is untouched, so a refused wave cannot leave the player unable
+## to build.
+func start_wave(index: int) -> bool:
+	if _director == null:
+		_refuse("wave", "the level has no wave plan")
+		return false
+	if not _director.start_wave(index):
+		return false
+	begin_wave()
+	return true
+
+
+func wave_plan() -> WavePlan:
+	return _plan
+
+
+func wave_director() -> WaveDirector:
+	return _director
+
+
+func level_wave_count() -> int:
+	return _director.wave_count() if _director != null else 0
+
+
+func waves_cleared() -> int:
+	return _waves_cleared
+
+
+func plan_summary() -> Dictionary:
+	return _plan_summary.duplicate()
+
+
+func _on_wave_completed(wave: WaveDefinition) -> void:
+	# The wave is over when its queue is empty and its walkers are gone, so the
+	# build phase returns here and nowhere else. That is the whole point of the
+	# phase lock: between waves the player plans freely.
+	end_wave()
+	_waves_cleared += 1
+	print("ARENA_WAVE " + JSON.stringify({
+		"wave": wave.number,
+		"cleared": _waves_cleared,
+		"waves": level_wave_count(),
+		"units": wave.unit_count(),
+		"health": wave.total_health(),
+		"phase": phase_name(),
+		"hq": _hq_health,
+	}))
+
+
+func _on_level_completed() -> void:
+	print("ARENA_LEVEL_CLEAR " + JSON.stringify({
+		"level_index": level_index,
+		"elite": elite_level,
+		"waves": level_wave_count(),
+		"phase": phase_name(),
+		"hq": _hq_health,
 		"gold": _ledger.gold() if _ledger != null else _gold_shadow,
 	}))
 
@@ -666,4 +816,9 @@ func _emit_summary() -> void:
 		"gold": _gold_shadow,
 		"towers": _towers.size(),
 		"refusals": _refusals,
+		"level_index": level_index,
+		"elite": elite_level,
+		"waves": level_wave_count(),
+		"waves_cleared": _waves_cleared,
+		"wave": (_director.current_index() + 1) if _director != null else 0,
 	}))
