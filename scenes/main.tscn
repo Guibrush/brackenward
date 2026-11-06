@@ -1,25 +1,50 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://src/gameplay/arena.gd" id="1_arena"]
 [ext_resource type="PackedScene" path="res://scenes/hq.tscn" id="2_hq"]
 [ext_resource type="PackedScene" path="res://scenes/enemy_walker.tscn" id="3_enemy"]
+[ext_resource type="Script" path="res://src/gameplay/build_slot.gd" id="4_slot"]
+[ext_resource type="PackedScene" path="res://scenes/tower.tscn" id="5_tower"]
+[ext_resource type="Script" path="res://src/gameplay/gold_ledger.gd" id="6_ledger"]
 
 [node name="Arena" type="Node2D"]
 script = ExtResource("1_arena")
 hq_path = NodePath("HQ")
 enemy_scene = ExtResource("3_enemy")
+tower_scene = ExtResource("5_tower")
+ledger_path = NodePath("Wallet")
 
 [node name="Board" type="Polygon2D" parent="."]
 z_index = -1
 color = Color(0.22745, 0.2902, 0.22745, 1)
 polygon = PackedVector2Array(0, 0, 960, 0, 960, 540, 0, 540)
 
+[node name="Wallet" type="Node" parent="."]
+script = ExtResource("6_ledger")
+
 [node name="HQ" parent="." instance=ExtResource("2_hq")]
 position = Vector2(880, 270)
 
 [node name="TowerSlot" type="Node2D" parent="."]
 position = Vector2(480, 170)
+script = ExtResource("4_slot")
 
 [node name="Slot" type="Polygon2D" parent="TowerSlot"]
+color = Color(0.5451, 0.5098, 0.56863, 0.55)
+polygon = PackedVector2Array(-14, -14, 14, -14, 14, 14, -14, 14)
+
+[node name="TowerSlot2" type="Node2D" parent="."]
+position = Vector2(300, 170)
+script = ExtResource("4_slot")
+
+[node name="Slot" type="Polygon2D" parent="TowerSlot2"]
+color = Color(0.5451, 0.5098, 0.56863, 0.55)
+polygon = PackedVector2Array(-14, -14, 14, -14, 14, 14, -14, 14)
+
+[node name="TowerSlot3" type="Node2D" parent="."]
+position = Vector2(640, 380)
+script = ExtResource("4_slot")
+
+[node name="Slot" type="Polygon2D" parent="TowerSlot3"]
 color = Color(0.5451, 0.5098, 0.56863, 0.55)
 polygon = PackedVector2Array(-14, -14, 14, -14, 14, 14, -14, 14)
