@@ -24,3 +24,11 @@ desktop.ini
 
 # Local tooling scratch
 .tmp/
+
+# In-place mutation guard - never commit these (T-0031)
+#
+# A mutator writes the sentinel before touching a file and restore.ps1 removes it
+# only after every recorded SHA-256 verifies. Ignoring both paths is what makes a
+# mutation uncommittable; scripts/gate/mutation.ps1 is what makes it loud.
+.mutation-active
+.mutation-backup/

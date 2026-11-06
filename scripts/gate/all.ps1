@@ -34,6 +34,48 @@ Write-Host ('Running gates G0..' + $Gate)
 Write-Host ''
 
 $rows = @()
+$aborted = $false
+
+# Process precondition, not a gate criterion, and therefore not part of the plan
+# table below: a tree with an in-place mutation in progress is not the tree the
+# gates were written to describe, so the suite stops before evaluating anything.
+# Reporting twelve green criteria about content nobody has seen is worse than
+# reporting nothing (T-0031, scripts/gate/mutation.ps1). Its exit code is handled
+# by the same summary and the same exit-code meanings as every other script.
+$preName = 'mutation'
+if ($Skip -contains $preName) {
+    $rows += [pscustomobject]@{ Gate = '--'; Script = $preName; Code = 0; Note = 'skipped' }
+    Write-Host ('  -- ' + $preName.PadRight(12) + ' skipped')
+} else {
+    $prePath = Join-Path $PSScriptRoot ($preName + '.ps1')
+    if (-not (Test-Path $prePath)) {
+        $rows += [pscustomobject]@{ Gate = '--'; Script = $preName; Code = 3; Note = 'script missing' }
+        Write-Host ('  -- ' + $preName.PadRight(12) + ' script missing')
+        $aborted = $true
+    } else {
+        $pr = Invoke-Native -Exe 'powershell' -Arguments @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $prePath)
+        $preNote = ''
+        if ($pr.ExitCode -eq 0) { $preNote = 'pass' }
+        elseif ($pr.ExitCode -eq 1) { $preNote = 'fail' }
+        elseif ($pr.ExitCode -eq 3) { $preNote = 'blocked' }
+        else { $preNote = 'error ' + $pr.ExitCode }
+        $rows += [pscustomobject]@{ Gate = '--'; Script = $preName; Code = $pr.ExitCode; Note = $preNote }
+        Write-Host ('  -- ' + $preName.PadRight(12) + ' ' + $preNote)
+
+        if ($pr.ExitCode -ne 0) {
+            # The child's own lines are the evidence — for a sentinel that is the
+            # quoted contents, for anything else the failing assertion. Reducing it
+            # to one word would throw away the only thing the operator needs.
+            foreach ($line in ($pr.Output -split "\r?\n")) {
+                if ($line.Trim() -ne '') { Write-Host ('     ' + $line) }
+            }
+            $aborted = $true
+        }
+    }
+}
+Write-Host ''
+
+if (-not $aborted) {
 foreach ($g in $order[0..$upto]) {
     foreach ($script in $plan[$g]) {
         if ($Skip -contains $script) {
@@ -56,6 +98,7 @@ foreach ($g in $order[0..$upto]) {
         Write-Host ('  ' + $g + ' ' + $script.PadRight(12) + ' ' + $note)
     }
 }
+}
 
 $fails = @($rows | Where-Object { $_.Code -eq 1 }).Count
 $blocks = @($rows | Where-Object { $_.Code -eq 3 }).Count
@@ -63,7 +106,11 @@ $errors = @($rows | Where-Object { $_.Code -notin @(0, 1, 3) }).Count
 
 Write-Host ''
 Write-Host ('Summary: ' + $rows.Count + ' scripts, ' + $fails + ' fail, ' + $blocks + ' blocked, ' + $errors + ' error')
-Write-Host 'Signature is still required from the human.'
+if ($aborted) {
+    Write-Host 'ABORTED by the mutation precondition - no gate criterion was evaluated against this tree.'
+} else {
+    Write-Host 'Signature is still required from the human.'
+}
 
 if ($fails -gt 0 -or $errors -gt 0) { exit 1 }
 if ($blocks -gt 0) { exit 3 }
