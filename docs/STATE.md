@@ -55,8 +55,12 @@ begun.
   `stuck == 0`, ≥298 s of 300) and `tests.ps1` (runs real cases, names failures, treats
   a parse error as failure). Both demonstrated failing on purpose.
 - **N/A counted**: every gate summary prints `pass / fail / blocked / n/a`.
-- **Full G2 run**: 12 scripts, **0 fail, 1 blocked** (G1 repo, CI mid-run). G2.1, G2.3,
-  G2.4, G2.5, G2.7 and G2.9 all pass.
+- **Failure demonstrations are copy-based**: `prove-failure.ps1` mutates a throwaway
+  copy and deletes it in `finally`; `mutation.ps1` fails the suite if
+  `.mutation-active` exists; `restore.ps1` restores from a recorded backup and
+  re-verifies SHA-256. In-place mutation is now structurally avoidable.
+- **Full G2 run**: 13 scripts, 0 fail, 0 blocked (the earlier 1-blocked run was
+  `G1 repo` while CI was still settling on the merge commit; `repo.ps1` is 5/5 now).
 - **Spend to date**: 12 PixelLab generations of 40 used (28 free remain), credits
   untouched at $10. ElevenLabs: 3 SFX passes and 1 music pass consumed.
 
