@@ -74,10 +74,14 @@ begun.
 
 | Blocker | Waiting on |
 | --- | --- |
-| Canvas-fill rule is wrong, not the art | **human**: redefining fill as height ≥ 85% and width ≥ tile width (32 px) would accept candidate 2 (38×56); otherwise another probe costs generations |
+| Batch music | ADR-0005 accepted **and** implemented (loop-seam measurement) |
 | G2.3 is measured on a synthetic scene | the real scene must be measured at its own entity count before the gate is signed |
-| Batch music | ADR-0005 must be accepted and implemented |
-| G1 repo blocked in the last full run | CI was still in progress on the merge commit; re-run `all.ps1 -Gate G2` once it settles |
+| G1 repo in a full run | only when CI is mid-run on the merge commit; `repo.ps1` is 5/5 once settled |
+
+**Batch art is unblocked.** `art/director` accepted
+`assets/art/towers/arrow/idle/south.png` as the quality bar (36×57, 10 tones, zero
+off-palette, fill rule met) with two rules for the batch: fill enclosed alpha holes,
+and keep the 1px ink on the whole outer silhouette including recesses.
 
 ## Known divergences
 
