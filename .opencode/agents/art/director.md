@@ -3,7 +3,7 @@ description: Reviews art direction and style conformance. Use when sprites, tile
 mode: subagent
 model: openrouter/google/gemini-3.7-flash#high
 color: "#e0a060"
-steps: 18
+steps: 40
 permissions:
   - action: edit
     resource: "*"

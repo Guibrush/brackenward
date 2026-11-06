@@ -3,7 +3,7 @@ description: Designs rules, economy, progression, and tuning tables. Use when a 
 mode: subagent
 model: deepseek/deepseek-flash#high
 color: "#b06fd8"
-steps: 24
+steps: 40
 permissions:
   - action: edit
     resource: "*"

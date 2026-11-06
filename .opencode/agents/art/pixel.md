@@ -3,7 +3,7 @@ description: Generates pixel-art assets - sprites, tilesets, UI, VFX - through P
 mode: subagent
 model: deepseek/deepseek-flash#high
 color: "#d88a4a"
-steps: 34
+steps: 40
 permissions:
   - action: edit
     resource: "*"

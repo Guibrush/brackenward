@@ -70,8 +70,18 @@ begun.
   Only the scene and the gates that will check them.
 - **Batch art and batch audio**: both remain blocked on their probes.
 
-## Blockers
+## Metrics
 
+| Metric | Baseline | Target | How it is counted |
+| --- | --- | --- | --- |
+| Dispatch cap-hit rate | **70%** — 7 of the last 10 builder dispatches ended at "maximum steps reached" (2026-11-06) | **under 10%** | envelopes whose final line is a step-cap notice |
+
+On 2026-11-06 the builder caps were raised from 24–26 to 40, with an 8-step verification
+reserve written into `AGENTS.md` and a split rule keyed on files *and* demonstrations. The
+rate is re-measured against that baseline; the next decision on caps uses this number
+rather than an impression.
+
+## Blockers
 | Blocker | Waiting on |
 | --- | --- |
 | Batch music | ADR-0005 accepted **and** implemented (loop-seam measurement) |
