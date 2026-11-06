@@ -29,6 +29,28 @@ small to earn a lesson on its own, append it to an existing one rather than drop
 it. The gate retro then becomes a review of lessons already recorded, not the first
 time anyone writes them down.
 
+## Failure demonstrations
+
+A failure demonstration runs through `scripts/gate/prove-failure.ps1`, which mutates a
+throwaway **copy** of the project, verifies the gate resolved the copy as its root, and
+deletes the copy in `finally` — including on exception.
+
+In-place mutation is reserved for cases that cannot be copied. It requires
+`.mutation-active` written before the first edit, a recorded backup with the original
+SHA-256, and a verified `scripts/gate/restore.ps1` before any commit. A sentinel left
+behind fails the whole suite, which is deliberate: a mutated tree must never pass a gate
+or reach a commit.
+
+Demonstrations are never skipped to save steps. They have found every real gate bug so
+far; an undemonstrated failure path is a claim, not evidence (L-021).
+
+## Art tasks
+
+Every file an art task creates is either **registered in `art/manifest.json`** (with
+licence, prompt, generator and spend) or **deleted** before the task is marked done. A
+task that leaves unregistered images on disk is not finished, even if the gate passes
+over them.
+
 ## Dispatch table
 
 The roster is defined by this project's pack. `studio-lead` routes from this table

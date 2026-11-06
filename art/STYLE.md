@@ -15,6 +15,7 @@ be checked mechanically.
 | Tile size | 32×32 | A 30×18 board at 32px is 960×576, shown at 2× in a 1080p window. 16px would force 4× zoom and leave no room for three tower tiers to read |
 | Tower canvas | 64×64 | Towers need height and a visible three-tier difference; centred, feet on the tile |
 | Character canvas | 32×32 enemies, 96×96 bosses | Enemies match the tile so pathing and silhouettes stay honest; bosses must dwarf the board without breaking the grid |
+| Canvas fill | Height ≥ 85% of the canvas, width ≥ 32 px (one tile) | Measured on the pad-free content box (L-034). A sprite that fills less reads squat and fails the readability pillar |
 | Palette | 16, fixed: `#1b1a26` `#2e2a3b` `#4a3b52` `#6b4a5a` `#8c5a4a` `#b06a3b` `#d08a4a` `#edb05f` `#f6d9a0` `#fff4d6` `#2f4a55` `#5b8a8c` `#3a4a3a` `#8b8291` `#6f8f4a` `#9ab55c` | Warm dusk, three greens, one cool grey. Kingdom Rush's warmth without its saturation |
 | Max colours per sprite | 12 of the 16 | Leaves 4 shared accent colours across the set |
 | Outline | 1px, single colour `#1b1a26`, **selective** | Full outlining turns 32px sprites to mush; inner detail stays lineless |
