@@ -3,7 +3,7 @@ description: Owns the build and tooling layer - gate scripts, import pipeline, e
 mode: subagent
 model: deepseek/deepseek-flash#high
 color: "#5f9e7a"
-steps: 26
+steps: 40
 permissions:
   - action: edit
     resource: "*"

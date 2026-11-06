@@ -3,7 +3,7 @@ description: Writes story, dialogue, lore, tone, and naming. Use when the game n
 mode: subagent
 model: deepseek/deepseek-flash#high
 color: "#d8a0b8"
-steps: 24
+steps: 40
 permissions:
   - action: edit
     resource: "*"

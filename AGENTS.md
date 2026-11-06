@@ -29,6 +29,22 @@ small to earn a lesson on its own, append it to an existing one rather than drop
 it. The gate retro then becomes a review of lessons already recorded, not the first
 time anyone writes them down.
 
+## Dispatch discipline
+
+Builders (`eng/*`, `design/*`, `art/*`) get **40 steps**. Everyone else keeps their own cap; the archivist stays at 20.
+
+**Reserve the last 8 steps** for verification and the envelope. If you reach that reserve
+with work unfinished: stop writing, verify what exists, and return `VERDICT: revise`
+listing what parses, what is unverified, and what remains. Never be cut off mid-write — a
+deliberate partial with an honest report is usable; a truncated one is wasted.
+
+**Split a brief** when it needs more than **two files or more than one demonstration**.
+File count alone is the wrong proxy: demonstrations are what consume steps. A brief that
+still hits 40 is evidence the brief was too big, and that is recorded rather than repeated.
+
+**Cap-hit rate is a metric**, not a feeling: target under 10%, with the current rate
+recorded in `docs/STATE.md` so the next decision on caps has evidence.
+
 ## Failure demonstrations
 
 A failure demonstration runs through `scripts/gate/prove-failure.ps1`, which mutates a

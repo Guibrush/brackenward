@@ -3,7 +3,7 @@ description: Implements engine-level systems in GDScript - save/load, input mapp
 mode: subagent
 model: deepseek/deepseek-flash#high
 color: "#3d8bb8"
-steps: 26
+steps: 40
 permissions:
   - action: edit
     resource: "*"

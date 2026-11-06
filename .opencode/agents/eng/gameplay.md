@@ -3,7 +3,7 @@ description: Implements player mechanics, controls, camera, and UI scenes in GDS
 mode: subagent
 model: deepseek/deepseek-flash#high
 color: "#4a9fd8"
-steps: 26
+steps: 40
 permissions:
   - action: edit
     resource: "*"

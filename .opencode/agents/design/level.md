@@ -3,7 +3,7 @@ description: Designs level layout, encounter pacing, and spatial flow. Use when 
 mode: subagent
 model: deepseek/deepseek-flash#high
 color: "#c98ad8"
-steps: 24
+steps: 40
 permissions:
   - action: edit
     resource: "*"
