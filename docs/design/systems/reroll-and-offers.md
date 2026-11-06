@@ -7,6 +7,14 @@
 
 Owner: `design/systems`. As of T-0035, 2026-11-06.
 
+> **PARTLY SUPERSEDED AT T-0038.** The **offer-set** reroll ladder (30 / 45 / 60),
+> the offer weights and the perks below still stand, and the ladder now applies to
+> **event nodes and the starting loadout** (`nodes.md`). §Store is superseded
+> entirely by `store.md` (five tier-weighted slots, a per-site reroll toggle, its
+> own 25 / 40 / 55 ladder and a second-half guarantee). This file's reroll ladder
+> governs **offer sets only**; `store.md`'s governs **store visits**. A follow-up
+> `design/systems` task owns moving the offer set onto the node model.
+
 - **Number home.** This file owns offer counts, offer weights, reroll prices,
   perk values and store prices. Item effects live in `items.md`; tower and
   upgrade costs in `towers.md`; gold income in `economy.md`.
