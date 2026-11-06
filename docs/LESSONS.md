@@ -7,50 +7,44 @@ Entries L-001 … L-008 (2026-11-02 → 2026-11-03) live in
 `docs/lessons/archive-G0.md`; entries L-009 … L-012 (2026-11-04) live in
 `docs/lessons/archive-G1.md`; entries L-013 … L-014 (2026-11-04) live in
 `docs/lessons/archive-2026-11-04.md`; entries L-015 … L-031 (2026-11-05) live
-in `docs/lessons/archive-2026-11-05.md`. Their rules remain in force.
+in `docs/lessons/archive-2026-11-05.md`; entries L-032 … L-033 (2026-11-05)
+live in `docs/lessons/archive-2026-11-06.md`. Their rules remain in force.
 
-## L-032 — 2026-11-05 — A transient vendor outage presented as a red gate on a pull request
-Situation: PR #12 failed CI twice; the first failure was not its contents.
-The "Install Godot 4.7.2" step runs `Invoke-WebRequest` against the GitHub
-release asset with no retry (`.github/workflows/gates.yml:65` — the workflow
-contains no retry anywhere), the runner got `504 Gateway Time-out`, `gh pr
-checks 12` reported `gates fail` and `mergeStateStatus` went `BLOCKED`. A
-re-run with no code change produced `gates pass 30s` and a clean merge.
-Worked: reading the failing step's log identified the fault as external, and
-the re-run remedied it.
-Failed: a red gate whose only distinction between "our code is broken" and
-"the vendor was down" lives inside a step log; an unretimed single external
-fetch sits on the critical path of the gate.
-Rule: every external fetch on a gate's critical path must make transient
-failure distinguishable from a code failure — a small bounded retry (e.g. 3
-attempts) plus a step-level marker for retryable errors — so a red gate can
-be classified without opening logs; re-running the job is an acceptable
-remedy only when the failure is provably external (vendor error status in
-the step log), never for a gate that failed on its own checks.
-Evidence: `.github/workflows/gates.yml:65` (`Invoke-WebRequest`, no retry in
-the workflow); `gh run list --branch task/T-0016-art-probe` showing run
-42046676819 pass 35s after the failed run; PR #12 `mergeStateStatus: BLOCKED`
-then clean on re-run.
+## L-036 — 2026-11-06 — Identity-preserving img2img preserves the defect too
+Situation: T-0032 tried to regenerate the arrow tower without the flat-cut
+crown by feeding the rejected sprite as the img2img reference. At strength 220
+the result was clean (36×57, 10 tones, 0 off-palette, 0 holes) but reproduced
+the defect exactly: flat crown, row widths 13, 18, 25, 26, 33, 36, 36, 36. At
+strength 105 identity broke instead (jagged 1-px bumps; body and door drifted).
+Worked: nothing, for the defect itself — the constraint could not be expressed
+through a reference image at any strength.
+Failed: treating a structural defect as something a reference-faithful pass
+will fix; the reference it is faithful to contains the defect.
+Rule: when regenerating to fix a structural defect, express the fix as a
+constraint the generator can satisfy (or author it directly in post); do not
+expect a reference image to correct itself — high strength copies the flaw,
+low strength abandons the identity.
+Evidence: `tasks/T-0032.md` (regen brief); `art/manifest.json`
+`tower-arrow-idle-south` entry; T-0032 attempt measurements (strength 220:
+36×57, widths 13/18/25/26/33/36/36/36; strength 105: identity drift).
 
-## L-033 — 2026-11-05 — "Code written" is not "code runs"
-Situation: a dispatch returned with `src/gameplay/arena.gd` calling an
-undeclared identifier (`hq` where the member was `_hq`), so every run of the
-scene failed to load. The same dispatch also left a scene property pointing at
-a renamed export. Nothing had been executed; the envelope described the files
-as written.
-Worked: a follow-up pass ran `--check-only` per script, found
-`Parse Error: Identifier "hq" not declared in the current scope`, and the
-scene then ran headless clean.
-Failed: accepting "files created" as a delivery when no script had been parsed
-and no scene had been loaded.
-Rule: no GDScript deliverable is complete without pasted
-`--check-only --script res://…` output for every script it touched, and a
-scene-level run for anything that claims a scene works. A brief that allows
-otherwise is defective; this is the brief's job, not the reviewer's.
-Evidence: `src/gameplay/arena.gd:188` before fix; `--check-only` exit 1 with
-the parse error; commits `ef84fec`/`0bd657b`. See L-005 (the check exists) and
-L-017 (delivery steps get skipped) — this is the case where the *first* step
-was skipped.
+## L-037 — 2026-11-06 — A shape defect needs a named measurement, not a similarity check
+Situation: the strength-220 regeneration "looked plausible at a glance" and
+would have been accepted as the same tower; only the 8-row top-width profile
+required by `tasks/T-0032.md` DoD item 1 exposed that it had reproduced the
+flat cut. The brief had asked for that profile, which is the only reason the
+defect was caught rather than shipped.
+Worked: the brief's numeric DoD row-width profile — a check a glance cannot
+perform.
+Failed: visual similarity as the acceptance test for a shape defect; it cannot
+distinguish the defect from the fix.
+Rule: when a defect is measurable, the definition of done must name the
+measurement that distinguishes the defect from the fix (e.g. the 8-row
+top-width profile); a "looks the same" check is never evidence for or against
+a shape defect.
+Evidence: `tasks/T-0032.md` DoD item 1; current
+`assets/art/towers/arrow/idle/south.png` first opaque row is a 12 px bar at
+y=7 (verified 2026-11-06) — the flat crown shipped anyway.
 
 ## L-034 — 2026-11-05 — A generated sprite's raw bounding box is meaningless
 Situation: two tower candidates measured an identical **48×58** raw bounding
