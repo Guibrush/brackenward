@@ -7,6 +7,16 @@
 
 Owner: `design/systems`. As of T-0035, 2026-11-06.
 
+> **PARTLY SUPERSEDED AT T-0038.** The effects, costs and global caps below still
+> stand. Three things no longer do, and `towers.md` wins where they disagree:
+> §The slot model's "unequipping is free and returns the item to the inventory"
+> (applied upgrades are now **permanent for the run**, and a replaced upgrade is
+> destroyed), its inventory-size row (see `towers.md` `inventory_cap`), and
+> §Acquisition's "store" row (the store is now `store.md`, five tier-weighted
+> slots). Upgrades also now have **3 tiers** (`towers.md` §The two tier axes,
+> ×1.00 / ×1.55 / ×2.10 on the effect, penalty flat), which this catalogue has not
+> yet been re-expressed for. A follow-up `design/systems` task owns that pass.
+
 - **Number home.** This file owns item effects, slot rules, stacking rules and
   the global modifier caps. Dropping rates live in `reroll-and-offers.md`;
   tower base stats in `towers.md`.
