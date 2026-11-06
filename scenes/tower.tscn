@@ -1,0 +1,19 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/gameplay/tower.gd" id="1_tower"]
+
+[node name="Tower" type="Node2D"]
+script = ExtResource("1_tower")
+
+[node name="Base" type="Polygon2D" parent="."]
+color = Color(0.10588, 0.10196, 0.14902, 1)
+polygon = PackedVector2Array(-14, -14, 14, -14, 14, 14, -14, 14)
+
+[node name="Body" type="Polygon2D" parent="."]
+color = Color(0.35686, 0.54118, 0.54902, 1)
+polygon = PackedVector2Array(-11, -11, 11, -11, 11, 11, -11, 11)
+
+[node name="TierMark" type="Polygon2D" parent="."]
+visible = false
+color = Color(0.81569, 0.54118, 0.2902, 1)
+polygon = PackedVector2Array(-4, -4, 4, -4, 4, 4, -4, 4)
