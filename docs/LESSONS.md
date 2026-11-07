@@ -8,43 +8,9 @@ Entries L-001 … L-008 (2026-11-02 → 2026-11-03) live in
 `docs/lessons/archive-G1.md`; entries L-013 … L-014 (2026-11-04) live in
 `docs/lessons/archive-2026-11-04.md`; entries L-015 … L-031 (2026-11-05) live
 in `docs/lessons/archive-2026-11-05.md`; entries L-032 - L-035 (2026-11-05)
-live in `docs/lessons/archive-2026-11-06.md`. Their rules remain in force.
-
-## L-036 — 2026-11-06 — Identity-preserving img2img preserves the defect too
-Situation: T-0032 tried to regenerate the arrow tower without the flat-cut
-crown by feeding the rejected sprite as the img2img reference. At strength 220
-the result was clean (36×57, 10 tones, 0 off-palette, 0 holes) but reproduced
-the defect exactly: flat crown, row widths 13, 18, 25, 26, 33, 36, 36, 36. At
-strength 105 identity broke instead (jagged 1-px bumps; body and door drifted).
-Worked: nothing, for the defect itself — the constraint could not be expressed
-through a reference image at any strength.
-Failed: treating a structural defect as something a reference-faithful pass
-will fix; the reference it is faithful to contains the defect.
-Rule: when regenerating to fix a structural defect, express the fix as a
-constraint the generator can satisfy (or author it directly in post); do not
-expect a reference image to correct itself — high strength copies the flaw,
-low strength abandons the identity.
-Evidence: `tasks/T-0032.md` (regen brief); `art/manifest.json`
-`tower-arrow-idle-south` entry; T-0032 attempt measurements (strength 220:
-36×57, widths 13/18/25/26/33/36/36/36; strength 105: identity drift).
-
-## L-037 — 2026-11-06 — A shape defect needs a named measurement, not a similarity check
-Situation: the strength-220 regeneration "looked plausible at a glance" and
-would have been accepted as the same tower; only the 8-row top-width profile
-required by `tasks/T-0032.md` DoD item 1 exposed that it had reproduced the
-flat cut. The brief had asked for that profile, which is the only reason the
-defect was caught rather than shipped.
-Worked: the brief's numeric DoD row-width profile — a check a glance cannot
-perform.
-Failed: visual similarity as the acceptance test for a shape defect; it cannot
-distinguish the defect from the fix.
-Rule: when a defect is measurable, the definition of done must name the
-measurement that distinguishes the defect from the fix (e.g. the 8-row
-top-width profile); a "looks the same" check is never evidence for or against
-a shape defect.
-Evidence: `tasks/T-0032.md` DoD item 1; current
-`assets/art/towers/arrow/idle/south.png` first opaque row is a 12 px bar at
-y=7 (verified 2026-11-06) — the flat crown shipped anyway.
+live in `docs/lessons/archive-2026-11-06.md`; entries L-036 - L-037
+(2026-11-06) live in `docs/lessons/archive-2026-11-07.md`. Their rules remain
+in force.
 
 ## L-038 — 2026-11-06 — A passing proxy metric is not appearance evidence
 Situation: after the flat-crown rejection, a metric was invented for the fix:
@@ -91,3 +57,27 @@ human's eye on the image before it ships (per L-038; second case today).
 Evidence: tasks/T-0034.md (status: rejected); human rejection of both
 passes: "It added straight lines to the faces of the tower that are in
 perspective. It is wrong."; art/manifest.json tower-arrow-idle-south entry.
+
+## L-040 — 2026-11-07 — A performance gate must record the machine's display conditions
+Situation: G2.3 passed for weeks at 651 fps / 2.66 ms p99, then went red
+(57.7-61 fps, p50 ~17 ms, p99 32.9 ms) with no code change: `scripts/perf/*` and
+`scripts/gate/perf.ps1` untouched since commit 08b9bed, `project.godot` since
+7be2990. The cause was the machine, not the code: the display now runs at 59 Hz
+(Win32_VideoController: RTX 2070 SUPER, current/max refresh 59) with a Parsec
+virtual display adapter present, so even with vsync off frame delivery paces to
+one ~17 ms refresh period and frame misses blow the 20 ms p99 ceiling. The
+gate's output names the renderer and viewport (`scripts/gate/perf.ps1:147,180`)
+but not the refresh rate, so a capped machine was indistinguishable from a
+regression until someone inspected the display by hand.
+Worked: comparing git history for the benchmark and gate script to rule out a
+code change, then measuring the display directly.
+Failed: the gate recording renderer and resolution but not the refresh rate or
+the presence of a virtual display adapter; the red result carried no provenance.
+Rule: a performance gate must record the measurement conditions alongside the
+numbers — renderer, resolution, refresh rate, and whether a virtual display
+adapter is in the path — so a red result can be attributed to the code or to the
+environment from the gate output alone, without a manual investigation.
+Evidence: scripts/gate/perf.ps1:89,147,180 (no refresh rate anywhere); git log
+--oneline -- scripts/perf scripts/gate/perf.ps1 = 08b9bed, nothing later;
+Win32_VideoController 2026-11-07: RTX 2070 SUPER, current/max refresh 59; Parsec
+Virtual Display Adapter present.
