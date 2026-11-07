@@ -1,31 +1,21 @@
-extends SceneTree
+extends "res://scripts/tests/lib/suite.gd"
 
-## Headless proof for `src/systems/offers.gd` and `src/systems/store.gd` — T-0042.
+## Headless proof for `src/systems/offers.gd` and `src/systems/store.gd` — T-0042,
+## now run by the suite instead of by hand.
 ##
-##     godot --headless --path . --script res://src/systems/tests/offers_selftest.gd
+##     powershell -NoProfile -File scripts/tests/run.ps1 -Filter systems_offers
 ##
-## Pure logic: no scene, no frames, every case inside `_initialize`.
+## Pure logic: no scene and no frames, so this case replaces the harness's scene
+## boot (`_boot`) with a direct `run_case()`. Every assertion below is the one the
+## selftest at the old `src/systems/tests/offers_selftest.gd` made, unchanged.
+## The harness owns the accounting: inherited `check()` / `check_eq_int()` count
+## and record, and the inherited `_finish()` prints the single `TEST_RESULT` line
+## and sets the exit code, failing a case that records no checks.
 ##
-## Prints, in this order:
-##   OFFERS_CASE {name}       which case is running
-##   STORE_HALVES {json}      the 200 + 200 store observation (DoD 3)
-##   STORE_TOGGLE {json}      reroll switches, both directions (DoD 4)
-##   STORE_SIZEREFUSAL {json} an oversized draw refused, not truncated (DoD 5)
-##   STORE_SEAM {json}        both ladders through a caller-supplied seam (DoD 6)
-##   STORE_RULES {json}       duplicates, no-repeat, prices, purchases
-##   OFFER_SET {json}         the offer set used directly, with its own ladder
-##   STORE_DETERMINISM {json} same seed = same shelf, before and after rerolls
-##   STORE_HALF_RULE {json}   second_half is arithmetic, across run lengths
-##   STORE_REFUSAL ...        refusal sentences, verbatim
-##   OFFERS_SELFTEST {json}   exactly one, last; carries checks and failures
-##
-## The exit code alone is not evidence (L-035): `OFFERS_SELFTEST` carries
-## `checks`, `failed` and the failure strings, and each failure also prints an
-## error line. Exit 0 = every check passed.
-##
-## This file lives under `src/systems/tests/` because `scripts/**` belongs to
-## eng/tools. The assertions are already in the suite's shape, so moving them into
-## `scripts/tests/cases/` is a delete-and-wire, not a rewrite.
+## The case reports the same 94 checks the selftest reported: the selftest's
+## closing "at least one check ran" tally is kept at the end of `run_case()` (see
+## the comment there) instead of being replaced by the harness's uncounted
+## equivalent.
 ##
 ## The catalogue below is **fixture data**, not game data: `store.md`'s price
 ## table, six towers and twenty upgrades, so the counts mean something. The system
@@ -92,11 +82,21 @@ class Wallet:
 		return total
 
 var _catalogue_entries: Array = []
-var _checks: int = 0
-var _failures: Array[String] = []
 
 
-func _initialize() -> void:
+func case_name() -> String:
+	return "offers and stores: halves, reroll seams, prices and determinism hold"
+
+
+## Pure logic, so there is no arena to boot: this replaces the harness's scene
+## load with the case itself. The single result line, the exit code and the
+## zero-check guard are still the base's `_finish()`.
+func _boot() -> void:
+	run_case()
+	_finish()
+
+
+func run_case() -> void:
 	_catalogue_entries = _build_catalogue()
 	_case_two_hundred_stores_by_half()
 	_case_toggle_independence()
@@ -106,7 +106,10 @@ func _initialize() -> void:
 	_case_offer_set()
 	_case_determinism()
 	_case_half_arithmetic()
-	_finish()
+	# The selftest's own closing tally, kept so the count is unchanged. The
+	# harness also fails a case that recorded no checks, so this is a second
+	# guard rather than the only one.
+	check(_checks >= MIN_CHECK_COUNT, "at least one check ran")
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +166,7 @@ func _count_half(first_layer: int, last_layer: int, visits: int, seed_offset: in
 		)
 		var opened: Dictionary = store.draw()
 		if not bool(opened.get("ok", false)):
-			_fail("store draw failed at layer %d visit %d: %s" % [layer, i, str(opened.get("reason", "?"))])
+			fail("store draw failed at layer %d visit %d: %s" % [layer, i, str(opened.get("reason", "?"))])
 			continue
 		if store.live_count() != StoreScript.STOCK_SIZE:
 			wrong_size += 1
@@ -476,7 +479,7 @@ func _case_store_rules() -> void:
 		for _r in 2:
 			var result: Dictionary = store.reroll(wallet.seam())
 			if not bool(result.get("ok", false)):
-				_fail("a rule-trial reroll was refused: %s" % str(result.get("reason", "")))
+				fail("a rule-trial reroll was refused: %s" % str(result.get("reason", "")))
 				break
 			rerolls_checked += 1
 			# Duplicates inside one shelf are legal (store.md), so overlap is
@@ -687,7 +690,7 @@ func _fresh_store(seed_value: int, layer: int, visit: int) -> Store:
 	var store: Store = StoreScript.new(seed_value, layer, visit, _catalogue_entries, TOTAL_LAYERS)
 	var opened: Dictionary = store.draw()
 	if not bool(opened.get("ok", false)):
-		_fail("fixture store failed to open: %s" % str(opened.get("reason", "")))
+		fail("fixture store failed to open: %s" % str(opened.get("reason", "")))
 	return store
 
 
@@ -695,7 +698,7 @@ func _fresh_offer(seed_value: int, layer: int, visit: int) -> OfferSite:
 	var offer: OfferSite = OfferSite.new(seed_value, layer, visit, _catalogue_entries)
 	var drawn: Dictionary = offer.draw()
 	if not bool(drawn.get("ok", false)):
-		_fail("fixture offer set failed to draw: %s" % str(drawn.get("reason", "")))
+		fail("fixture offer set failed to draw: %s" % str(drawn.get("reason", "")))
 	return offer
 
 
@@ -719,45 +722,3 @@ func _shelf_signature(stock: Array) -> String:
 
 func _case(name: String) -> void:
 	print("OFFERS_CASE " + name)
-
-
-func _fail(message: String) -> void:
-	_checks += 1
-	_failures.append(message)
-
-
-func check(condition: bool, message: String) -> bool:
-	_checks += 1
-	if not condition:
-		_failures.append(message)
-	return condition
-
-
-func check_eq_int(actual, expected: int, message: String) -> bool:
-	_checks += 1
-	if int(actual) != expected:
-		_failures.append("%s: expected %d, got %d" % [message, expected, int(actual)])
-		return false
-	return true
-
-
-func _finish() -> void:
-	if _checks == 0 and _failures.is_empty():
-		_failures.append("the self-test recorded no checks")
-	check(_checks >= MIN_CHECK_COUNT, "at least one check ran")
-
-	var passed := _failures.is_empty()
-	print("OFFERS_SELFTEST " + JSON.stringify({
-		"name": "offers_and_store",
-		"status": "pass" if passed else "fail",
-		"checks": _checks,
-		"failed": _failures.size(),
-		"failures": _failures,
-	}))
-
-	if passed:
-		quit(0)
-		return
-	for failure in _failures:
-		push_error("OFFERS_FAILURE " + failure)
-	quit(1)

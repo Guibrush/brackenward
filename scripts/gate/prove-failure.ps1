@@ -42,6 +42,8 @@
 #
 #   powershell -NoProfile -File scripts/gate/prove-failure.ps1 -Gate assets -Case off-palette-pixel
 #   powershell -NoProfile -File scripts/gate/prove-failure.ps1 -Gate tests  -Case assertion-2x-damage
+#   powershell -NoProfile -File scripts/gate/prove-failure.ps1 -Gate tests  -Case inventory-cap-admitted
+#   powershell -NoProfile -File scripts/gate/prove-failure.ps1 -Gate tests  -Case suite-parse-error
 #   powershell -NoProfile -File scripts/gate/prove-failure.ps1 -Gate smoke  -Case despawn-disabled
 param(
     # The gate file to run, by bare name: `assets` runs <copy>\scripts\gate\assets.ps1.
@@ -122,6 +124,47 @@ $Cases = [ordered]@{
                 -Replacement 'check_eq_int(before - after, per_leak * 2,' `
                 -What 'expect twice damage_per_leak'
             return ('line ' + $line + ': one leak now expects per_leak * 2')
+        }
+    }
+
+    # T-0044. The four system suites moved into scripts/tests/cases, so a rule they
+    # assert can now be broken at the source and the gate must notice. This mutation
+    # is in `inventory.gd`, not in the case: the cap compares `>` instead of `>=`,
+    # so the N+1th tower is admitted where the rule says it is refused. The case is
+    # expected to name that rule, which is why the Expect text is the assertion and
+    # not merely the case's name.
+    'inventory-cap-admitted' = @{
+        Description = 'src/systems/inventory.gd: the tower cap compares > instead of >=, so the N+1th tower is admitted'
+        Gates       = @('tests')
+        Paths       = @('src\systems\inventory.gd')
+        Expect      = @('\[FAIL\s*\] G2\.9', 'the N\+1th tower is refused')
+        Apply       = {
+            $path = Get-CopyPath 'src\systems\inventory.gd'
+            $line = Replace-Once -Path $path `
+                -Pattern 'and _towers\.size\(\) >= tower_cap:' `
+                -Replacement 'and _towers.size() > tower_cap:' `
+                -What 'admit the N+1th tower past the cap'
+            return ('line ' + $line + ': the cap compares > instead of >=')
+        }
+    }
+
+    # T-0044 DoD 5. A moved suite that no longer parses must be a failure with the
+    # file named, not a case that silently does not run. The mutation is an empty
+    # constant initialiser in the case file itself: the engine refuses to load it,
+    # the case therefore prints no TEST_RESULT line, and the runner must report it
+    # as "never ran" rather than skipping it.
+    'suite-parse-error' = @{
+        Description = 'scripts/tests/cases/systems_run_state.gd: a constant loses its value, so the case cannot parse'
+        Gates       = @('tests')
+        Paths       = @('scripts\tests\cases\systems_run_state.gd')
+        Expect      = @('\[FAIL\s*\] G2\.9', 'systems_run_state\.gd', 'never ran: SCRIPT ERROR')
+        Apply       = {
+            $path = Get-CopyPath 'scripts\tests\cases\systems_run_state.gd'
+            $line = Replace-Once -Path $path `
+                -Pattern 'const MIN_CHECK_COUNT := 1' `
+                -Replacement 'const MIN_CHECK_COUNT :=' `
+                -What 'break the constant initialiser so the case cannot parse'
+            return ('line ' + $line + ': const MIN_CHECK_COUNT := (no value)')
         }
     }
 

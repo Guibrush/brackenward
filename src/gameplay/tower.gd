@@ -25,6 +25,15 @@ extends Node2D
 ## framerate; a headless harness drives the same `tick` with fixed steps instead
 ## of waiting in real time, so the cooldown is measured in game time in both.
 ##
+## T-0045: a tower node is the **view** a tower instance gets while it stands on
+## the map. `Inventory` owns the tower's `tier` - that is what survives being
+## picked up and put down again - so `bind_instance()` copies it here and
+## `adopt_tier()` accepts a tier the inventory has already granted. Placement is
+## free: the price of a tower is a store decision, not a build-time spend, so
+## `invested()` counts the upgrades paid for this tower and nothing else. Upgrades
+## carried by the instance have no combat effect yet; they are identity and
+## loadout until the design tables land.
+##
 ## Every number below is a PLACEHOLDER: the tier tables are `design/systems`
 ## work (T-0035, `docs/design/systems/towers.md`) and replace these arrays, not
 ## this code.
@@ -35,9 +44,6 @@ extends Node2D
 var candidate_source: Callable = Callable()
 
 @export_group("Tiers — PLACEHOLDER (T-0035 towers.md)")
-## Gold to build at tier 1. The arena reads this before it instantiates, so the
-## price has exactly one home.
-@export var place_cost: int = 50
 ## Damage per shot, index 0 = tier 1. Three shots kill a 40 HP walker at tier 1,
 ## which is enough to observe firing and a cooldown in a short run.
 @export var tier_damage: Array[int] = [15, 30, 55]
@@ -45,10 +51,10 @@ var candidate_source: Callable = Callable()
 @export var tier_range_px: Array[float] = [160.0, 180.0, 200.0]
 ## Seconds between shots, index 0 = tier 1.
 @export var tier_cooldown_seconds: Array[float] = [0.8, 0.7, 0.55]
-## Gold to reach the next tier: entry 0 buys tier 2, entry 1 buys tier 3.
+## Gold to reach the next tier: entry 0 buys tier 2, entry 1 buys tier 3. The
+## arena charges the run (`RunState.spend_gold()`) and then grants the tier
+## through the inventory; this table is the price and nothing else.
 @export var tier_upgrade_cost: Array[int] = [60, 110]
-## Fraction of everything spent on this tower that selling it returns.
-@export var sell_refund_ratio: float = 0.6
 
 @export_group("Targeting")
 ## Which enemy this tower shoots. FIRST is the default: stop the leak before it
@@ -65,7 +71,13 @@ var candidate_source: Callable = Callable()
 const BODY_GROWTH_PER_TIER := 0.25
 const MAX_TIER := 3
 
+## The inventory instance this node stands for (T-0045), or null when the node was
+## dropped into a scene without one. The instance owns `tier`; this node mirrors it.
+var instance: RefCounted = null
+
 var _tier: int = 1
+## Gold paid for upgrades on this tower. Placement is free, so nothing else adds to
+## it (T-0045).
 var _invested: int = 0
 var _cooldown_left: float = 0.0
 var _shots_fired: int = 0
@@ -80,11 +92,11 @@ var _tier_mark: Node2D = null
 func _ready() -> void:
 	_body = get_node_or_null(body_path) as Node2D
 	_tier_mark = get_node_or_null(tier_mark_path) as Node2D
-	_invested = maxi(place_cost, 0)
+	_invested = 0
 	# A freshly built tower is ready to fire: no free shot is lost waiting out a
 	# cooldown it never spent.
 	_cooldown_left = 0.0
-	_update_visual()
+	sync_from_instance()
 
 
 func _physics_process(delta: float) -> void:
@@ -92,6 +104,23 @@ func _physics_process(delta: float) -> void:
 
 
 # --- tier ------------------------------------------------------------------
+
+## Binds the node to the inventory instance it stands for and copies the tier that
+## instance carries. The arena calls this before the node enters the tree; `_ready`
+## calls `sync_from_instance()` again, which is why it is safe to call twice.
+func bind_instance(tower_instance: RefCounted) -> void:
+	instance = tower_instance
+	sync_from_instance()
+
+
+## Copies the instance's tier onto this node. The instance owns the value - it is
+## what survives being picked up - so this is the mirror's only writer.
+func sync_from_instance() -> void:
+	if instance == null:
+		return
+	_tier = clampi(instance.tier, 1, MAX_TIER)
+	_update_visual()
+
 
 func tier() -> int:
 	return _tier
@@ -121,31 +150,26 @@ func upgrade_cost() -> int:
 	return _tier_value_int(tier_upgrade_cost, _tier)
 
 
-## Everything spent on this tower: the build price plus every upgrade paid for.
+## Everything spent on this tower: every upgrade paid for. Placement is free
+## (T-0045), so a tower that was put down and never upgraded invested nothing.
 func invested() -> int:
 	return _invested
 
 
-## Gold returned by selling now. The arena pays this and frees the tower; the
-## tower never touches gold itself.
-func refund_value() -> int:
-	return int(floor(float(_invested) * clampf(sell_refund_ratio, 0.0, 1.0)))
-
-
-## Raises the tier by one. The caller (the arena) has already taken the gold:
-## `upgrade_cost()` is the price, and refusing here keeps a maxed tower from
-## absorbing a purchase it cannot deliver.
-func apply_upgrade() -> bool:
-	if is_max_tier():
+## Takes a tier the inventory has already granted (`Inventory.raise_tower_tier`).
+## `paid` is the gold the arena took from the run; it is recorded only so the log
+## and `invested()` can show what the tower cost - the tower never touches gold.
+## A tier that is not higher is refused rather than silently absorbed.
+func adopt_tier(new_tier: int, paid: int = 0) -> bool:
+	if new_tier <= _tier:
 		return false
-	var cost := upgrade_cost()
-	_tier = mini(_tier + 1, MAX_TIER)
-	_invested += maxi(cost, 0)
+	_tier = clampi(new_tier, 1, MAX_TIER)
+	_invested += maxi(paid, 0)
 	_update_visual()
 	print("TOWER_UPGRADE " + JSON.stringify({
 		"tower": name,
 		"tier": _tier,
-		"paid": cost,
+		"paid": paid,
 		"damage": damage(),
 		"range_px": range_px(),
 		"cooldown_seconds": cooldown_seconds(),

@@ -29,18 +29,42 @@ extends Node2D
 ## `WaveDirector` paces them. The arena owns the one transition that matters: a
 ## wave start locks the build phase, a wave clear unlocks it again.
 ##
+## T-0045 makes the arena **one level of a run**. The `RunState` and `Inventory`
+## it is handed (or creates, and says so) are the only owners of HQ health, gold
+## and the towers the player holds; this scene is the view of them for one level:
+##
+##   * HQ health is seeded from the run when the level opens and every leak is
+##     reported through `RunState.damage_hq()`, so 7 of 10 at the end of a level
+##     is 7 of 10 at the start of the next one.
+##   * Placement draws a tower instance from the inventory and costs nothing;
+##     taking a tower back returns the same instance, tier and upgrades intact.
+##   * Gold in and out goes through the run (`GoldLedger` is a view of it).
+##   * Clearing the last wave calls `complete_level()` and **never** `win_run()`
+##     (ADR-0006): the map decides when the boss node has been finished. Defeat
+##     is `RunState`'s call too - the arena stops spawning and refuses to start
+##     another level, and invents no ending of its own.
+##
+## `bind_run(run, inventory)` hands the arena the run the caller owns; call it
+## before the node enters the tree so the level boots already seeded. With
+## nothing bound the arena creates a run and inventory of its own and says so on
+## `ARENA_RUN`.
+##
 ## Prints on stdout, in this order:
+##   ARENA_RUN {json}         once, when the arena had to create (or start) a run
 ##   ARENA_START {json}       values actually in force, including the wave plan
 ##   ARENA_WALLET {json}      only when the arena had to create the ledger
 ##   ARENA_PHASE {json}       on every build <-> wave transition
 ##   ARENA_WAVE {json}        once per wave cleared, with the phase it returned to
-##   ARENA_LEVEL_CLEAR {json} once, when the level's last wave is cleared
+##   ARENA_LEVEL_CLEAR {json} once, when the level's last wave is cleared, with the
+##                            `complete_level()` outcome
+##   ARENA_RUN_END {json}     once, when the run ends (defeat today; victory is
+##                            the map's call)
 ##   ARENA_LEAK {json}        one line per arrival, with HQ health before and after
 ##   ARENA_STUCK {json}       only when an enemy outlives its arrival (a bug)
-##   ARENA_PLACED {json}      one line per tower built
-##   ARENA_SOLD {json}        one line per tower sold
+##   ARENA_PLACED {json}      one line per tower placed, with the instance it came from
+##   ARENA_TAKEN_BACK {json}  one line per tower returned to the inventory
 ##   ARENA_KILL {json}        one line per walker killed, with the gold it paid
-##   ARENA_REFUSED {json}     every refused build action, with its reason
+##   ARENA_REFUSED {json}     every refused build or level action, with its reason
 ##   ARENA_SUMMARY {json}     once, on exit
 ##
 ## Self-checks, both of which report through `push_error` so the engine prints an
@@ -81,19 +105,28 @@ extends Node2D
 @export var run_seconds: float = 0.0
 
 @export_group("Towers — PLACEHOLDER (T-0035 towers.md)")
-## Scene instantiated for a placed tower. The arena reads `place_cost` and the
-## tier table off the instance, so a tower's price has exactly one home.
+## Scene instantiated for a placed tower. The arena reads the tier tables off the
+## node; placement is free (T-0045), so no price is read from the instance and a
+## tower's cost is whatever its upgrades were bought for.
 @export var tower_scene: PackedScene
 ## How close to the lane centreline a click may land and still build. A tower on
 ## the lane would be a wall in the enemy's path. PLACEHOLDER; the real clearance
 ## is level design work.
 @export var lane_clearance_px: float = 40.0
-## Where the run's gold lives. The scene wires a `GoldLedger` here; a scene with
-## no ledger still boots, with a placeholder the arena creates and says it made.
+## Where the run's gold is shown. The scene wires a `GoldLedger` here and the
+## arena binds it to the run (T-0045) - the node is a view, not a balance. A scene
+## with no ledger still boots, with a placeholder the arena creates and says it made.
 @export var ledger_path: NodePath = ^"Wallet"
 ## Whether the arena starts in the wave phase. False for the slice: wave
 ## scheduling arrives with T-0038, which calls `begin_wave` / `end_wave`.
 @export var start_in_wave: bool = false
+
+@export_group("Run — T-0045")
+## Whether this level's plan is built from the run's level number
+## (`RunState.level_number()`, what the map advanced) rather than from the
+## exported `level_index`. True for a level of a run, which is what the scene is
+## now; false only to play a specific level's waves outside a run.
+@export var level_from_run: bool = true
 
 @export_group("Waves — PLACEHOLDER (T-0039 waves.md)")
 ## Which level of the run this arena is, 1-based. Difficulty is a function of this
@@ -119,6 +152,12 @@ const LANE_COLOR := Color(0.81569, 0.54118, 0.29020, 1.0)  # palette amber #d08a
 const MIN_TIMER_SECONDS := 0.01
 const USEC_PER_SECOND := 1000000.0
 
+# Preloaded rather than referenced by class name, for the reason `inventory.gd`
+# gives: `--check-only` must not depend on the global class cache having been
+# built by a prior `--import`.
+const RunStateScript := preload("res://src/systems/run_state.gd")
+const InventoryScript := preload("res://src/systems/inventory.gd")
+
 var _hq: Hq
 var _spawn_timer: Timer
 var _watchdog_timer: Timer
@@ -126,11 +165,23 @@ var _run_timer: Timer
 var _lane_line: Line2D
 var _ledger: GoldLedger
 
+## The run this level is part of, and the towers the player holds. Owned by the
+## caller when it binds them; created here when it does not, and the arena says so
+## on `ARENA_RUN` (T-0045).
+var _run: RunState = null
+var _inventory: Inventory = null
+var _owns_run: bool = false
+
 var _active: Array[LaneWalker] = []
 var _reported_stuck: Dictionary = {}
 
 var _slots: Array[BuildSlot] = []
 var _towers: Array[Tower] = []
+## Towers ever placed this level, so a name is unique even when a taken-back
+## tower's node has not been freed yet: `_towers.size() + 1` collided in exactly
+## that window and Godot silently renamed the node to `@Node2D@4`, which made the
+## `ARENA_PLACED` line name something no other line mentions.
+var _towers_built: int = 0
 var _phase: Phase = Phase.BUILD
 
 ## The level's waves, as data, and the thing that paces them.
@@ -156,6 +207,10 @@ var _gold_shadow: int = 0
 ## children are already gone, so it must not read through `hq`.
 var _hq_max: int = 0
 var _hq_health: int = 0
+## HQ health at the moment this level opened - what the run carried in. The leak
+## self-check is written against this rather than against `_hq_max`, because a
+## level that starts at 7 of 10 must still charge exactly one point per leak.
+var _hq_level_start: int = 0
 
 var _started_usec: int = 0
 var _summary_emitted: bool = false
@@ -173,16 +228,17 @@ func _ready() -> void:
 		return
 
 	_started_usec = Time.get_ticks_usec()
-	_hq_max = _hq.max_health
-	_hq_health = _hq.health()
 	_hq.health_changed.connect(_on_hq_health_changed)
 
 	_ledger = _resolve_ledger()
 	_ledger.changed.connect(_on_gold_changed)
-	# Seed the shadow copy from the balance in force, not from zero: a run that
-	# never spends or earns must still report the gold it started with when the
-	# summary is printed during teardown.
-	_gold_shadow = _ledger.gold()
+	_ensure_run()
+	# Seed the level from the run: the HQ node is a view of the run's health, and
+	# the shadow copies are what the summary reads during teardown. Seeding from
+	# the balance in force, not from zero, is why a run that never spends or earns
+	# still reports the gold it started with.
+	_seed_level_from_run()
+	_gold_shadow = gold()
 	_collect_slots()
 	_phase = Phase.WAVE if start_in_wave else Phase.BUILD
 
@@ -200,23 +256,28 @@ func _ready() -> void:
 		"damage_per_leak": damage_per_leak,
 		"stall_grace_seconds": stall_grace_seconds,
 		"run_seconds": run_seconds,
+		"hq": _hq_health,
 		"hq_max": _hq_max,
 		"phase": phase_name(),
 		"build_slots": _slots.size(),
 		"lane_clearance_px": lane_clearance_px,
 		"tower_scene": tower_scene != null,
-		"gold": _ledger.gold(),
-		"level_index": level_index,
+		"gold": gold(),
+		"level_index": effective_level_index(),
 		"elite": elite_level,
 		"plan": _plan_summary,
 		"autostart_waves": autostart_waves,
+		"run": _run.snapshot() if _run != null else {},
+		"inventory": _inventory.snapshot() if _inventory != null else {},
 		"engine": Engine.get_version_info()["string"],
 		"display": DisplayServer.get_name(),
 	}))
 
 	# One enemy immediately: a short run then observes a full walk plus at least
-	# one clean despawn, instead of starting idle for one spawn interval.
-	spawn_walker()
+	# one clean despawn, instead of starting idle for one spawn interval. A level
+	# that opened on an ended run spawns nothing - there is no level to play.
+	if not _run_is_over():
+		spawn_walker()
 	if autostart_waves:
 		start_level()
 
@@ -229,7 +290,11 @@ func _exit_tree() -> void:
 
 ## Wave pacing only. No policy lives here: what a wave *is* belongs to the plan,
 ## what it *does* belongs to the director, and the phase belongs to this node.
+## Once the run is over there is no level to pace, so the director stops being
+## ticked rather than spawning enemies into a decided run.
 func _physics_process(delta: float) -> void:
+	if _run_is_over():
+		return
 	if _director != null and _director.is_active():
 		_director.tick(delta)
 
@@ -314,6 +379,8 @@ func walkers() -> Array[LaneWalker]:
 
 
 func _on_spawn_timer_timeout() -> void:
+	if _run_is_over():
+		return
 	spawn_walker()
 
 
@@ -342,40 +409,77 @@ func spawn_from_entry(entry: WaveEntry) -> LaneWalker:
 
 
 ## A kill pays the run. The walker reports its own reward; the arena owns the
-## wallet, so the tower never touches gold.
+## wallet, so the tower never touches gold. A kill scored after the run ended is
+## counted but pays nothing: `RunState` accepts no gold once it is over.
 func _on_walker_died(walker: LaneWalker) -> void:
 	var reward := maxi(walker.gold_reward, 0)
 	_killed += 1
-	_gold_from_kills += reward
+	if _run_is_over():
+		print("ARENA_KILL " + JSON.stringify({
+			"killed": _killed,
+			"walker": walker.name,
+			"gold_reward": reward,
+			"paid": 0,
+			"why": "the run is over",
+			"gold": gold(),
+			"spawned": _spawned,
+		}))
+		return
+	if reward > 0:
+		_gold_from_kills += reward
 	_ledger.earn(reward, "kill %s" % walker.name)
 	print("ARENA_KILL " + JSON.stringify({
 		"killed": _killed,
 		"walker": walker.name,
 		"gold_reward": reward,
-		"gold": _ledger.gold(),
+		"paid": reward,
+		"gold": gold(),
+		"run_gold": _run.gold() if _run != null else 0,
 		"spawned": _spawned,
 	}))
 
 
+## One arrival, one leak, reported to the run. `run_state.gd` makes the level's
+## `Hq` node a per-level view of the run's health, so the damage is applied there
+## and the node is re-seeded from the result - never the other way round, or the
+## two counters would be two owners of one number.
 func _on_walker_arrived(walker: LaneWalker) -> void:
 	_leaked += 1
-	var before := _hq_health
-	var applied := _hq.take_damage(damage_per_leak)
-	var after := _hq_health
+	if _run_is_over():
+		# The level was already decided while this enemy was on the lane. There is
+		# nothing to charge, and `RunState` refuses damage on an ended run - a
+		# refused call is not a leak, so it is reported as zero damage.
+		print("ARENA_LEAK " + JSON.stringify({
+			"spawned": _spawned,
+			"leaked": _leaked,
+			"damage_applied": 0,
+			"why": "the run is over",
+			"hq_before": _hq_health,
+			"hq_after": _hq_health,
+			"hq_max": _hq_max,
+			"walker": walker.name,
+		}))
+		return
+
+	var before := _run.hq_health()
+	var applied := _run.damage_hq(damage_per_leak, "leak %s" % walker.name)
+	var after := _run.hq_health()
+	_hq.seed_health(after, _run.hq_max_health())
 	print("ARENA_LEAK " + JSON.stringify({
 		"spawned": _spawned,
 		"leaked": _leaked,
 		"damage_applied": applied,
 		"hq_before": before,
 		"hq_after": after,
-		"hq_max": _hq_max,
+		"hq_max": _run.hq_max_health(),
 		"walker": walker.name,
 	}))
 
 	# Self-check 1: accounting. Every arrival costs exactly `damage_per_leak`
 	# until the HQ is empty, so the expected health is a closed-form function of
-	# the leak count.
-	var expected := maxi(_hq_max - _leaked * damage_per_leak, 0)
+	# the leak count. Measured from the health this level opened with, which is the
+	# run's, so a level that starts at 7 of 10 is still charged one point per leak.
+	var expected := maxi(_hq_level_start - _leaked * damage_per_leak, 0)
 	if after != expected or (after > 0 and applied != damage_per_leak):
 		push_error(
 			"ARENA_ERROR HQ accounting broke at leak %d: applied %d, health %d, expected %d"
@@ -436,6 +540,106 @@ func _live_walker_count() -> int:
 	return count
 
 
+# --- the run and the inventory (T-0045) -------------------------------------
+
+## Hands the arena the run this level is one of, and the towers the player holds.
+## Call it before the node enters the tree: `_ready` seeds the level from whatever
+## is in force, and a run bound afterwards does not re-seed the level already open.
+##
+## Both objects are plain `RefCounted`s owned by the caller for the life of the
+## run. The arena reads gold and HQ from them and never keeps a second copy.
+func bind_run(run: RunState, inventory: Inventory) -> bool:
+	if run == null or inventory == null:
+		push_error("ARENA_ERROR bind_run needs both a RunState and an Inventory")
+		return false
+	_run = run
+	_inventory = inventory
+	return true
+
+
+func run_state() -> RunState:
+	return _run
+
+
+func inventory() -> Inventory:
+	return _inventory
+
+
+func is_run_over() -> bool:
+	return _run_is_over()
+
+
+## The level in play: the run's `level_number()` - what the map advanced to - or
+## the exported `level_index` when the scene is played outside a run, or the
+## caller switched `level_from_run` off. One function, so the plan, the log lines
+## and the summary cannot disagree about which level this is.
+func effective_level_index() -> int:
+	if level_from_run and _run != null:
+		return _run.level_number()
+	return level_index
+
+
+## Creates (and starts) a run of its own when the caller bound none, starts a
+## bound-but-unstarted run, and binds the ledger view and the run's ending either
+## way. A level cannot seed itself from a run that has no values yet, which is why
+## an unstarted run is started here rather than left to produce a zero HQ.
+func _ensure_run() -> void:
+	if _run == null:
+		_run = RunStateScript.new()
+		_inventory = InventoryScript.new()
+		_owns_run = true
+		# The scene's HQ is the only maximum in hand, so it becomes the run's; the
+		# seeding below copies it back, which keeps the two equal by construction.
+		_run.start(maxi(_hq.max_health, RunStateScript.MIN_HQ_MAX), RunStateScript.STARTING_GOLD)
+		print("ARENA_RUN " + JSON.stringify({
+			"source": "created",
+			"why": "no run was bound; the arena made one",
+			"run": _run.snapshot(),
+		}))
+	elif _run.status() == RunState.Status.NOT_STARTED:
+		_run.start(maxi(_hq.max_health, RunStateScript.MIN_HQ_MAX), RunStateScript.STARTING_GOLD)
+		print("ARENA_RUN " + JSON.stringify({
+			"source": "started",
+			"why": "the bound run had not started; the arena started it from the scene's HQ",
+			"run": _run.snapshot(),
+		}))
+	if _inventory == null:
+		_inventory = InventoryScript.new()
+		print("ARENA_RUN " + JSON.stringify({
+			"source": "inventory_created",
+			"why": "no inventory was bound; the arena made an empty one",
+		}))
+	_ledger.bind_run(_run)
+	if not _run.run_ended.is_connected(_on_run_ended):
+		_run.run_ended.connect(_on_run_ended)
+
+
+## Seeds the level's HQ view - and the shadow copies the summary reads during
+## teardown - from the run. Called once per level, from `_ready`.
+func _seed_level_from_run() -> void:
+	_hq_max = _run.hq_max_health()
+	_hq_health = _run.hq_health()
+	_hq_level_start = _hq_health
+	_hq.seed_health(_hq_health, _hq_max)
+
+
+func _run_is_over() -> bool:
+	return _run != null and _run.is_over()
+
+
+## The instance `place_tower` should draw: `tower_id` when it names one that is not
+## on the map, otherwise the oldest instance that is not on the map, or null.
+func _unplaced_tower(tower_id: int) -> RefCounted:
+	if _inventory == null:
+		return null
+	for tower in _inventory.towers():
+		if tower_id != 0 and tower.id != tower_id:
+			continue
+		if not tower.placed:
+			return tower
+	return null
+
+
 # --- phase -----------------------------------------------------------------
 
 func phase() -> Phase:
@@ -475,13 +679,15 @@ func _set_phase(next_phase: Phase) -> void:
 
 # --- waves -----------------------------------------------------------------
 
-## Builds this level's waves from `level_index` and `elite_level`, and hands them
-## to a fresh director. Public because both the demo and the (future) run loop
-## change `level_index` and then ask for a new plan; the arena never rebuilds a
-## plan behind the caller's back.
+## Builds this level's waves from the level in play and `elite_level`, and hands
+## them to a fresh director. The level in play is `RunState.level_number()` when a
+## run is bound (`level_from_run`), because that is the level the map advanced to
+## (ADR-0006); `level_index` is the fallback for a scene played outside a run.
+## Public because both a demo and the map change the level and then ask for a new
+## plan; the arena never rebuilds a plan behind the caller's back.
 func build_level_plan() -> void:
 	_plan = WavePlan.new()
-	var waves := _plan.build(level_index, elite_level)
+	var waves := _plan.build(effective_level_index(), elite_level)
 	_plan_summary = _plan.describe_level(waves)
 	_director = WaveDirector.new()
 	_director.setup(spawn_from_entry)
@@ -493,15 +699,28 @@ func build_level_plan() -> void:
 
 ## Starts the level's first wave. The arena's own entry point for "this level has
 ## begun", so no caller has to know the plan's index arithmetic.
+##
+## Refused when the run is over: a defeated (or already won) run has no level to
+## play, and the arena must not invent a way to keep going (T-0045 DoD 3).
 func start_level() -> bool:
+	if _run_is_over():
+		_refuse(
+			"start the level",
+			"the run is %s (%s); no level can start"
+			% [_run.status_name(), _run.end_reason()]
+		)
+		return false
 	return start_wave(0)
 
 
 ## Starts one wave of the plan (0-based) and locks the build phase for its
 ## duration. False when the director refused it - the reason is already printed,
 ## and the phase is untouched, so a refused wave cannot leave the player unable
-## to build.
+## to build. A wave cannot start on an ended run either, for the reason above.
 func start_wave(index: int) -> bool:
+	if _run_is_over():
+		_refuse("start a wave", "the run is %s; no wave can start" % _run.status_name())
+		return false
 	if _director == null:
 		_refuse("wave", "the level has no wave plan")
 		return false
@@ -548,29 +767,77 @@ func _on_wave_completed(wave: WaveDefinition) -> void:
 	}))
 
 
+## The level's last wave is clear. This is the one place a level reports itself
+## finished, and it reports to the run: `complete_level()` pays the level-clear
+## gold and counts the level. It deliberately does **not** call `win_run()` -
+## victory is the map's call once the boss node has been finished (ADR-0006), and
+## an arena that claimed it would end every run on its first level.
 func _on_level_completed() -> void:
+	var gold_before := gold()
+	var completed := false
+	var why := ""
+	if _run == null:
+		why = "no run is bound, so there is nothing to complete"
+	elif _run.is_over():
+		why = "the run is %s" % _run.status_name()
+	elif not _run.complete_level():
+		why = _run.last_refusal()
+	else:
+		completed = true
+
 	print("ARENA_LEVEL_CLEAR " + JSON.stringify({
-		"level_index": level_index,
+		"level_index": effective_level_index(),
 		"elite": elite_level,
 		"waves": level_wave_count(),
 		"phase": phase_name(),
 		"hq": _hq_health,
-		"gold": _ledger.gold() if _ledger != null else _gold_shadow,
+		"gold_before": gold_before,
+		"gold": gold(),
+		"level_clear_paid": (gold() - gold_before) if completed else 0,
+		"complete_level": completed,
+		"levels_completed": _run.level_index() if _run != null else 0,
+		"run_status": _run.status_name() if _run != null else "no_run",
+		"why": why,
+	}))
+
+
+## The run ended, wherever the decision was made: `RunState.damage_hq()` reaching
+## zero (defeat) today, `win_run()` from the map when victory exists. The arena
+## reacts and invents nothing: it stops spawning, so no further enemy is charged
+## to a decided run, and refuses to start another level (`start_level`).
+func _on_run_ended(victory: bool, reason: String) -> void:
+	if _spawn_timer != null:
+		_spawn_timer.stop()
+	print("ARENA_RUN_END " + JSON.stringify({
+		"victory": victory,
+		"reason": reason,
+		"status": _run.status_name() if _run != null else "no_run",
+		"level_index": effective_level_index(),
+		"levels_completed": _run.level_index() if _run != null else 0,
+		"hq": _run.hq_health() if _run != null else _hq_health,
+		"gold": gold(),
 	}))
 
 
 # --- towers ----------------------------------------------------------------
 
-## Builds a tower on the free build tile nearest `world_position` and returns it,
-## or null when the build was refused. Every refusal prints `ARENA_REFUSED` with
-## its reason: the lock is only observable if the reason reaches the log
-## (T-0036 DoD 3).
-func place_tower(world_position: Vector2) -> Tower:
+## Places the inventory tower `tower_id` (0 = the oldest one not on the map) on
+## the free build tile nearest `world_position`, and returns the node or null when
+## the build was refused. Every refusal prints `ARENA_REFUSED` with its reason: the
+## lock is only observable if the reason reaches the log (T-0036 DoD 3).
+##
+## Placement is free (T-0045): the tower comes out of the inventory, no gold moves,
+## and the node mirrors the instance's tier and upgrades - which is what makes
+## "take it back and put it down again" keep both.
+func place_tower(world_position: Vector2, tower_id: int = 0) -> Tower:
 	if _phase != Phase.BUILD:
 		_refuse("place", "towers are locked during a wave")
 		return null
 	if tower_scene == null:
 		_refuse("place", "no tower_scene is wired into the arena")
+		return null
+	if _inventory == null:
+		_refuse("place", "the arena has no inventory to draw a tower from")
 		return null
 	if _slots.is_empty():
 		_refuse("place", "the scene has no build tiles")
@@ -592,20 +859,30 @@ func place_tower(world_position: Vector2) -> Tower:
 		_refuse("place", "%s sits on the lane" % slot.name)
 		return null
 
+	var instance: RefCounted = _unplaced_tower(tower_id)
+	if instance == null:
+		if tower_id != 0 and _inventory.find_tower(tower_id) != null:
+			_refuse("place", "tower %d is already on the map" % tower_id)
+		else:
+			_refuse("place", "the inventory holds no tower to place")
+		return null
+
+	_towers_built += 1
 	var tower := tower_scene.instantiate() as Tower
 	if tower == null:
 		push_error("ARENA_ERROR tower_scene root is not a Tower")
 		return null
-	var cost := maxi(tower.place_cost, 0)
-	if not _ledger.try_spend(cost, "build %s" % slot.name):
+	tower.name = "Tower%d" % _towers_built
+	# Before `add_child`, so `_ready` sees the instance's tier immediately instead
+	# of showing tier 1 for a frame.
+	tower.bind_instance(instance)
+	tower.candidate_source = walkers
+	if not _inventory.place_tower(instance.id, str(slot.name)):
 		# Not in the tree yet, so there is nothing to defer. Freeing it now keeps
 		# a refused build from leaving an orphan node behind.
 		tower.free()
-		_refuse("place", "not enough gold for a %d gold tower" % cost)
+		_refuse("place", _inventory.last_refusal())
 		return null
-
-	tower.name = "Tower%d" % (_towers.size() + 1)
-	tower.candidate_source = walkers
 	add_child(tower)
 	# global_position, not position: the arena may itself be transformed, and the
 	# tower must stand on the tile the player clicked.
@@ -616,21 +893,29 @@ func place_tower(world_position: Vector2) -> Tower:
 		"tower": tower.name,
 		"slot": slot.name,
 		"at": [tower.global_position.x, tower.global_position.y],
-		"cost": cost,
-		"gold": _ledger.gold(),
+		"cost": 0,
+		"instance": instance.id,
+		"tier": instance.tier,
+		"upgrades": instance.upgrade_type_ids(),
+		"gold": gold(),
 		"phase": phase_name(),
 	}))
 	return tower
 
 
-## Buys the next tier for `tower`. Refused during a wave, at max tier, or without
-## the gold; the reason is printed in each case.
+## Buys the next tier for `tower` out of the run's gold and grants it through the
+## inventory, so the instance - not the node - carries it. Refused during a wave,
+## at max tier, without the gold, or for a node that is not bound to an instance;
+## the reason is printed in each case.
 func upgrade_tower(tower: Tower) -> bool:
 	if _phase != Phase.BUILD:
 		_refuse("upgrade", "towers are locked during a wave")
 		return false
 	if tower == null or not is_instance_valid(tower):
 		_refuse("upgrade", "no tower to upgrade")
+		return false
+	if tower.instance == null:
+		_refuse("upgrade", "%s is not bound to an inventory tower" % tower.name)
 		return false
 	if tower.is_max_tier():
 		_refuse("upgrade", "%s is already at tier %d" % [tower.name, tower.tier()])
@@ -639,7 +924,8 @@ func upgrade_tower(tower: Tower) -> bool:
 	if not _ledger.try_spend(cost, "upgrade %s" % tower.name):
 		_refuse("upgrade", "not enough gold for a %d gold upgrade" % cost)
 		return false
-	if not tower.apply_upgrade():
+	var new_tier: int = _inventory.raise_tower_tier(tower.instance.id)
+	if new_tier == 0 or not tower.adopt_tier(new_tier, cost):
 		# Paid for and then refused: hand the gold back rather than eat it.
 		_ledger.earn(cost, "refund: %s refused the upgrade" % tower.name)
 		_refuse("upgrade", "%s refused the upgrade it was paid for" % tower.name)
@@ -647,27 +933,35 @@ func upgrade_tower(tower: Tower) -> bool:
 	return true
 
 
-## Sells `tower` for `Tower.refund_value()`, frees its tile and removes it.
-## Refused during a wave, like every other build action.
-func sell_tower(tower: Tower) -> bool:
+## Picks `tower` back into the inventory and frees its tile. No gold moves in
+## either direction (T-0045): the instance keeps its tier and its upgrades, which
+## is the whole point of taking a tower back rather than selling one. Refused
+## during a wave, like every other build action.
+func take_tower_back(tower: Tower) -> bool:
 	if _phase != Phase.BUILD:
-		_refuse("sell", "towers are locked during a wave")
+		_refuse("take back", "towers are locked during a wave")
 		return false
 	if tower == null or not is_instance_valid(tower):
-		_refuse("sell", "no tower to sell")
+		_refuse("take back", "no tower to take back")
+		return false
+	if tower.instance == null:
+		_refuse("take back", "%s is not bound to an inventory tower" % tower.name)
+		return false
+	if not _inventory.take_tower_back(tower.instance.id):
+		_refuse("take back", _inventory.last_refusal())
 		return false
 	var slot := slot_for(tower)
-	var refund := maxi(tower.refund_value(), 0)
-	_ledger.earn(refund, "sell %s" % tower.name)
 	if slot != null:
 		slot.detach()
 	_towers.erase(tower)
-	print("ARENA_SOLD " + JSON.stringify({
+	print("ARENA_TAKEN_BACK " + JSON.stringify({
 		"tower": tower.name,
 		"slot": slot.name if slot != null else "<none>",
-		"refund": refund,
+		"instance": tower.instance.id,
+		"tier": tower.instance.tier,
+		"upgrades": tower.instance.upgrade_type_ids(),
 		"invested": tower.invested(),
-		"gold": _ledger.gold(),
+		"gold": gold(),
 		"phase": phase_name(),
 	}))
 	tower.queue_free()
@@ -807,7 +1101,7 @@ func _emit_summary() -> void:
 		"live": _live_walker_count(),
 		"leaked": _leaked,
 		"stuck": _stuck,
-		"hq_before": _hq_max,
+		"hq_before": _hq_level_start,
 		"hq_after": _hq_health,
 		"hq_max": _hq_max,
 		"phase": phase_name(),
@@ -816,9 +1110,13 @@ func _emit_summary() -> void:
 		"gold": _gold_shadow,
 		"towers": _towers.size(),
 		"refusals": _refusals,
-		"level_index": level_index,
+		"level_index": effective_level_index(),
 		"elite": elite_level,
 		"waves": level_wave_count(),
 		"waves_cleared": _waves_cleared,
 		"wave": (_director.current_index() + 1) if _director != null else 0,
+		"run_status": _run.status_name() if _run != null else "no_run",
+		"levels_completed": _run.level_index() if _run != null else 0,
+		"end_reason": _run.end_reason() if _run != null else "",
+		"inventory_towers": _inventory.tower_count() if _inventory != null else 0,
 	}))

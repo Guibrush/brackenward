@@ -18,11 +18,20 @@ extends SceneTree
 ##   TOWER_DEMO_SUMMARY {json}    once; the ledger and a pass/fail
 ##   TOWER_DEMO_SELF_TEST {json}  once, last; carries checks and failures
 ##
-## The `ARENA_REFUSED`, `ARENA_PLACED`, `ARENA_KILL`, `ARENA_SOLD` and
+## The `ARENA_REFUSED`, `ARENA_PLACED`, `ARENA_KILL`, `ARENA_TAKEN_BACK` and
 ## `TOWER_HOLD` lines in this output are printed by the systems under test, not by
 ## this file. That is the point: the demo shows what the game says, not what the
 ## demo claims. The `TOWER_DEMO_REFUSED` echo exists only so a reader of the log
 ## does not have to decode JSON to see the words that refused the input.
+##
+## T-0045 changed the model this demo drives: a tower comes **out of the
+## inventory** and placement is **free**, and the way off the map is
+## `take_tower_back()` (which pays nothing and keeps the tier and upgrades), not a
+## sale for a refund. The demo therefore buys nothing at build time; the one 60
+## gold upgrade is paid for out of gold earned from kills in the same level, which
+## is the "gold in, then gold out" path and keeps every number honest.
+## The two planted failures are unchanged: the wave-phase lock (A) and the
+## dead-target hold-fire (B).
 ##
 ## Why most steps run with no frames between them: `Tower.tick(delta)` is public
 ## so a harness can drive real cooldowns in game time instead of waiting in real
@@ -55,11 +64,28 @@ const MAX_KILL_TICKS := 16
 ## could be explained by the lane check instead.
 const MIN_SLOTS_REQUIRED := 2
 
+## What the inventory is asked for. The types are strings until `design/systems`
+## publishes the tower and upgrade tables (T-0035).
+const TOWER_TYPE := "arrow"
+const UPGRADE_TYPE := "sharpen"
+
+## Damage that kills any placeholder walker outright, so a demo kill is one call
+## instead of a loop over an unknown health pool.
+const LETHAL_DAMAGE := 1000000
+
+## Guard on the earn loop. Five 12-gold placeholder walkers pay for the 60-gold
+## tier from a 10-gold start; a table that makes kills worth nothing fails the
+## demo with a message instead of hanging it.
+const MAX_EARN_KILLS := 12
+
 var _arena = null
 var _hq: Hq = null
 var _slots: Array[BuildSlot] = []
 var _slot: BuildSlot = null
 var _tower: Tower = null
+## The inventory instance the tower node stands for: the thing that keeps its
+## tier and upgrades when the node is taken back off the map (T-0045).
+var _instance = null
 var _victim: LaneWalker = null
 
 var _opening_gold: int = 0
@@ -129,37 +155,67 @@ func _run_demo() -> void:
 		fail("no tower was placed; the rest of the demo cannot run")
 		return
 
-	# Let the new node run `_ready` before its investment is read: `refund_value()`
-	# is computed from `invested()`, which `_ready` seeds. Without this wait the
-	# demo would sell a tower that thinks it cost nothing.
+	# Let the new node run `_ready` before its investment is read. Placement is
+	# free (T-0045), so at this point the tower has cost nothing at all - the
+	# money arrives only with the tier bought further down.
 	await process_frame
 	await physics_frame
-	check_eq_int(_tower.invested(), _tower.place_cost, "a placed tower knows what it cost")
+	check_eq_int(_tower.invested(), 0, "a placed tower has invested no gold (placement is free)")
 
 	_step_refuse_on_lane()
 	_step_refuse_occupied()
 	_step_refuse_during_wave()
 	_step_kill()
+	_step_earn_for_upgrade()
 	_step_upgrade()
 	_step_hold_fire()
-	_step_sell()
+	_step_take_back()
 	_step_reconcile()
 
 
 # --- 1: place ---------------------------------------------------------------
 
+## The tower is a *thing the player owns* now: it is added to the inventory as an
+## instance, the instance is given an upgrade, and the arena is asked to put that
+## instance on a tile. The instance is what carries tier and loadout, so the node
+## is only its view while it stands.
 func _step_place() -> void:
-	_case("place a tower on a build tile")
-	_tower = _arena.place_tower(_slot.world_position())
+	_case("place a tower from the inventory on a build tile")
+	var inventory = _arena.inventory()
+	if not check(inventory != null, "the arena has an inventory to draw a tower from"):
+		return
+
+	_instance = inventory.add_tower(TOWER_TYPE)
+	if not check(_instance != null, "a tower can be added to the inventory"):
+		return
+	var upgrade = inventory.add_upgrade(UPGRADE_TYPE)
+	if not check(upgrade != null, "an upgrade can be added to the inventory"):
+		return
+	check(
+		inventory.apply_upgrade_to_tower(_instance.id, upgrade.id),
+		"the upgrade in hand goes onto the tower in the inventory"
+	)
+
+	_tower = _arena.place_tower(_slot.world_position(), _instance.id)
 	if not check(_tower != null, "placing on a free tile returns a tower"):
 		return
-	_expect_gold = _opening_gold - _tower.place_cost
-	check_eq_int(_arena.gold(), _expect_gold, "placing a tower spends exactly place_cost")
+	_expect_gold = _opening_gold
+	check_eq_int(_arena.gold(), _expect_gold, "placing a tower from the inventory costs nothing")
+	check(_instance.placed, "the instance is marked as standing on the map")
+	check_eq_int(_tower.tier(), _instance.tier, "the node mirrors the instance's tier")
+	check_eq_int(_instance.upgrade_count(), 1, "the placement carried the instance's upgrade")
 	check(not _slot.is_free(), "the tile the tower stands on is no longer free")
 	check_eq_int(
 		_arena.free_slot_count(), _slots.size() - 1, "one build tile fewer is free"
 	)
-	_step("placed", {"tower": _tower.name, "slot": _slot.name, "cost": _tower.place_cost})
+	_step("placed", {
+		"tower": _tower.name,
+		"slot": _slot.name,
+		"cost": 0,
+		"instance": _instance.id,
+		"tier": _tower.tier(),
+		"upgrades": _instance.upgrade_type_ids(),
+	})
 
 
 # --- 2: a refusal for being on the lane -------------------------------------
@@ -227,12 +283,12 @@ func _step_refuse_during_wave() -> void:
 		"the upgrade refusal says towers are locked during a wave"
 	)
 
-	var sold: bool = _arena.sell_tower(_tower)
+	var sold: bool = _arena.take_tower_back(_tower)
 	print("TOWER_DEMO_REFUSED " + _arena.last_refusal())
-	check(not sold, "selling during a wave is refused")
+	check(not sold, "taking a tower back during a wave is refused")
 	check(
 		_arena.last_refusal().find("locked during a wave") != -1,
-		"the sell refusal says towers are locked during a wave"
+		"the take-back refusal says towers are locked during a wave"
 	)
 
 	check_eq_int(
@@ -291,6 +347,38 @@ func _step_kill() -> void:
 	})
 
 
+# --- 5b: earn the gold the upgrade costs ------------------------------------
+
+## Placement is free, so the purse at this point is the run's 10-gold start plus
+## the reward of the one walker the tower just killed. The next tier costs 60, so
+## the demo earns the difference the same way the game does: it kills more
+## walkers. Nothing here writes a balance directly - every coin comes through
+## `ARENA_KILL` and the ledger view.
+func _step_earn_for_upgrade() -> void:
+	_case("earn the gold for the next tier from kills")
+	var price: int = _tower.upgrade_cost()
+	if not check(price > 0, "the tower quotes a price for its next tier"):
+		return
+	var killed := 0
+	var earned := 0
+	while _arena.gold() < price and killed < MAX_EARN_KILLS:
+		var walker = _arena.spawn_walker()
+		if not check(walker != null, "an enemy can be spawned to pay for the tier"):
+			return
+		earned += maxi(walker.gold_reward, 0)
+		# Killed outright: the demo is buying gold, not testing the tower twice.
+		walker.take_damage(LETHAL_DAMAGE)
+		killed += 1
+	if not check(
+		_arena.gold() >= price,
+		"the run can afford the %d gold tier (gold is %d after %d kill(s))"
+		% [price, _arena.gold(), killed]
+	):
+		return
+	_expect_gold = _arena.gold()
+	_step("earned", {"price": price, "kills": killed, "earned": earned, "gold": _arena.gold()})
+
+
 # --- 6: upgrade -------------------------------------------------------------
 
 func _step_upgrade() -> void:
@@ -304,9 +392,10 @@ func _step_upgrade() -> void:
 	_expect_gold -= maxi(price, 0)
 	check_eq_int(_arena.gold(), _expect_gold, "the upgrade spent exactly upgrade_cost")
 	check_eq_int(_tower.tier(), tier_before + 1, "the tower went up one tier")
-	check_eq_int(
-		_tower.invested(), _tower.place_cost + price, "the tower remembers both payments"
-	)
+	check_eq_int(_instance.tier, _tower.tier(), "the inventory instance carries the new tier")
+	# Placement is free, so the only gold this tower ever cost is the upgrade it
+	# bought - the number the take-back below must leave untouched.
+	check_eq_int(_tower.invested(), price, "the tower remembers the upgrade it was paid for")
 	_step("upgraded", {"tier": _tower.tier(), "paid": price, "gold": _arena.gold()})
 
 
@@ -350,27 +439,63 @@ func _step_hold_fire() -> void:
 	check(is_instance_valid(_tower), "the tower survived the corpse")
 
 
-# --- 8: sell ----------------------------------------------------------------
+# --- 8: take back -----------------------------------------------------------
 
-func _step_sell() -> void:
-	_case("sell the tower")
-	var refund := _tower.refund_value()
-	var invested := _tower.invested()
-	var gold_before: int = _arena.gold()
-	if not check(refund > 0, "the tower has a refund value to pay"):
+## T-0045's round trip, on the map and not only in the inventory: taking a tower
+## back is **not** a sale. It pays nothing in either direction, the tile frees,
+## and the instance keeps its tier and its upgrades - so putting it down again
+## puts down the tower the player built, not a tier-1 copy of it. Selling for a
+## refund no longer exists, which is why this step asserts "no gold moved"
+## instead of reconciling a refund against `invested()`.
+func _step_take_back() -> void:
+	_case("take the tower back into the inventory")
+	var tier_before := _tower.tier()
+	var upgrades_before: Array = _instance.upgrade_type_ids()
+	var invested_before: int = _tower.invested()
+	if not check(
+		tier_before > 1,
+		"the tower being taken back had been upgraded (tier %d)" % tier_before
+	):
 		return
-	check(
-		refund <= invested,
-		"the refund never exceeds what was invested (%d of %d)" % [refund, invested]
-	)
+	var gold_before: int = _arena.gold()
 
-	var sold: bool = _arena.sell_tower(_tower)
-	check(sold, "the sell is accepted in the build phase")
-	_expect_gold = gold_before + refund
-	check_eq_int(_arena.gold(), _expect_gold, "the sell returned exactly refund_value")
+	var taken: bool = _arena.take_tower_back(_tower)
+	check(taken, "the take-back is accepted in the build phase")
+	check_eq_int(_arena.gold(), gold_before, "taking a tower back pays nothing")
 	check_eq_int(_arena.towers().size(), 0, "the tower is gone from the arena")
 	check_eq_int(_arena.free_slot_count(), _slots.size(), "every build tile is free again")
-	_step("sold", {"refund": refund, "invested": invested, "gold": _arena.gold()})
+	check(not _instance.placed, "the instance is back in the inventory, not on the map")
+	check_eq_int(_instance.tier, tier_before, "the taken-back tower kept its tier")
+	check_eq_int(
+		_instance.upgrade_count(),
+		upgrades_before.size(),
+		"the taken-back tower kept its upgrade"
+	)
+	check(
+		_instance.upgrade_type_ids() == upgrades_before,
+		"the upgrade it kept is the one it had (%s)" % [_instance.upgrade_type_ids()]
+	)
+	_step("taken_back", {
+		"tier": _instance.tier,
+		"upgrades": _instance.upgrade_type_ids(),
+		"invested": invested_before,
+		"gold": _arena.gold(),
+	})
+
+	# And back down again, at the tier it left. A take-back that lost the tier
+	# would only show up here, on the map the player actually sees.
+	var replanted: Tower = _arena.place_tower(_slot.world_position(), _instance.id)
+	if not check(replanted != null, "the taken-back tower can be placed again"):
+		return
+	check_eq_int(replanted.tier(), tier_before, "it stands again at the tier it was taken back at")
+	check_eq_int(_instance.upgrade_count(), upgrades_before.size(), "it still carries its upgrade")
+	check_eq_int(_arena.gold(), gold_before, "placing it again costs nothing")
+	_step("replaced", {
+		"tower": replanted.name,
+		"tier": replanted.tier(),
+		"upgrades": _instance.upgrade_type_ids(),
+		"gold": _arena.gold(),
+	})
 
 
 # --- 9: the ledger reconciles -----------------------------------------------

@@ -1,34 +1,25 @@
-extends SceneTree
+extends "res://scripts/tests/lib/suite.gd"
 
 ## Headless proof for `src/systems/run_state.gd` — T-0043 DoD items 2-6, under
-## `docs/adr/0006-run-level-count.md`.
+## `docs/adr/0006-run-level-count.md`, now run by the suite instead of by hand.
 ##
-##     godot --headless --path . --script res://src/systems/tests/run_state_selftest.gd
+##     powershell -NoProfile -File scripts/tests/run.ps1 -Filter systems_run_state
 ##
-## Pure logic, so no scene and no frames: every case runs inside `_initialize`.
+## Pure logic: no scene and no frames, so this case replaces the harness's scene
+## boot (`_boot`) with a direct `run_case()`. Every assertion below is the one the
+## selftest at the old `src/systems/tests/run_state_selftest.gd` made, unchanged.
+## The harness owns the accounting: inherited `check()` / `check_eq_int()` count
+## and record, and the inherited `_finish()` prints the single `TEST_RESULT` line
+## and sets the exit code, failing a case that records no checks.
 ##
 ## ADR-0006 shape: a run has no level total. Every case here drives the run by
 ## *completions* (`complete_level()`), and victory comes from `win_run()` rather
 ## than from reaching a number. Nothing in this file hands `start()` a count.
 ##
-## Prints, in this order:
-##   RUN_CASE {name}            which case is running
-##   RUN_STEP {json}            the state after each step worth recording
-##   RUN_SEQUENCE {json}        the level index after each completion
-##   RUN_STORE_STOP {json}      the level index before and after a non-level stop
-##   RUN_LEDGER {json}          each run's gold ledger, reconciled
-##   RUN_REFUSED {text}         the reason a refused call gave, verbatim
-##   RUN_RESET {json}           before/after of the second-run reset
-##   RUN_SAVE_SCAN {json}       user:// file list before and after a full run
-##   RUN_SELF_TEST {json}       exactly one, last; carries checks and failures
-##
-## The exit code alone is not evidence (L-035): `RUN_SELF_TEST` carries `checks`,
-## `failed` and the failure strings, and a failing check also prints an `ERROR:`
-## line so a gate that greps for one sees it. Exit 0 = every check passed.
-##
-## This file exists under `src/systems/` because `scripts/**` belongs to
-## eng/tools. Moving it to `scripts/tests/cases/` (and deleting this copy) is
-## theirs to do; the assertions are written in the suite's shape already.
+## The case reports the same 116 checks the selftest reported: the selftest's
+## closing "at least one check ran" tally is kept at the end of `run_case()` (see
+## the comment there) instead of being replaced by the harness's uncounted
+## equivalent.
 
 const RunStateScript := preload("res://src/systems/run_state.gd")
 
@@ -43,17 +34,29 @@ const SAVE_CANDIDATES := [
 const MIN_CHECK_COUNT := 1
 const PLACEHOLDER := "(placeholder numbers; T-0035 replaces them)"
 
-var _checks: int = 0
-var _failures: Array[String] = []
+
+func case_name() -> String:
+	return "run state: completions, victory refusal, defeat and reset hold"
 
 
-func _initialize() -> void:
+## Pure logic, so there is no arena to boot: this replaces the harness's scene
+## load with the case itself. The single result line, the exit code and the
+## zero-check guard are still the base's `_finish()`.
+func _boot() -> void:
+	run_case()
+	_finish()
+
+
+func run_case() -> void:
 	_case_completion_sequence()
 	_case_planted_failure_a()
 	_case_planted_failure_b()
 	_case_defeat_and_second_run()
 	_case_no_save_file()
-	_finish()
+	# The selftest's own closing tally, kept so the count is unchanged. The
+	# harness also fails a case that recorded no checks, so this is a second
+	# guard rather than the only one.
+	check(_checks >= MIN_CHECK_COUNT, "at least one check ran")
 
 
 # --- case 1: three levels, driven by completions (DoD 2) --------------------
@@ -463,40 +466,3 @@ func _user_files() -> Array:
 	var files: Array = Array(DirAccess.get_files_at("user://"))
 	files.sort()
 	return files
-
-
-func check(condition: bool, message: String) -> bool:
-	_checks += 1
-	if not condition:
-		_failures.append(message)
-	return condition
-
-
-func check_eq_int(actual, expected: int, message: String) -> bool:
-	_checks += 1
-	if int(actual) != expected:
-		_failures.append("%s: expected %d, got %d" % [message, expected, int(actual)])
-		return false
-	return true
-
-
-func _finish() -> void:
-	if _checks == 0 and _failures.is_empty():
-		_failures.append("the self-test recorded no checks")
-	check(_checks >= MIN_CHECK_COUNT, "at least one check ran")
-
-	var passed := _failures.is_empty()
-	print("RUN_SELF_TEST " + JSON.stringify({
-		"name": "run_state",
-		"status": "pass" if passed else "fail",
-		"checks": _checks,
-		"failed": _failures.size(),
-		"failures": _failures,
-	}))
-
-	if passed:
-		quit(0)
-		return
-	for f in _failures:
-		push_error("RUN_FAILURE " + f)
-	quit(1)

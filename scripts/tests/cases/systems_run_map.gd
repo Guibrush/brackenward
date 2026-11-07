@@ -1,30 +1,21 @@
-extends SceneTree
+extends "res://scripts/tests/lib/suite.gd"
 
-## Headless proof for `src/systems/run_map.gd` — T-0040 DoD items 2-6.
+## Headless proof for `src/systems/run_map.gd` — T-0040 DoD items 2-6, now run by
+## the suite instead of by hand.
 ##
-##     godot --headless --path . --script res://src/systems/tests/run_map_selftest.gd
+##     powershell -NoProfile -File scripts/tests/run.ps1 -Filter systems_run_map
 ##
-## Pure logic, so no scene and no frames: every case runs inside `_initialize`.
+## Pure logic: no scene and no frames, so this case replaces the harness's scene
+## boot (`_boot`) with a direct `run_case()`. Every assertion below is the one the
+## selftest at the old `src/systems/tests/run_map_selftest.gd` made, unchanged.
+## The harness owns the accounting: inherited `check()` / `check_eq_int()` count
+## and record, and the inherited `_finish()` prints the single `TEST_RESULT` line
+## and sets the exit code, failing a case that records no checks.
 ##
-## Prints, in this order:
-##   MAP_CASE {name}          which case is running
-##   MAP_RUNS {json}          the 200-run aggregate counts (DoD 2)
-##   MAP_SEED {json}          same seed twice / different seed (DoD 3)
-##   MAP_LURE {json}          the lure-is-selectable proof (the T-0040 defect)
-##   MAP_ROUTE {json}         a full route walked to the boss
-##   MAP_LEVEL_COUNT {json}   layers vs levels (ADR-0006: a count is a route outcome)
-##   MAP_KNOWLEDGE {json}     what is visible at layer 1, at layer 5, blind rolls
-##   MAP_WEIGHTS {json}       the weighting table and its assertion (DoD 5)
-##   MAP_REFUSAL_TEXT ...     a refusal's reason, verbatim (DoD 4 and 5)
-##   MAP_SELFTEST {json}      exactly one, last; carries checks and failures
-##
-## The exit code alone is not evidence (L-035): `MAP_SELFTEST` carries `checks`,
-## `failed` and the failure strings, and each failure also prints an error line.
-## Exit 0 = every check passed.
-##
-## This file lives under `src/systems/tests/` because `scripts/**` belongs to
-## eng/tools. The assertions are written in the suite's shape already, so moving
-## them into `scripts/tests/cases/` is a delete-and-wire, not a rewrite.
+## The case reports the same 5346 checks the selftest reported: the selftest's
+## closing "at least one check ran" tally is kept at the end of `run_case()` (see
+## the comment there) instead of being replaced by the harness's uncounted
+## equivalent.
 
 const RunMapScript := preload("res://src/systems/run_map.gd")
 const RunMapNodeTypeScript := preload("res://src/systems/run_map_types.gd")
@@ -63,11 +54,20 @@ const FORBIDDEN_WAVE_KEYS := [
 	"enemies_in_wave",
 ]
 
-var _checks: int = 0
-var _failures: Array[String] = []
+
+func case_name() -> String:
+	return "run map: structure, determinism, lures, routes and knowledge hold"
 
 
-func _initialize() -> void:
+## Pure logic, so there is no arena to boot: this replaces the harness's scene
+## load with the case itself. The single result line, the exit code and the
+## zero-check guard are still the base's `_finish()`.
+func _boot() -> void:
+	run_case()
+	_finish()
+
+
+func run_case() -> void:
 	_case_two_hundred_runs()
 	_case_seed_determinism()
 	_case_lure_reachability()
@@ -77,7 +77,10 @@ func _initialize() -> void:
 	_case_hidden_until_entry()
 	_case_planted_failure_a()
 	_case_planted_failure_b()
-	_finish()
+	# The selftest's own closing tally, kept so the count is unchanged. The
+	# harness also fails a case that recorded no checks, so this is a second
+	# guard rather than the only one.
+	check(_checks >= MIN_CHECK_COUNT, "at least one check ran")
 
 
 # --- case 1: 200 seeded runs (DoD 2) ----------------------------------------
@@ -792,40 +795,3 @@ static func _map_type_id() -> String:
 
 static func _boss_type_id() -> String:
 	return RunMapNodeTypeScript.TYPE_BOSS
-
-
-func check(condition: bool, message: String) -> bool:
-	_checks += 1
-	if not condition:
-		_failures.append(message)
-	return condition
-
-
-func check_eq_int(actual, expected: int, message: String) -> bool:
-	_checks += 1
-	if int(actual) != expected:
-		_failures.append("%s: expected %d, got %d" % [message, expected, int(actual)])
-		return false
-	return true
-
-
-func _finish() -> void:
-	if _checks == 0 and _failures.is_empty():
-		_failures.append("the self-test recorded no checks")
-	check(_checks >= MIN_CHECK_COUNT, "at least one check ran")
-
-	var passed := _failures.is_empty()
-	print("MAP_SELFTEST " + JSON.stringify({
-		"name": "run_map",
-		"status": "pass" if passed else "fail",
-		"checks": _checks,
-		"failed": _failures.size(),
-		"failures": _failures,
-	}))
-
-	if passed:
-		quit(0)
-		return
-	for f in _failures:
-		push_error("MAP_FAILURE " + f)
-	quit(1)
