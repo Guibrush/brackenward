@@ -8,7 +8,8 @@ extends Node2D
 ## same work in the same order. Only the stopwatch varies.
 ##
 ## Prints on stdout, in this order:
-##   PERF_INFO {json}          load and the render conditions actually in force
+##   PERF_INFO {json}          load, the render conditions actually in force, and
+##                             the screen refresh rate (0.0 when unreported)
 ##   PERF_PHASE measuring      once, after warmup, before the first window
 ##   PERF_JSON {json}          one line per WINDOW_FRAMES measured frames
 ##   PERF_JSON {json}          once with "aggregate": true, then exits 0
@@ -68,6 +69,17 @@ func _ready() -> void:
 	var root := get_tree().root
 	var final_scale: Vector2 = root.get_final_transform().get_scale()
 	var vsync_mode: int = DisplayServer.window_get_vsync_mode()
+
+	# Display conditions this measurement is subject to. A screen below 120 Hz
+	# paces frame delivery to one refresh period even with vsync off, so fps is
+	# capped by the machine rather than by the frame; without the number a capped
+	# machine is indistinguishable from a regression (L-040). 0.0 means the
+	# platform did not report it - recorded as unknown, never guessed.
+	var screen_id := DisplayServer.window_get_current_screen()
+	var refresh_hz := DisplayServer.screen_get_refresh_rate(screen_id)
+	if refresh_hz < 0.0:
+		refresh_hz = 0.0
+
 	var info := {
 		"entity_count": _sprites.size(),
 		"declared_entity_count": DECLARED_ENTITY_COUNT,
@@ -79,6 +91,8 @@ func _ready() -> void:
 		"vsync_disabled": vsync_mode == DisplayServer.VSYNC_DISABLED,
 		"vsync_mode": vsync_mode,
 		"max_fps": Engine.max_fps,
+		"screen": screen_id,
+		"refresh_hz": refresh_hz,
 		"renderer": RenderingServer.get_video_adapter_name(),
 		"engine": Engine.get_version_info()["string"],
 	}
