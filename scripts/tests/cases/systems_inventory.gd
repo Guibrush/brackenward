@@ -1,22 +1,24 @@
-extends SceneTree
+extends "res://scripts/tests/lib/suite.gd"
 
-## Headless proof for `src/systems/inventory.gd` - T-0041 DoD items 2-6.
+## Headless proof for `src/systems/inventory.gd` - the checks of T-0041 DoD
+## items 2-6, now run by the suite instead of by hand.
 ##
-##     godot --headless --path . --script res://src/systems/tests/inventory_selftest.gd
+##     powershell -NoProfile -File scripts/tests/run.ps1 -Filter systems_inventory
 ##
-## Pure logic, so no scene and no frames: every case runs inside `_initialize`.
+## Pure logic: no scene and no frames, so this case replaces the harness's scene
+## boot (`_boot`) with a direct `run_case()`. Every assertion below is the one
+## the selftest at the old `src/systems/tests/inventory_selftest.gd` made,
+## unchanged; what the harness owns now is the accounting:
 ##
-## Prints, in this order:
-##   INV_CASE {name}            which case is running
-##   INV_STEP {json}            the inventory state after each step worth recording
-##   INV_REFUSED {text}         the reason a refused call gave, verbatim
-##   INV_DEMO {json}            a planted-failure / switch demonstration, with both sides
-##   INV_TOWER {json}           one tower's snapshot before and after the round trip
-##   INV_SELF_TEST {json}       exactly one, last; carries checks and failures
+##   * `check()` / `check_eq_int()` are inherited, so the count and the failure
+##     list are the harness's;
+##   * the single `TEST_RESULT` line and the exit code come from the inherited
+##     `_finish()`, which also fails a case that records no checks.
 ##
-## The exit code alone is not evidence (L-035): `INV_SELF_TEST` carries `checks`,
-## `failed` and the failure strings, and a failing check also prints an `ERROR:`
-## line so a gate that greps for one sees it. Exit 0 = every check passed.
+## The case reports the same 100 checks the selftest reported: the selftest's
+## closing "at least one check ran" tally is kept at the end of `run_case()` (see
+## the comment there) instead of being replaced by the harness's uncounted
+## equivalent. Moving the file changed where the checks run, not what they say.
 ##
 ## Variables holding the system are left untyped on purpose: GDScript resolves
 ## member access on an untyped base at runtime, so a renamed field fails loudly
@@ -27,18 +29,30 @@ const InventoryScript := preload("res://src/systems/inventory.gd")
 const MIN_CHECK_COUNT := 1
 const PLACEHOLDER := "(placeholder numbers; design/systems owns the real tables)"
 
-var _checks: int = 0
-var _failures: Array[String] = []
+
+func case_name() -> String:
+	return "inventory: slots, caps, duplicates and permanence hold"
 
 
-func _initialize() -> void:
+## Pure logic, so there is no arena to boot: this replaces the harness's scene
+## load with the case itself. The single result line, the exit code and the
+## zero-check guard are still the base's `_finish()`.
+func _boot() -> void:
+	run_case()
+	_finish()
+
+
+func run_case() -> void:
 	_case_ownership_and_slots()
 	_case_planted_failure_a_cap_on()
 	_case_planted_failure_b_duplicate_toggle()
 	_case_removal_switch()
 	_case_tier_round_trip()
 	_case_slots_are_data()
-	_finish()
+	# The selftest's own closing tally, kept so the count is unchanged. The
+	# harness also fails a case that recorded no checks, so this is a second
+	# guard rather than the only one.
+	check(_checks >= MIN_CHECK_COUNT, "at least one check ran")
 
 
 # --- case 1: what the inventory owns, and duplicates (DoD 2) ----------------
@@ -370,40 +384,3 @@ func _case_slots_are_data() -> void:
 
 func _step(inv, step: String) -> void:
 	print("INV_STEP " + JSON.stringify({"step": step, "state": inv.snapshot()}))
-
-
-func check(condition: bool, message: String) -> bool:
-	_checks += 1
-	if not condition:
-		_failures.append(message)
-	return condition
-
-
-func check_eq_int(actual, expected: int, message: String) -> bool:
-	_checks += 1
-	if int(actual) != expected:
-		_failures.append("%s: expected %d, got %d" % [message, expected, int(actual)])
-		return false
-	return true
-
-
-func _finish() -> void:
-	if _checks == 0 and _failures.is_empty():
-		_failures.append("the self-test recorded no checks")
-	check(_checks >= MIN_CHECK_COUNT, "at least one check ran")
-
-	var passed := _failures.is_empty()
-	print("INV_SELF_TEST " + JSON.stringify({
-		"name": "inventory",
-		"status": "pass" if passed else "fail",
-		"checks": _checks,
-		"failed": _failures.size(),
-		"failures": _failures,
-	}))
-
-	if passed:
-		quit(0)
-		return
-	for f in _failures:
-		push_error("INV_FAILURE " + f)
-	quit(1)

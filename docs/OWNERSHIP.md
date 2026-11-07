@@ -65,6 +65,8 @@ mistaken for routine practice (see L-014).
 | 2026-11-05 | `studio-lead` | `docs/gates/G2-vertical-slice.md`, `docs/gates/G0-concept.md` note under G0.10 | The human instructed the G2 gate text be rewritten against ADR-0002 (unsigned gate) and left unmerged pending their read, and that the signed G0 gate be annotated rather than rewritten. The human then authorised the merge themselves. |
 | 2026-11-06 | `studio-lead` | `AGENTS.md`, `art/STYLE.md` | The human approved a standing rule for failure demonstrations and an art-task file-hygiene rule (both in `AGENTS.md`), and approved the canvas-fill definition (height ≥ 85%, width ≥ one tile) that the lead recommended after the pad-free measurements. Lead scribed the wording. |
 
+| 2026-11-07 | `eng/tools` | `src/systems/tests/**` (deletion only) | T-0044 moves four selftests into `scripts/tests/cases/` so `tests.ps1` runs them. The originals are deleted to prevent a stale duplicate; no assertions change owner, only location. |
+
 ## Unassigned paths
 
 A path not listed here has no owner. Do not edit it. Report it to
