@@ -13,6 +13,14 @@
 # same way: the scene declares its canonical load, and a mismatch fails instead
 # of quietly moving the goalposts.
 #
+# A capped display is diagnosed, never excused. G2.3 passed for weeks at 651 fps
+# and then read ~59 fps with no code change: the screen had dropped to 59 Hz with
+# a virtual display adapter in the path, and frame delivery paces to one refresh
+# period even with vsync off (L-040). So the refresh rate the scene reports is
+# printed with the numbers, and when the measured p50 lands on one refresh period
+# this script prints a single advisory line naming it. The advisory changes no
+# verdict: the budget below decides pass or fail on its own.
+#
 # Parameters
 #   -Stress          run the over-budget case: identical budget, more load
 #   -StressEntities  entities for -Stress (default 30000; canonical is 1000)
@@ -33,6 +41,14 @@ $BudgetFpsAvg    = 60
 $BudgetP99Ms     = 20.0
 $BudgetOnePctLow = 45.0
 
+# --- Capped-display diagnostic: advice, never a verdict -----------------------
+# Below 120 Hz a screen paces frame delivery to one refresh period, so a p50 that
+# sits on that period describes the machine, not the frame. Above 120 Hz the
+# pacing is the target the gate is measuring against itself, so it is not named a
+# cap. Both numbers are printed, so a reader can redo the arithmetic.
+$CapDiagnosticMargin  = 0.10   # p50 within 10 % of one refresh period
+$CapDiagnosticMaxHz   = 120.0  # only a display below this can be the cap
+
 # Declared render conditions. art/STYLE.md: a 32px board at 2x in a 1080p window.
 $DeclaredWidth    = 1920
 $DeclaredHeight   = 1080
@@ -46,6 +62,28 @@ $inv = [System.Globalization.CultureInfo]::InvariantCulture
 function Format-Num {
     param([double]$Value, [string]$Format = '0.0')
     return $Value.ToString($Format, $inv)
+}
+
+# Is the measured p50 one refresh period away from the display's own cadence?
+#
+# Pure function of the two numbers the run reported, so it can be exercised with
+# a synthetic p50 without starting an engine. An unknown refresh rate (0.0) is
+# never a cap: this returns false and the caller says the rate is unknown rather
+# than inventing a diagnosis (L-040 - a red result must be attributable from the
+# output alone, not by guessing).
+function Test-CappedDisplay {
+    param(
+        [double]$P50Ms,
+        [double]$RefreshHz,
+        [double]$Margin,
+        [double]$MaxRefreshHz
+    )
+    if ($RefreshHz -le 0.0) { return $false }
+    if ($RefreshHz -ge $MaxRefreshHz) { return $false }
+    if ($P50Ms -le 0.0) { return $false }
+    $period = 1000.0 / $RefreshHz
+    $delta = [math]::Abs($P50Ms - $period)
+    return ($delta -le ($period * $Margin))
 }
 
 Write-Host 'G2 - performance'
@@ -153,14 +191,30 @@ if ($aggregate -and ([int]$aggregate.measured_frames -ne ($Windows * $WindowFram
     $problems += ('aggregate covers ' + $aggregate.measured_frames + ' frames, expected ' + ($Windows * $WindowFrames))
 }
 
+# --- Display provenance: which machine this number belongs to ----------------
+# Read from PERF_INFO, which the scene filled from the platform. A missing field
+# or 0.0 means unknown: reported as unknown and never invented (L-040). An
+# unknown rate is not a failure - a machine that will not state its refresh rate
+# has not broken the budget, so this changes no exit code.
+$refreshHz = 0.0
+if ($info -and ($info.PSObject.Properties.Name -contains 'refresh_hz')) {
+    $refreshHz = [double]$info.refresh_hz
+}
+$refreshKnown = ($refreshHz -gt 0.0)
+$refreshPeriodMs = 0.0
+if ($refreshKnown) { $refreshPeriodMs = 1000.0 / $refreshHz }
+
 # --- The measurement ---------------------------------------------------------
 $fps = 0.0
+$p50 = 0.0
 $p99 = 0.0
 $onePctLow = 0.0
+$cappedDisplay = $false
 $budgetProblems = @()
 
 if ($aggregate) {
     $fps = [double]$aggregate.fps_avg
+    $p50 = [double]$aggregate.frame_ms_p50
     $p99 = [double]$aggregate.frame_ms_p99
     $onePctLow = [double]$aggregate.fps_1pct_low
 
@@ -171,15 +225,34 @@ if ($aggregate) {
     $seenH = $DeclaredHeight
     $seenScale = $DeclaredScale
     $seenVsync = 'vsync state unknown'
+    $seenMaxFps = 'frame cap unknown'
     if ($info) {
         $seenW = [int]$info.viewport[0]
         $seenH = [int]$info.viewport[1]
         $seenScale = [double]$info.content_scale[0]
         if ($info.vsync_disabled) { $seenVsync = 'vsync off' } else { $seenVsync = 'vsync ON' }
+        if ($info.PSObject.Properties.Name -contains 'max_fps') {
+            if ([int]$info.max_fps -eq 0) { $seenMaxFps = 'no frame cap' } else { $seenMaxFps = ('max fps ' + $info.max_fps) }
+        }
     }
-    Write-Host ('  measured at ' + $seenW + 'x' + $seenH + ', content scale ' + (Format-Num $seenScale '0.0#') + ', ' + $seenVsync)
+    Write-Host ('  measured at ' + $seenW + 'x' + $seenH + ', content scale ' + (Format-Num $seenScale '0.0#') + ', ' + $seenVsync + ', ' + $seenMaxFps)
+    if ($refreshKnown) {
+        Write-Host ('  display refresh ' + (Format-Num $refreshHz '0.0#') + ' Hz, one period is ' + (Format-Num $refreshPeriodMs '0.00') + ' ms')
+    } else {
+        Write-Host '  display refresh not reported by the platform'
+    }
     Write-Host ('  ' + $aggregate.measured_frames + ' frames, ' + $windowsSeen + ' windows, ' + $aggregate.entity_count + ' entities')
-    Write-Host ('  fps_avg ' + (Format-Num $fps) + ' | frame_ms_p50 ' + (Format-Num ([double]$aggregate.frame_ms_p50) '0.00') + ' | frame_ms_p99 ' + (Format-Num $p99 '0.00') + ' | 1 % low ' + (Format-Num $onePctLow) + ' fps')
+    Write-Host ('  fps_avg ' + (Format-Num $fps) + ' | frame_ms_p50 ' + (Format-Num $p50 '0.00') + ' | frame_ms_p99 ' + (Format-Num $p99 '0.00') + ' | 1 % low ' + (Format-Num $onePctLow) + ' fps')
+
+    # One advisory line, printed before the budget is applied and remembered by
+    # nothing: it explains a number, it never decides one. A reader can check the
+    # arithmetic because the p50, the rate and the period are all on screen.
+    $cappedDisplay = Test-CappedDisplay -P50Ms $p50 -RefreshHz $refreshHz -Margin $CapDiagnosticMargin -MaxRefreshHz $CapDiagnosticMaxHz
+    if ($cappedDisplay) {
+        Write-Host ('  ADVISORY p50 ' + (Format-Num $p50 '0.00') + ' ms is one ' + (Format-Num $refreshHz '0.0#') + ' Hz refresh period (' + (Format-Num $refreshPeriodMs '0.00') + ' ms, tolerance ' + (Format-Num ($refreshPeriodMs * $CapDiagnosticMargin) '0.00') + ' ms) - the display is pacing frame delivery; this is not a code regression. The budget is unchanged and still decides the verdict.')
+    } elseif (-not $refreshKnown) {
+        Write-Host '  ADVISORY no refresh rate in PERF_INFO, so a capped display cannot be ruled out from this run - record the rate to make a red result attributable'
+    }
 
     if ($fps -lt $BudgetFpsAvg) {
         $budgetProblems += ('fps_avg ' + (Format-Num $fps) + ' < ' + $BudgetFpsAvg)
@@ -189,12 +262,20 @@ if ($aggregate) {
     }
 }
 
+# What the verdict line says about the machine, so the number carries its
+# provenance into the result block. Purely descriptive.
+$displayNote = 'display refresh unknown'
+if ($refreshKnown) {
+    $displayNote = ((Format-Num $refreshHz '0.0#') + ' Hz display')
+    if ($cappedDisplay) { $displayNote = $displayNote + ', pacing frames' }
+}
+
 if ($problems.Count -gt 0) {
-    Add-Result 'G2.3' 'Performance within budget' 'fail' ($problems -join '; ')
+    Add-Result 'G2.3' 'Performance within budget' 'fail' (($problems -join '; ') + ' (' + $displayNote + ')')
 } elseif ($budgetProblems.Count -gt 0) {
-    Add-Result 'G2.3' 'Performance within budget' 'fail' (($budgetProblems -join '; ') + ' at ' + $expectedEntities + ' entities, ' + $DeclaredWidth + 'x' + $DeclaredHeight + ' at ' + (Format-Num $DeclaredScale '0.0#') + 'x')
+    Add-Result 'G2.3' 'Performance within budget' 'fail' (($budgetProblems -join '; ') + ' at ' + $expectedEntities + ' entities, ' + $DeclaredWidth + 'x' + $DeclaredHeight + ' at ' + (Format-Num $DeclaredScale '0.0#') + 'x, ' + $displayNote)
 } else {
-    Add-Result 'G2.3' 'Performance within budget' 'pass' ((Format-Num $fps) + ' fps avg >= ' + $BudgetFpsAvg + ', p99 ' + (Format-Num $p99 '0.00') + ' ms <= ' + (Format-Num $BudgetP99Ms '0.0') + ' ms, 1 % low ' + (Format-Num $onePctLow) + ' fps, ' + $expectedEntities + ' entities, ' + $DeclaredWidth + 'x' + $DeclaredHeight + ' at ' + (Format-Num $DeclaredScale '0.0#') + 'x')
+    Add-Result 'G2.3' 'Performance within budget' 'pass' ((Format-Num $fps) + ' fps avg >= ' + $BudgetFpsAvg + ', p99 ' + (Format-Num $p99 '0.00') + ' ms <= ' + (Format-Num $BudgetP99Ms '0.0') + ' ms, 1 % low ' + (Format-Num $onePctLow) + ' fps, ' + $expectedEntities + ' entities, ' + $DeclaredWidth + 'x' + $DeclaredHeight + ' at ' + (Format-Num $DeclaredScale '0.0#') + 'x, ' + $displayNote)
 }
 
 Complete-Gate 'G2 performance'
