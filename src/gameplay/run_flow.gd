@@ -59,6 +59,26 @@ extends Node
 ##   A refusal (no gold, a switched-on inventory cap, a spent reroll ladder) leaves
 ##   gold, the shelf and the inventory exactly as they were.
 ##
+## PLACEHOLDER: the starting loadout, not the choice screen (T-0058)
+## -----------------------------------------------------------------
+## A run begins with items in hand, because a build phase with nothing to place is
+## not a run. The grant is data: `starting_loadout` is a list of `{kind, type_id,
+## tier}` entries, and `start_run()` lands it in the inventory before the map is
+## ready. `kind` is `tower`, or `upgrade` for any rune or relic, and the
+## (type_id, tier) pair must be one `item_catalogue.gd` holds for that kind.
+##
+## The design the human chose is a **choice** between two tier-1 towers and two
+## tier-1 upgrades at the start of a run. That screen is UI for later and is not
+## here. This table is the placeholder for it: it grants one such pair
+## unconditionally, so the loop can be played now. Because the grant is data, the
+## choice screen replaces the table - and nothing else in this file - when it
+## arrives; nothing downstream reads an item by name.
+##
+## A refusal, not a workaround: an **empty** table refuses to start the run, and an
+## entry whose type or tier the catalogue does not hold refuses it too, naming the
+## entry. A run with nothing to place, or holding an item no system knows, is a
+## broken run and says so rather than opening an unplayable level.
+##
 ## KNOWN GAP, reported to `eng/systems` rather than worked around
 ## -------------------------------------------------------------
 ## `UpgradeInstance` carries `type_id` and nothing else, so a tier-2 or tier-3 rune
@@ -80,6 +100,7 @@ extends Node
 ##   towers from `inventory()`. This object exposes them and copies none of them.
 ##
 ## Prints on stdout, in this order:
+##   RUNFLOW_LOADOUT {json}   once, when a run begins: what the loadout granted
 ##   RUNFLOW_START {json}     once, when a run begins: seed, map sha, opening numbers
 ##   RUNFLOW_ENTER {json}     once per level node entered, with the level it opened
 ##   RUNFLOW_NODE {json}      once per non-level node entered, with its effect
@@ -174,6 +195,13 @@ const DEFAULT_TREASURE_GOLD_PER_LAYER := 15
 ## PLACEHOLDER (economy.md §HQ: the only heal in the game): +6, free, once.
 const DEFAULT_REST_HEAL := 6
 
+## The two kinds a `starting_loadout` entry may name. `tower` must match the
+## catalogue's tower of that id; `upgrade` matches any of its runes or relics,
+## because the inventory holds both as one thing. The two are not interchangeable:
+## an entry cannot claim a rune is a tower.
+const LOADOUT_TOWER := "tower"
+const LOADOUT_UPGRADE := "upgrade"
+
 enum Phase { IDLE, ON_MAP, IN_LEVEL, FINISHED }
 const PHASE_NAMES: Array[String] = ["idle", "on_map", "in_level", "finished"]
 
@@ -187,6 +215,24 @@ const PHASE_NAMES: Array[String] = ["idle", "on_map", "in_level", "finished"]
 ## agree by construction; a designer moves these, not the scene.
 @export var starting_hq_max: int = RunStateScript.DEFAULT_HQ_MAX
 @export var starting_gold: int = RunStateScript.STARTING_GOLD
+
+@export_group("Starting loadout — PLACEHOLDER (T-0058, replaces the choice screen)")
+## What a run begins holding, granted by `start_run()` before the map is ready.
+## A list of `{kind, type_id, tier}`; `kind` is `tower` or `upgrade` (see
+## `LOADOUT_TOWER`), and the pair must exist in `item_catalogue.gd`.
+##
+## The default is two distinct tier-1 towers and two tier-1 upgrades - `arrow`,
+## `bramble`, the rune `piercer` and the relic `chain_link` - which is the band
+## `towers.md` §Tower table and `items.md` put a first run in. It is the
+## placeholder for the choice screen (see the header), not a tuning decision: a
+## designer replaces the table, and a designer setting the count sets it here.
+## Empty refuses the run.
+@export var starting_loadout: Array = [
+	{"kind": "tower", "type_id": "arrow", "tier": 1},
+	{"kind": "tower", "type_id": "bramble", "tier": 1},
+	{"kind": "upgrade", "type_id": "piercer", "tier": 1},
+	{"kind": "upgrade", "type_id": "chain_link", "tier": 1},
+]
 
 @export_group("Non-level nodes — PLACEHOLDER (design/systems nodes.md, economy.md)")
 ## HQ a rest node restores. The only heal in the game; never above the maximum and
@@ -258,8 +304,14 @@ var _last_refusal: String = ""
 
 ## Builds the map for `seed_value`, starts a run and puts the player on the map.
 ## Refused while a level is open, while another run is in progress, when no level
-## scene is wired, or when the map refuses the seed (the map's own reason is
-## carried through).
+## scene is wired, when `starting_loadout` is empty or names a kind, type or tier
+## `item_catalogue.gd` does not hold, or when the map refuses the seed (the map's
+## own reason is carried through). A refused start leaves no map, no run and no
+## inventory behind, and does not emit `map_ready`.
+##
+## The starting loadout is granted into the inventory here, before `map_ready`: the
+## first build phase the player is shown already has what it takes to place a tower
+## (see the header's PLACEHOLDER section).
 ##
 ## `map_overrides` is authoring and test input, exactly as
 ## `RunMap.generate(seed, overrides)` defines it — `{"forced_types": {layer:
@@ -274,6 +326,11 @@ func start_run(seed_value: int, map_overrides: Dictionary = {}) -> bool:
 		return _refuse(
 			"start a run", "no level_scene is wired, so a level node would have nothing to open"
 		)
+	# The loadout is resolved before a map is built and before a run object exists,
+	# so a broken table refuses here with nothing half-started behind it.
+	var loadout := _resolve_starting_loadout()
+	if not bool(loadout.get("ok", false)):
+		return _refuse("start a run", String(loadout.get("reason", "")))
 
 	var map = RunMapScript.new()
 	if not map.generate(seed_value, map_overrides):
@@ -299,9 +356,34 @@ func start_run(seed_value: int, map_overrides: Dictionary = {}) -> bool:
 	_revealed_boss = {}
 	_node_effects.clear()
 	_completions = 0
+
+	# Before the map is ready and before the first level opens: the build phase the
+	# player is first shown already has something to place (see the header).
+	var granted := _grant_starting_loadout(loadout["items"])
+	if not bool(granted.get("ok", false)):
+		# Unreachable while resolution above proved every id and tier: a brand-new
+		# inventory has no cap to hit and `add_*` refuses nothing else. Loud,
+		# because this would be a broken run rather than a refusal a player made.
+		push_error(
+			"RUNFLOW_ERROR the starting loadout was refused by the inventory: %s"
+			% String(granted.get("reason", ""))
+		)
+		# Nothing is left half-started: no map, no run, no inventory, and `map_ready`
+		# was never emitted.
+		_map = null
+		_run = null
+		_inventory = null
+		return _refuse("start a run", String(granted.get("reason", "")))
+
 	_phase = Phase.ON_MAP
 	_last_refusal = ""
 
+	print("RUNFLOW_LOADOUT " + JSON.stringify({
+		"granted": granted["granted"],
+		"towers": _inventory.tower_count(),
+		"upgrades": _inventory.upgrade_count(),
+		"tower_types": _starting_tower_types(),
+	}))
 	print("RUNFLOW_START " + JSON.stringify({
 		"seed": seed_value,
 		"sha": _map.sha(),
@@ -1052,6 +1134,114 @@ func _record_node_effect(node_id: int, type_id: String, effect: Dictionary) -> v
 		record[key] = effect[key]
 	_node_effects.append(record)
 	print("RUNFLOW_NODE " + JSON.stringify(record))
+
+
+# --- internals: the starting loadout ----------------------------------------
+
+## Turns `starting_loadout` into catalogue entries, or says why it cannot. This is
+## the only place the table is read, so an entry's refusal is worded once and
+## names the entry by index, kind, type and tier.
+##
+## Returns `{ok, reason, items}`: `items` are the catalogue's own dictionaries,
+## which is what `_add_item()` lands, so the grant cannot invent an item the store
+## and the event nodes do not draw from.
+func _resolve_starting_loadout() -> Dictionary:
+	if starting_loadout.is_empty():
+		# A run with nothing to place is broken, not quiet: the build panel would
+		# open with an empty list and the player would have no move.
+		return {
+			"ok": false,
+			"reason": (
+				"the starting loadout is empty, so the first build phase would have "
+				+ "nothing to place; grant at least one tower and one upgrade"
+			),
+			"items": [],
+		}
+
+	var catalogue: Array = ItemCatalogueScript.entries()
+	var items: Array = []
+	for index in starting_loadout.size():
+		var raw = starting_loadout[index]
+		if typeof(raw) != TYPE_DICTIONARY:
+			return _loadout_refusal(
+				"starting loadout entry %d is not a {kind, type_id, tier} dictionary" % index
+			)
+		var entry: Dictionary = raw
+		var kind := String(entry.get("kind", ""))
+		var type_id := String(entry.get("type_id", ""))
+		var tier := int(entry.get("tier", 0))
+
+		if kind != LOADOUT_TOWER and kind != LOADOUT_UPGRADE:
+			return _loadout_refusal(
+				"starting loadout entry %d has kind '%s'; an entry is '%s' or '%s'"
+				% [index, kind, LOADOUT_TOWER, LOADOUT_UPGRADE]
+			)
+		if type_id == "":
+			return _loadout_refusal("starting loadout entry %d names no type_id" % index)
+
+		var found := _catalogue_entry(catalogue, kind, type_id, tier)
+		if found.is_empty():
+			return _loadout_refusal(
+				"starting loadout entry %d names %s '%s' at tier %d, which item_catalogue.gd does not have"
+				% [index, kind, type_id, tier]
+			)
+		items.append(found)
+	return {"ok": true, "reason": "", "items": items}
+
+
+## The catalogue entry `kind`/`type_id`/`tier` names, or {} when it names none. A
+## `tower` entry matches only the catalogue's tower; an `upgrade` entry matches one
+## of its runes or relics. Matching by id and tier alone would let a rune be
+## granted as a tower.
+func _catalogue_entry(catalogue: Array, kind: String, type_id: String, tier: int) -> Dictionary:
+	var want_tower := kind == LOADOUT_TOWER
+	for record in catalogue:
+		var candidate: Dictionary = record
+		if String(candidate.get("id", "")) != type_id:
+			continue
+		if int(candidate.get("tier", 0)) != tier:
+			continue
+		if (String(candidate.get("kind", "")) == ItemCatalogueScript.KIND_TOWER) != want_tower:
+			continue
+		return candidate
+	return {}
+
+
+func _loadout_refusal(reason: String) -> Dictionary:
+	return {"ok": false, "reason": reason, "items": []}
+
+
+## Lands every resolved entry in the inventory, in table order, and records what
+## was granted for the `RUNFLOW_LOADOUT` line. Refused only if the inventory
+## refuses, which a brand-new uncapped inventory does not do for a validated id.
+func _grant_starting_loadout(items: Array) -> Dictionary:
+	var granted: Array = []
+	for i in items.size():
+		var entry: Dictionary = items[i]
+		var landed := _add_item(entry, "starting loadout")
+		if not bool(landed.get("ok", false)):
+			return {
+				"ok": false,
+				"reason": String(landed.get("reason", "")),
+				"granted": granted,
+			}
+		granted.append({
+			"kind": String(entry.get("kind", "")),
+			"id": String(entry.get("id", "")),
+			"tier": int(entry.get("tier", 1)),
+		})
+	return {"ok": true, "reason": "", "granted": granted}
+
+
+## The type ids the run begins holding, in acquisition order. Evidence for the
+## opening line; a HUD reads the inventory instead.
+func _starting_tower_types() -> Array:
+	var out: Array = []
+	if _inventory == null:
+		return out
+	for tower in _inventory.towers():
+		out.append(String(tower.type_id))
+	return out
 
 
 # --- internals: the level handover ------------------------------------------
