@@ -50,5 +50,7 @@ script = ExtResource("4_slot")
 color = Color(0.5451, 0.5098, 0.56863, 0.55)
 polygon = PackedVector2Array(-14, -14, 14, -14, 14, 14, -14, 14)
 
-[node name="BuildPanel" parent="." instance=ExtResource("7_panel")]
-arena_path = NodePath("..")
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="BuildPanel" parent="UI" instance=ExtResource("7_panel")]
+arena_path = NodePath("../..")
