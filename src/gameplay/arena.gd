@@ -39,9 +39,11 @@ extends Node2D
 ##   * Placement draws a tower instance from the inventory and costs nothing;
 ##     taking a tower back returns the same instance, tier and upgrades intact.
 ##   * Gold in and out goes through the run (`GoldLedger` is a view of it).
-##   * Clearing the last wave calls `complete_level()` and **never** `win_run()`
-##     (ADR-0006): the map decides when the boss node has been finished. Defeat
-##     is `RunState`'s call too - the arena stops spawning and refuses to start
+##   * Clearing the last wave emits `level_cleared` and stops there (T-0048). The
+##     run session that opened this level calls `complete_level()` exactly once,
+##     so a level cannot count itself twice; the arena **never** calls `win_run()`
+##     (ADR-0006), because it cannot know which node it is playing. Defeat is
+##     `RunState`'s call too - the arena stops spawning and refuses to start
 ##     another level, and invents no ending of its own.
 ##
 ## `bind_run(run, inventory)` hands the arena the run the caller owns; call it
@@ -55,10 +57,10 @@ extends Node2D
 ##   ARENA_WALLET {json}      only when the arena had to create the ledger
 ##   ARENA_PHASE {json}       on every build <-> wave transition
 ##   ARENA_WAVE {json}        once per wave cleared, with the phase it returned to
-##   ARENA_LEVEL_CLEAR {json} once, when the level's last wave is cleared, with the
-##                            `complete_level()` outcome
-##   ARENA_RUN_END {json}     once, when the run ends (defeat today; victory is
-##                            the map's call)
+##   ARENA_LEVEL_CLEAR {json} once, when the level's last wave is cleared, with
+##                            who the completion was handed to
+##   ARENA_RUN_END {json}     once, when the run ends (defeat from the leaks, or
+##                            victory when the run session calls `win_run()`)
 ##   ARENA_LEAK {json}        one line per arrival, with HQ health before and after
 ##   ARENA_STUCK {json}       only when an enemy outlives its arrival (a bug)
 ##   ARENA_PLACED {json}      one line per tower placed, with the instance it came from
@@ -157,6 +159,14 @@ const USEC_PER_SECOND := 1000000.0
 # built by a prior `--import`.
 const RunStateScript := preload("res://src/systems/run_state.gd")
 const InventoryScript := preload("res://src/systems/inventory.gd")
+
+## The level's last wave is clear and control is handed back to whoever owns the
+## run (T-0048). The run session calls `RunState.complete_level()` once and, for
+## the boss node, `win_run()`; this scene calls neither, so a level can neither
+## count itself twice nor end the run. Emitted **after** `ARENA_LEVEL_CLEAR` and
+## after every other line this frame, so a listener that frees the level on the
+## spot cannot pull the node out from under the code that reported it.
+signal level_cleared(level_index: int, elite: bool)
 
 var _hq: Hq
 var _spawn_timer: Timer
@@ -768,22 +778,21 @@ func _on_wave_completed(wave: WaveDefinition) -> void:
 
 
 ## The level's last wave is clear. This is the one place a level reports itself
-## finished, and it reports to the run: `complete_level()` pays the level-clear
-## gold and counts the level. It deliberately does **not** call `win_run()` -
-## victory is the map's call once the boss node has been finished (ADR-0006), and
-## an arena that claimed it would end every run on its first level.
+## finished, and it reports **to the run session** (T-0048): `complete_level()` is
+## called by whoever opened the level, exactly once, because two callers cannot
+## both be the one that counts a level and this scene cannot know whether it is
+## playing a standard, an elite or the boss node. The arena deliberately does
+## **not** call `win_run()` either (ADR-0006).
+##
+## A level played straight from the scene with no session listening keeps its
+## numbers and moves nobody's level index: `handed_to` below says so, which is the
+## visible sign the scene is being played outside a run.
 func _on_level_completed() -> void:
-	var gold_before := gold()
-	var completed := false
 	var why := ""
 	if _run == null:
 		why = "no run is bound, so there is nothing to complete"
 	elif _run.is_over():
 		why = "the run is %s" % _run.status_name()
-	elif not _run.complete_level():
-		why = _run.last_refusal()
-	else:
-		completed = true
 
 	print("ARENA_LEVEL_CLEAR " + JSON.stringify({
 		"level_index": effective_level_index(),
@@ -791,20 +800,24 @@ func _on_level_completed() -> void:
 		"waves": level_wave_count(),
 		"phase": phase_name(),
 		"hq": _hq_health,
-		"gold_before": gold_before,
 		"gold": gold(),
-		"level_clear_paid": (gold() - gold_before) if completed else 0,
-		"complete_level": completed,
 		"levels_completed": _run.level_index() if _run != null else 0,
 		"run_status": _run.status_name() if _run != null else "no_run",
+		"handed_to": "run_session" if why == "" else "nobody",
 		"why": why,
 	}))
 
+	# Last, so a listener may queue the level for deletion without racing the
+	# lines above. `level_cleared` is the arena's whole completion contract: what
+	# the level index becomes is the session's decision, not this scene's.
+	level_cleared.emit(effective_level_index(), elite_level)
+
 
 ## The run ended, wherever the decision was made: `RunState.damage_hq()` reaching
-## zero (defeat) today, `win_run()` from the map when victory exists. The arena
-## reacts and invents nothing: it stops spawning, so no further enemy is charged
-## to a decided run, and refuses to start another level (`start_level`).
+## zero (defeat) today, `win_run()` from the run session when the boss node is
+## completed. The arena reacts and invents nothing: it stops spawning, so no
+## further enemy is charged to a decided run, and refuses to start another level
+## (`start_level`).
 func _on_run_ended(victory: bool, reason: String) -> void:
 	if _spawn_timer != null:
 		_spawn_timer.stop()
