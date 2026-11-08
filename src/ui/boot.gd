@@ -43,6 +43,7 @@ extends Control
 ##   and an ERROR line would make a working build red for the gates.
 ##
 ## Prints on stdout, in this order:
+##   BOOT_LIFETIME {json}   once, when a `--seconds=` lifetime was set
 ##   BOOT_AUTOSTART {json}  once, before the menu is skipped
 ##   BOOT_SCREEN {json}     once per screen transition, with why
 ##   BOOT_START {json}      once per run started: seed, map sha, next choices
@@ -53,7 +54,16 @@ extends Control
 ##   BOOT_UNHANDLED {json}  an entry whose action has no handler
 ##   BOOT_QUIT {json}       every quit request, with the screen it came from
 ##   BOOT_REFUSED {json}    every refusal, with its reason
-##   BOOT_SESSION {json}    once, when a `--seconds=` lifetime was set
+##   BOOT_SESSION {json}    once, last, on the quit path: this process's session
+##
+## `BOOT_SESSION` is the session's own measurement - seconds since the process
+## started, how many runs it played and how many of those replaced a finished
+## run - because a session outlives the runs inside it (ADR-0007). It is the
+## only line here that is a measurement rather than an event, and it is printed
+## once per boot even if the quit path is raised twice: two lines under one
+## prefix would be ambiguous. The shipped entry point runs one boot per process,
+## so once per boot is once per process there. The requested `--seconds=` length
+## is an event and is therefore `BOOT_LIFETIME`, at the other end of the session.
 ##
 ## `RUNFLOW_*`, `MAPSCREEN_*`, `MENU_*` and `ARENA_*` lines in the same output are
 ## printed by the objects under this one, not by this file.
@@ -146,12 +156,19 @@ var _quit_requests: int = 0
 var _quit_enabled: bool = true
 var _session_seconds: float = 0.0
 var _session_timer: Timer = null
-## When the session started, so a restart can report how deep into it the run it
-## replaced had got. 0 until `--seconds=` starts the timer.
+## When the session started, for the length of the session and for how deep into
+## it a run began. Stamped at the top of `_ready`, before any screen exists.
 var _session_started_usec: int = 0
 ## Runs started by this boot, restarts included. A count, not a bool, because
 ## "the session restarted the run" has to be visible in the evidence.
 var _runs_started: int = 0
+## Runs replaced because the session had time left: one per `BOOT_RESTART`. Kept
+## apart from `_runs_started` because a replacement that is refused counts as a
+## restart attempt and as no run at all.
+var _restarts: int = 0
+## Whether `BOOT_SESSION` has been printed. The quit path can be raised twice; the
+## session is measured once, so the summary is never ambiguous.
+var _session_reported: bool = false
 ## A replacement run is queued for the next idle frame. Set when a run ends inside
 ## a session; cleared by `_begin_pending_restart()`.
 var _restart_pending: bool = false
@@ -166,12 +183,16 @@ var _refusals: int = 0
 
 
 func _ready() -> void:
+	# The session clock starts with the process, not with `--seconds=`: the entry
+	# point *is* the session (ADR-0007), so a quit from the menu has to report how
+	# long the session lasted just as a timed one does.
+	_session_started_usec = Time.get_ticks_usec()
 	_parse_args()
 	if not _interfaces_are_wired():
 		return
-	# The session clock starts before any screen does, so an autostart run that
-	# ends during its own walk already knows the session is in progress and is
-	# replaced rather than left on the menu.
+	# The timer that ends the session starts before any screen does, so an
+	# autostart run that ends during its own walk already knows the session is
+	# in progress and is replaced rather than left on the menu.
 	if _session_seconds > 0.0:
 		_start_session_timer()
 	if autostart:
@@ -324,8 +345,27 @@ func _request_quit(entry_id: String) -> void:
 		"enabled": _quit_enabled,
 	}))
 	quit_requested.emit()
+	# Last line before the process goes: what the session as a whole did.
+	_print_session_summary()
 	if _quit_enabled:
 		get_tree().quit(EXIT_CODE_OK)
+
+
+## The session's measurement, printed once and last. `seconds` is the process's
+## lifetime, `runs` every run this boot started (restarts included) and
+## `restarts` the runs that replaced a finished one - so a session that played
+## three runs and restarted twice reads `runs: 3, restarts: 2`, and
+## `runs - restarts` is always 1 or 0. A consumer that needs to know the session
+## length reads this field, not an arena's age (ADR-0007).
+func _print_session_summary() -> void:
+	if _session_reported:
+		return
+	_session_reported = true
+	print("BOOT_SESSION " + JSON.stringify({
+		"seconds": _session_elapsed(),
+		"runs": runs_started(),
+		"restarts": _restarts,
+	}))
 
 
 # --- the session's signals --------------------------------------------------
@@ -476,6 +516,7 @@ func _autostart_begin(entry_id: String, refusal_why: String) -> bool:
 func _replace_run(victory: bool, reason: String) -> void:
 	_release_run()
 	_restart_pending = true
+	_restarts += 1
 	print("BOOT_RESTART " + JSON.stringify({
 		"runs_started": _runs_started,
 		"victory": victory,
@@ -523,7 +564,6 @@ func _parse_args() -> void:
 
 
 func _start_session_timer() -> void:
-	_session_started_usec = Time.get_ticks_usec()
 	_session_timer = Timer.new()
 	_session_timer.name = "SessionTimer"
 	_session_timer.wait_time = maxf(_session_seconds, MIN_SECONDS)
@@ -531,7 +571,7 @@ func _start_session_timer() -> void:
 	_session_timer.timeout.connect(_on_session_timer_timeout)
 	add_child(_session_timer)
 	_session_timer.start()
-	print("BOOT_SESSION " + JSON.stringify({"seconds": _session_seconds}))
+	print("BOOT_LIFETIME " + JSON.stringify({"seconds": _session_seconds}))
 
 
 ## Whether an ended run must be replaced instead of returning to the menu: only an
@@ -542,7 +582,8 @@ func _session_keeps_playing() -> bool:
 	return autostart and _session_seconds > 0.0 and _session_timer != null and _quit_requests == 0
 
 
-## Seconds since the session began. 0 before `--seconds=` started it.
+## Seconds since this boot's `_ready`. Stamped with the process, so it measures
+## the session the gates run, not the timer they set.
 func _session_elapsed() -> float:
 	if _session_started_usec == 0:
 		return 0.0
