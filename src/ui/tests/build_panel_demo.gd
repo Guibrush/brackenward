@@ -13,6 +13,7 @@ extends SceneTree
 ##   BUILD_PANEL_CASE {text}        one line per phase
 ##   BUILD_PANEL_ROWS {json}        the list against the inventory, before anything moves
 ##   BUILD_PANEL_STATE {json}       the always-visible line against RunState
+##   BUILD_PANEL_WAVE {json}        the wave readout against the arena's own numbers
 ##   BUILD_PANEL_INPUT {json}       the intents the router produced, per device
 ##   BUILD_PANEL_POSITIVE {json}    arm -> place -> upgrade -> take back, with the gold ledger
 ##   BUILD_PANEL_PLANTED_A {json}   placing with nothing armed: refused here, never asked of
@@ -34,6 +35,7 @@ const MapInputScript := preload("res://src/ui/map_input.gd")
 ## Row kinds, spelled as the panel spells them. Duplicated here on purpose: a demo
 ## that reads its constants off the panel under test cannot catch the panel
 ## renaming them.
+const KIND_START_WAVE := "start_wave"
 const KIND_TOWER := "tower"
 const KIND_UPGRADE := "upgrade"
 const KIND_TAKE_BACK := "take_back"
@@ -136,11 +138,19 @@ func _boot() -> void:
 
 ## DoD 1: every tower the player owns is listed, with its tier and its equipped
 ## upgrades, and the list says which of them is already on a tile.
+##
+## T-0059 puts the Start Wave row first, so the tower half of the list is compared
+## on its own and the Start Wave row is checked as the head of the list.
 func _check_rows() -> void:
 	var rows: Array = _panel.rows()
 	var inventory_towers: Array = _inventory.towers()
-	var ids: Array = []
+	var tower_rows: Array = []
 	for entry in rows:
+		if String(entry["kind"]) == KIND_START_WAVE:
+			continue
+		tower_rows.append(entry)
+	var ids: Array = []
+	for entry in tower_rows:
 		ids.append(int(entry["id"]))
 
 	var counts: Dictionary = {}
@@ -150,7 +160,7 @@ func _check_rows() -> void:
 	var tiers_ok := true
 	var upgrades_ok := true
 	var labels_ok := true
-	for entry in rows:
+	for entry in tower_rows:
 		var instance = _inventory.find_tower(int(entry["id"]))
 		if instance == null:
 			tiers_ok = false
@@ -165,17 +175,20 @@ func _check_rows() -> void:
 	print("BUILD_PANEL_ROWS " + JSON.stringify({
 		"rows": _printable_rows(rows),
 		"count": rows.size(),
+		"tower_rows": tower_rows.size(),
 		"inventory": inventory_towers.size(),
 		"kinds": counts,
 		"armed": _panel.armed_instance(),
 		"selected": _panel.selected_instance(),
 	}))
-	check_eq_int(rows.size(), inventory_towers.size(), "one row per owned tower, and nothing else yet")
-	check(ids == [int(inventory_towers[0].id), int(inventory_towers[1].id)], "the rows are the inventory's towers, in order")
+	check_eq_int(rows.size(), inventory_towers.size() + 1, "the list is the owned towers plus the Start Wave row")
+	check(String(rows[0]["kind"]) == KIND_START_WAVE, "Start Wave is the list's first row")
+	check_eq_int(tower_rows.size(), inventory_towers.size(), "one tower row per owned tower, and nothing else")
+	check(ids == [int(inventory_towers[0].id), int(inventory_towers[1].id)], "the tower rows are the inventory's towers, in order")
 	check(tiers_ok, "every row shows the instance's tier")
 	check(upgrades_ok, "every row shows the upgrades the instance carries")
 	check(labels_ok, "every row has text")
-	var second: Dictionary = rows[1]
+	var second: Dictionary = tower_rows[1]
 	check(
 		(second["upgrades"] as Array).size() == 1,
 		"the tower with an equipped upgrade lists it: %s" % [second["upgrades"]]
@@ -215,6 +228,26 @@ func _check_state() -> void:
 	)
 	check(on_screen.find(_arena.phase_name()) != -1, "the state line names the phase: %s" % on_screen)
 
+	# DoD 1's other half (T-0059): the wave readout is its own label at
+	# `wave_path`. The panel tolerates that node being absent, so without this the
+	# readout can be reported correctly and still be invisible to the player.
+	var wave_label = _panel.get_node_or_null(_panel.wave_path)
+	var wave_on_screen := "" if wave_label == null else String(wave_label.text)
+	var wave_report: Dictionary = _panel.wave()
+
+	print("BUILD_PANEL_WAVE " + JSON.stringify({
+		"wave": wave_report,
+		"path": String(_panel.wave_path),
+		"node": wave_label != null,
+		"on_screen": wave_on_screen,
+	}))
+	check(wave_label != null, "the wave readout has a label to draw into: %s" % String(_panel.wave_path))
+	check(wave_on_screen != "", "the wave readout is not blank")
+	check(
+		wave_on_screen == String(wave_report["label"]),
+		"the label on screen is the wave the panel reports: %s" % wave_on_screen
+	)
+
 
 ## DoD 5: input comes through `MapInput`, and the actions the router names carry a
 ## keyboard and a joypad binding, so a pad is reachable by construction.
@@ -239,7 +272,10 @@ func _check_input() -> void:
 	var focus_before: int = _panel.focus_index()
 	var moved: Dictionary = _panel.handle_input(_action_event(MapInputScript.ACTION_FOCUS_NEXT))
 	var focus_after: int = _panel.focus_index()
-	_panel.activate(0)
+	# Row 0 is the Start Wave row (T-0059); the arming and dismiss checks below
+	# need a tower, so they take the tower's row by kind rather than by index.
+	var arm_row: int = _row_for_kind(KIND_TOWER, int(_inventory.towers()[0].id))
+	_panel.activate(arm_row)
 	var armed_before: int = _panel.armed_instance()
 	_panel.handle_input(_action_event(MapInputScript.ACTION_DISMISS))
 	var armed_after: int = _panel.armed_instance()
@@ -256,6 +292,7 @@ func _check_input() -> void:
 		"focus_before": focus_before,
 		"focus_after": focus_after,
 		"focus_applied": moved.get("applied", false),
+		"arm_row": arm_row,
 		"armed_before_dismiss": armed_before,
 		"armed_after_dismiss": armed_after,
 	}))
