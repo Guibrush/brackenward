@@ -86,9 +86,17 @@ have been two dispatches each.
 ## Blockers
 | Blocker | Waiting on |
 | --- | --- |
-| **G2.3 cannot pass on this machine as configured** | **human**: the display runs at 59.98 Hz with a Parsec virtual adapter in the path, and throughput has collapsed — 82 fps against a 651 fps reference, p99 45 ms with p50 9 ms. That is not refresh pacing (p50 would sit at 16.67 ms), so something in the GPU path changed. Measure with the virtual adapter disabled, or on a plain display |
 | Batch music | ADR-0005 accepted **and** implemented (loop-seam measurement) |
 | G1 repo in a full run | only when CI is mid-run on the merge commit; `repo.ps1` is 5/5 once settled |
+
+**G2.3 is not blocked any more, and the earlier attribution was wrong.** The 82 fps /
+p99 45 ms result did not reproduce: four back-to-back runs measured 611–684 fps at
+p50 ≈ 1.3 ms, and the full gate passes at 693.9 fps / p99 2.77 ms. Pinning the screen and
+GPU (`--screen`, `--gpu-index 0`, both now enforced) changed nothing. Two facts stand:
+the physical monitor runs at **59.98 Hz**, and the collapse was **transient and
+unattributed** — most likely Parsec streaming or background load, since a Parsec virtual
+adapter is in the stack. If it recurs, the run to keep is one where `p50` sits near
+16.67 ms.
 
 **Batch art is unblocked.** `art/director` accepted
 `assets/art/towers/arrow/idle/south.png` as the quality bar (36×57, 10 tones, zero
