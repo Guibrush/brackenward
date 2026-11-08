@@ -29,6 +29,13 @@ extends Node2D
 ## `WaveDirector` paces them. The arena owns the one transition that matters: a
 ## wave start locks the build phase, a wave clear unlocks it again.
 ##
+## T-0059 puts the start of a wave in the player's hands. `start_next_wave()` is
+## the build panel's door to it, and it refuses **before** the director is asked:
+## a wave already running, or a plan with nothing left, is a sentence the player
+## reads, not a `WAVE_ERROR` line the gate fails on. `wave_status()` is the
+## readout - it reports what the director and the phase already say and computes
+## no number of its own.
+##
 ## T-0045 makes the arena **one level of a run**. The `RunState` and `Inventory`
 ## it is handed (or creates, and says so) are the only owners of HQ health, gold
 ## and the towers the player holds; this scene is the view of them for one level:
@@ -746,6 +753,74 @@ func start_wave(index: int) -> bool:
 		return false
 	begin_wave()
 	return true
+
+
+## The player's door onto the next wave (T-0059). Everything it can refuse is
+## refused **here**, before the director is asked, because a refused wave is a
+## normal thing a player does and the director answers a bad index with
+## `push_error` - an ERROR line that `smoke.ps1` would fail on. The three
+## sentences a player can read:
+##
+##   * the run is over - there is no level left to play;
+##   * a wave is still running - finish it first, and nothing changes;
+##   * the plan has no wave after the last one cleared - the level is done.
+##
+## `start_wave()` still exists and still decides; this only picks the index and
+## refuses the two states the director would have reported as an error.
+func start_next_wave() -> bool:
+	if _director == null:
+		_refuse("start a wave", "the level has no wave plan")
+		return false
+	if _run_is_over():
+		_refuse("start a wave", "the run is %s; no wave can start" % _run.status_name())
+		return false
+	if _director.is_active():
+		_refuse(
+			"start a wave",
+			"wave %d is still running; the next one can start when it is cleared"
+			% (_director.current_index() + 1)
+		)
+		return false
+	var next_index: int = _director.current_index() + 1
+	if next_index >= level_wave_count():
+		_refuse(
+			"start a wave",
+			"the level has no waves left: %d of %d cleared" % [_waves_cleared, level_wave_count()]
+		)
+		return false
+	return start_wave(next_index)
+
+
+## The wave readout (T-0059), for the build panel to print. Every value is read
+## from the director and the phase; `remaining` is what the wave still owes the
+## lane - units it has not spawned yet **and** units it has spawned that are
+## still in play - so "3 enemies left" goes to zero on the tick the last one
+## dies, which is the same moment the wave is declared clear.
+##
+##     {waves, wave, cleared, phase, running, remaining, left}
+##
+## `wave` is the wave in play, or the one the player is about to start, so a
+## level that has not begun reads "wave 1 of 6" rather than "wave 0". `left` is
+## how many waves the level still has to run, and `remaining` is 0 while building.
+func wave_status() -> Dictionary:
+	var waves := level_wave_count()
+	var running := _director != null and _director.is_active()
+	var number := 0
+	var remaining := 0
+	if running:
+		number = _director.current_index() + 1
+		remaining = _director.units_left() + _director.walkers().size()
+	else:
+		number = mini(_waves_cleared + 1, waves)
+	return {
+		"waves": waves,
+		"wave": number,
+		"cleared": _waves_cleared,
+		"phase": phase_name(),
+		"running": running,
+		"remaining": remaining,
+		"left": maxi(waves - _waves_cleared, 0),
+	}
 
 
 func wave_plan() -> WavePlan:

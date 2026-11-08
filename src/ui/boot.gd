@@ -28,7 +28,10 @@ extends Control
 ##   code (a demo) calls that screen's `handle_input()`.
 ## * **`--autostart` skips the menu** and begins a run immediately, walking the
 ##   map to the first level it can reach, so a headless gate exercises real
-##   gameplay from this same entry point instead of an idle menu.
+##   gameplay from this same entry point instead of an idle menu. It also forces
+##   `start_first_wave`, because a headless session cannot press the build
+##   panel's Start Wave row (T-0060); a player's level opens in the build phase
+##   and waits for it.
 ## * **`--seconds=N` is the session length**, the same flag the arena reads:
 ##   whichever screen is up, the application quits after N seconds. Without it
 ##   the game runs until the player quits.
@@ -48,7 +51,8 @@ extends Control
 ##   BOOT_SCREEN {json}     once per screen transition, with why
 ##   BOOT_START {json}      once per run started: seed, map sha, next choices
 ##   BOOT_RESTART {json}    once per run replaced because the session goes on
-##   BOOT_LEVEL {json}      once per level opened, with whether wave 1 started
+##   BOOT_LEVEL {json}      once per level opened: the mode in force (`autostart`
+##                          or `player`) and whether wave 1 started
 ##   BOOT_COMPLETE {json}   once per level completed, with the run's numbers
 ##   BOOT_RUN_END {json}    once when the run ends and the menu comes back
 ##   BOOT_UNHANDLED {json}  an entry whose action has no handler
@@ -128,12 +132,16 @@ const RunFlowScript := preload("res://src/gameplay/run_flow.gd")
 @export var run_seed: int = SEED_RANDOM
 ## Skip the menu and begin a run on `_ready`. Also set by `--autostart`.
 @export var autostart: bool = false
-## Whether a level's first wave starts as soon as the level opens. True for the
-## slice: no in-level "start wave" control exists yet, so a level left in the
-## build phase would be a dead end for the player and for a headless gate. When
-## that control exists (G3) this becomes the player's decision and the flag
-## false.
-@export var start_first_wave: bool = true
+## Whether a level's first wave starts as soon as the level opens (T-0060).
+##
+## False for a player: the build panel offers a Start Wave row, so a level opens
+## in the build phase and waits for the player's decision. It is true only when
+## `--autostart` was passed, because a headless session has nobody to press the
+## row and `smoke.ps1` measures waves that never ran otherwise. Setting it in the
+## inspector alone cannot auto-start a level - `_on_level_opened()` requires
+## `start_first_wave and autostart`, and `autostart` is only ever set by the
+## command line (`--autostart` in `_parse_args`).
+@export var start_first_wave: bool = false
 
 # --- screens ----------------------------------------------------------------
 
@@ -381,15 +389,22 @@ func _on_map_ready(seed_value: int, selectable: Array) -> void:
 
 func _on_level_opened(node_id: int, level_index: int, elite: bool) -> void:
 	_set_screen(Screen.LEVEL, "level_opened")
+	# `and autostart` is load-bearing (T-0060): only the command line may start a
+	# wave unasked, so a level opened by a player always lands in the build phase
+	# and waits for the build panel's Start Wave row, whatever `start_first_wave`
+	# was left at in the inspector.
+	var auto_start := start_first_wave and autostart
 	var started := false
-	if start_first_wave:
+	if auto_start:
 		started = _start_first_wave()
 	print("BOOT_LEVEL " + JSON.stringify({
 		"node": node_id,
 		"level_index": level_index,
 		"elite": elite,
+		"mode": "autostart" if auto_start else "player",
 		"wave_started": started,
 		"start_first_wave": start_first_wave,
+		"autostart": autostart,
 		"level_name": str(_flow.current_level().name) if _flow != null else "",
 	}))
 
@@ -559,6 +574,11 @@ func _parse_args() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a == "--autostart":
 			autostart = true
+			# The one place the first wave is forced (T-0060): a headless session
+			# cannot press the build panel's Start Wave row, and `smoke.ps1`
+			# asserts on waves that actually ran. A player's boot never reaches
+			# this branch, so `start_first_wave` stays at its exported false.
+			start_first_wave = true
 		elif a.begins_with("--seconds="):
 			_session_seconds = maxf(0.0, float(a.trim_prefix("--seconds=")))
 

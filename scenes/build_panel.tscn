@@ -43,6 +43,10 @@ text = "Build"
 layout_mode = 2
 text = "HP 0/0    Gold 0"
 
+[node name="Wave" type="Label" parent="Margin/Column"]
+layout_mode = 2
+text = "Wave 0/0"
+
 [node name="Towers" type="VBoxContainer" parent="Margin/Column"]
 layout_mode = 2
 size_flags_vertical = 3

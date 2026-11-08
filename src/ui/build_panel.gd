@@ -22,6 +22,17 @@ extends Control
 ##   panel's own refusal, and it says so.
 ## * **Always visible:** gold, HQ current/max, and the phase, in one line that is
 ##   re-read from the run on every signal rather than cached.
+## * **The wave readout is the arena's numbers, formatted here** (T-0059): wave of
+##   the level's total, the phase, and how many enemies the running wave still
+##   owes the lane. `arena.wave_status()` is the one source; the panel adds no
+##   count of its own, so "3 enemies left" and the director's own clear condition
+##   can never disagree.
+## * **Start Wave is a row, not a second mode** (T-0059): it sits first in the
+##   list, is taken like every other row, and asks `arena.start_next_wave()`. The
+##   arena decides - build phase only, waves left only - and its sentence is what
+##   the player reads when the answer is no. The row stays visible and takeable
+##   during a wave on purpose: a locked action that cannot be asked why is
+##   indistinguishable from a broken one (`map_input.gd` makes the same choice).
 ## * **Input comes through one door,** `handle_input()`, which asks `MapInput` for
 ##   the intent. Nothing here reads a key, an action or a button directly, and a
 ##   left click is a `CONFIRM` carrying its pointer: a point over a row picks the
@@ -39,6 +50,8 @@ extends Control
 ##   BUILD_PANEL_SHOWN {json}     once per draw whose rows changed (a re-draw that
 ##                                changes nothing prints nothing)
 ##   BUILD_PANEL_PHASE {json}     on every build <-> wave transition
+##   BUILD_PANEL_WAVE_STARTED {json} once per wave this panel started, with the
+##                                readout before and after
 ##   BUILD_PANEL_SELECT {json}    once per tower selected or armed
 ##   BUILD_PANEL_PLACED {json}    once per successful placement, with the gold
 ##                                before and after (placement is free)
@@ -58,9 +71,14 @@ signal tower_placed(instance_id: int, tile: String, tier: int, gold: int)
 signal tower_upgraded(instance_id: int, tier: int, cost: int, gold: int)
 ## A tower was taken back: the tile is free and the instance is in the inventory.
 signal tower_taken_back(instance_id: int, tier: int, gold: int)
+## The player started the level's next wave (T-0059): `wave` is the one now
+## running, `waves` the level's total. Emitted after the arena printed its own
+## `WAVE_START`/`ARENA_PHASE`, so a listener cannot report a wave the log has not.
+signal wave_started(wave: int, waves: int)
 ## An action was refused, with the sentence the player is shown.
 signal action_refused(action: String, reason: String)
 
+const KIND_START_WAVE := "start_wave"
 const KIND_TOWER := "tower"
 const KIND_UPGRADE := "upgrade"
 const KIND_TAKE_BACK := "take_back"
@@ -70,6 +88,9 @@ const KIND_TAKE_BACK := "take_back"
 ## behaviour.
 @export var title_path: NodePath = ^"Margin/Column/Title"
 @export var state_path: NodePath = ^"Margin/Column/State"
+## The wave readout line (T-0059). Its own label, so the always-visible state
+## line keeps its shape and the readout can be moved without touching it.
+@export var wave_path: NodePath = ^"Margin/Column/Wave"
 @export var tower_list_path: NodePath = ^"Margin/Column/Towers"
 @export var reason_path: NodePath = ^"Margin/Column/Reason"
 @export var hint_path: NodePath = ^"Margin/Column/Hint"
@@ -83,6 +104,28 @@ const KIND_TAKE_BACK := "take_back"
 @export var title_text: String = "Build"
 ## The always-visible line's shape: four values - HQ current, HQ max, gold, phase.
 @export var state_format: String = "HP %d/%d    Gold %d    %s phase"
+## The wave readout's first part: the wave in play (or the one about to start)
+## out of the level's total.
+@export var wave_progress_format: String = "Wave %d/%d"
+## The wave readout's phase part, so the phase reads the same way in both lines.
+@export var wave_phase_format: String = "%s phase"
+## The readout while nothing has run yet: the wave the player is about to start.
+@export var wave_pending_text: String = "wave %d not started"
+## The readout after a wave clears: which one did.
+@export var wave_cleared_text: String = "wave %d cleared"
+## The readout while a wave runs: enemies still queued or still on the lane.
+@export var wave_remaining_format: String = "%d enemies left"
+## The readout once every wave of the level has cleared.
+@export var wave_finished_text: String = "every wave cleared"
+## The readout for a level whose plan is empty - a wiring or data fault, shown
+## rather than hidden behind "Wave 0/0".
+@export var wave_none_text: String = "the level has no waves"
+## The Start Wave row, in each of the three states it can be in. The locked and
+## exhausted texts are what the player sees *before* they ask, and the arena's
+## own sentence is what they see when they do.
+@export var start_wave_text: String = "Start Wave"
+@export var start_wave_locked_text: String = "Start Wave - locked during a wave"
+@export var start_wave_none_text: String = "Start Wave - no waves left"
 ## How a tower's tier is written next to its type.
 @export var tier_format: String = "T%d"
 ## How the row of a tower on the board is marked.
@@ -97,8 +140,8 @@ const KIND_TAKE_BACK := "take_back"
 @export var max_tier_text: String = "Upgrade - already at the last tier"
 @export var take_back_text: String = "Take back to the inventory"
 @export var hint_text: String = (
-	"D-pad or Up/Down picks, A or Enter confirms, click a tower row to arm it, "
-	+ "click a tile to place, click a placed tower for its actions"
+	"Start Wave begins the next wave, then: D-pad or Up/Down picks, A or Enter confirms, "
+	+ "click a tower row to arm it, click a tile to place, click a placed tower for its actions"
 )
 ## Shown in the list when the inventory holds nothing.
 @export var no_towers_text: String = "you own no towers"
@@ -201,6 +244,7 @@ func refresh(force: bool = false) -> void:
 			"armed": _armed_id,
 			"selected": _selected_id,
 			"state": state()["label"],
+			"wave": wave()["label"],
 			"phase": phase_name(),
 			"visible": visible,
 		}))
@@ -262,6 +306,46 @@ func state() -> Dictionary:
 	return out
 
 
+## The wave readout, read live from `arena.wave_status()`:
+##     {waves, wave, cleared, phase, running, remaining, left, label}
+## Same rule as `state()`: nothing cached, because a cached wave count is a
+## second owner of a number the director already keeps.
+func wave() -> Dictionary:
+	var out := {
+		"waves": 0,
+		"wave": 0,
+		"cleared": 0,
+		"phase": "",
+		"running": false,
+		"remaining": 0,
+		"left": 0,
+		"label": no_arena_text,
+	}
+	if not _bound() or not _arena.has_method("wave_status"):
+		return out
+	var status: Dictionary = _arena.wave_status()
+	for key in ["waves", "wave", "cleared", "phase", "running", "remaining", "left"]:
+		if status.has(key):
+			out[key] = status[key]
+
+	var parts: Array[String] = []
+	if int(out["waves"]) <= 0:
+		parts.append(wave_none_text)
+	else:
+		parts.append(wave_progress_format % [int(out["wave"]), int(out["waves"])])
+		parts.append(wave_phase_format % String(out["phase"]))
+		if bool(out["running"]):
+			parts.append(wave_remaining_format % int(out["remaining"]))
+		elif int(out["cleared"]) >= int(out["waves"]):
+			parts.append(wave_finished_text)
+		elif int(out["cleared"]) <= 0:
+			parts.append(wave_pending_text % int(out["wave"]))
+		else:
+			parts.append(wave_cleared_text % int(out["cleared"]))
+	out["label"] = field_separator.join(parts)
+	return out
+
+
 # --- acting -----------------------------------------------------------------
 
 ## The single action path: a row is taken. What the rows are is decided in
@@ -278,6 +362,8 @@ func activate(index: int) -> bool:
 	_focus = index
 	_apply_focus()
 	match String(entry["kind"]):
+		KIND_START_WAVE:
+			return start_wave()
 		KIND_TOWER:
 			return _select(int(entry["id"]))
 		KIND_UPGRADE:
@@ -286,6 +372,42 @@ func activate(index: int) -> bool:
 			return take_back_selected()
 	_show_reason("row %d is not an action" % index)
 	return false
+
+
+## Starts the level's next wave through the arena (T-0059). The panel decides
+## nothing here: the build phase, the waves left and the sentence for a refusal
+## are all the arena's, and its sentence is shown verbatim - the same rule every
+## other action in this panel follows.
+func start_wave() -> bool:
+	if not _bound():
+		_refuse_action("start wave", no_arena_text)
+		return false
+	if not _arena.has_method("start_next_wave"):
+		_refuse_action("start wave", "the level cannot start a wave from the panel")
+		return false
+
+	var before: Dictionary = wave()
+	_acting = true
+	var started: bool = _arena.start_next_wave()
+	_acting = false
+	if not started:
+		_refuse_action("start wave", _arena.last_refusal())
+		refresh()
+		return false
+
+	_show_reason("")
+	var after: Dictionary = wave()
+	print("BUILD_PANEL_WAVE_STARTED " + JSON.stringify({
+		"wave_before": int(before["wave"]),
+		"wave": int(after["wave"]),
+		"waves": int(after["waves"]),
+		"remaining": int(after["remaining"]),
+		"phase": phase_name(),
+		"readout": String(after["label"]),
+	}))
+	refresh()
+	wave_started.emit(int(after["wave"]), int(after["waves"]))
+	return true
 
 
 ## Arms an in-hand tower, or selects a placed one. Selecting is the same call
@@ -521,6 +643,23 @@ func _rebuild_rows() -> void:
 	var slots := _slot_index()
 	var inventory = _arena.inventory()
 	var towers: Array = inventory.towers() if inventory != null else []
+
+	# Start Wave first: it is the one action a level always offers, and the row a
+	# player reaching for the phase's next step should not have to scroll to.
+	_add_entry(list, {
+		"kind": KIND_START_WAVE,
+		"id": 0,
+		"type_id": "",
+		"tier": 0,
+		"upgrades": [],
+		"placed": false,
+		"armed": false,
+		"selected": false,
+		"tile": "",
+		"cost": 0,
+		"label": _start_wave_label(),
+	})
+
 	for instance in towers:
 		var entry := _tower_entry(instance, slots)
 		_add_entry(list, entry)
@@ -611,6 +750,21 @@ func _tower_text(entry: Dictionary) -> String:
 	if bool(entry["armed"]):
 		parts.append(armed_marker)
 	return field_separator.join(parts)
+
+
+## The Start Wave row's text, by the state of the level: ready, locked by a
+## running wave, or exhausted. The row is drawn in all three states on purpose -
+## the two locked ones are the ones a player asks why about, and the answer is the
+## arena's refusal sentence.
+func _start_wave_label() -> String:
+	var status: Dictionary = wave()
+	if int(status["waves"]) <= 0:
+		return start_wave_none_text
+	if bool(status["running"]):
+		return start_wave_locked_text
+	if int(status["cleared"]) >= int(status["waves"]):
+		return start_wave_none_text
+	return start_wave_text
 
 
 ## Appends one row: the entry the panel keeps, and the Button the player sees. The
@@ -809,6 +963,7 @@ func _apply_copy() -> void:
 	if title != null:
 		(title as Label).text = title_text
 	_sync_state()
+	_sync_wave()
 	var hint := _node(hint_path)
 	if hint != null:
 		(hint as Label).text = hint_text
@@ -824,6 +979,15 @@ func _sync_state() -> void:
 	var label := _node(state_path)
 	if label != null:
 		(label as Label).text = String(state()["label"])
+
+
+## The wave readout only. Separated from `_sync_state` because the two lines move
+## on different signals: gold and HQ on the run's, the wave count on the phase and
+## on every kill or leak (which the run reports as gold or damage).
+func _sync_wave() -> void:
+	var label := _node(wave_path)
+	if label != null:
+		(label as Label).text = String(wave()["label"])
 
 
 func _sync_empty_label() -> void:
@@ -903,6 +1067,10 @@ func _connect_session() -> void:
 
 func _on_run_numbers(_a: int = 0, _b: int = 0) -> void:
 	_sync_state()
+	# A kill pays gold and a leak damages the HQ, so both arrive here - which is
+	# what keeps "enemies left" moving while a wave runs, without the panel
+	# polling anything.
+	_sync_wave()
 
 
 func _on_inventory_changed() -> void:
@@ -913,9 +1081,15 @@ func _on_inventory_changed() -> void:
 
 func _on_phase_changed(name: String) -> void:
 	_sync_state()
+	_sync_wave()
 	print("BUILD_PANEL_PHASE " + JSON.stringify({
 		"phase": name,
 		"gold": _arena.gold() if _bound() else 0,
 		"state": state()["label"],
+		"wave": wave()["label"],
 		"armed": _armed_id,
 	}))
+	# The Start Wave row's text is a function of the phase, so the list is rebuilt
+	# as well as the two lines: a row that still says "locked" after the build
+	# phase is back is worse than no row.
+	refresh()
