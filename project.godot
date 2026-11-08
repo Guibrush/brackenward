@@ -3,9 +3,13 @@
 ; Hand-authored and deliberately minimal: this file makes the project exist, name
 ; itself, and declare the scene the game boots into. There are no autoloads.
 ;
-; `run/main_scene` is what `scripts/gate/smoke.ps1` runs (G2.1). It points at the
-; arena, which prints ARENA_SUMMARY so the gate can check the scene's own
-; counters instead of trusting the exit code (L-035). See tasks/T-0026.md.
+; `run/main_scene` is the game's entry point: the boot scene (T-0052, T-0055). It
+; owns the menu, one run at a time, and the quit path, and it prints the session's
+; own measurement - `BOOT_SESSION` - once at quit. `scripts/gate/smoke.ps1` (G2.1)
+; runs this scene, which is the only entry point the player sees first, and judges
+; the duration on that session line (ADR-0007). Running the arena alone is still
+; possible by naming it on the command line; the gate does not, because a scene the
+; player never boots first is not what the stability criterion is about.
 ;
 ; Engine in use: Godot 4.7.2 stable (ADR-0001). config_version=5 is the Godot 4
 ; format. See tasks/T-0001.md.
@@ -15,7 +19,7 @@ config_version=5
 [application]
 
 config/name="brackenward"
-run/main_scene="res://scenes/main.tscn"
+run/main_scene="res://scenes/boot.tscn"
 
 ; T-0051 - gamepad bindings the game owns.
 ;
