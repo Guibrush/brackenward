@@ -1,0 +1,40 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://src/ui/boot.gd" id="1_boot"]
+[ext_resource type="PackedScene" path="res://scenes/main_menu.tscn" id="2_menu"]
+[ext_resource type="PackedScene" path="res://scenes/run_map_screen.tscn" id="3_map"]
+[ext_resource type="PackedScene" path="res://scenes/main.tscn" id="4_level"]
+
+[node name="Boot" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("1_boot")
+menu_scene = ExtResource("2_menu")
+map_scene = ExtResource("3_map")
+level_scene = ExtResource("4_level")
+
+[node name="Backdrop" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.0392157, 0.0509804, 0.0470588, 1)
+
+[node name="Game" type="Node2D" parent="."]
+
+[node name="Screens" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
