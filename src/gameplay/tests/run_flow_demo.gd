@@ -11,18 +11,22 @@ extends SceneTree
 ##
 ## Prints, in this order:
 ##   RUNFLOW_CASE {text}         one line per phase of the walk
+##   RUNFLOW_INVENTORY {json}    the inventory snapshot a run opens with (T-0058)
+##   RUNFLOW_LOADOUT_A {json}    an empty loadout table, refused with a reason
+##   RUNFLOW_LOADOUT_B {json}    a loadout naming a type the catalogue lacks, refused
 ##   RUNFLOW_PLANTED_A {json}    a node that is visible but not selectable, refused
 ##   RUNFLOW_PLANTED_B {json}    completion with no level open, refused
+##   RUNFLOW_PANEL {json}        the build panel's list when the first level opens
 ##   RUNFLOW_NON_LEVEL {json}    a non-level node resolved and the route moved onto it
 ##   RUNFLOW_ROUTE {json}        the route and the numbers after each level
 ##   RUNFLOW_AFTER_END {json}    a node entry after the run ended, refused
 ##   RUNFLOW_RUN {json}          the ending: status, victory, HQ, gold, route
 ##   RUNFLOW_SELF_TEST {json}    once, last; carries checks and failures
 ##
-## The `RUNFLOW_ENTER`, `RUNFLOW_COMPLETE`, `RUNFLOW_RUN_END`, `RUNFLOW_REFUSED`,
-## `ARENA_*`, `WAVE_*` and `RUN_REFUSED` lines are printed by the systems under
-## test, not by this file. The exit code is not evidence (L-035);
-## `RUNFLOW_SELF_TEST` is.
+## The `RUNFLOW_LOADOUT`, `RUNFLOW_START`, `RUNFLOW_ENTER`, `RUNFLOW_COMPLETE`,
+## `RUNFLOW_RUN_END`, `RUNFLOW_REFUSED`, `BUILD_PANEL_*`, `ARENA_*`, `WAVE_*` and
+## `RUN_REFUSED` lines are printed by the systems under test, not by this file. The
+## exit code is not evidence (L-035); `RUNFLOW_SELF_TEST` is.
 ##
 ## Waves are driven by hand in one frame per level, the way `run_demo.gd` drives
 ## one level: every unit is killed the tick it spawns, so no leak reaches the HQ
@@ -33,6 +37,11 @@ extends SceneTree
 const ARENA_SCENE := "res://scenes/main.tscn"
 const RunFlowScript := preload("res://src/gameplay/run_flow.gd")
 const RunStateScript := preload("res://src/systems/run_state.gd")
+const ItemCatalogueScript := preload("res://src/gameplay/item_catalogue.gd")
+
+## A type no catalogue table holds. Used to plant the loadout refusal that names an
+## entry: the check is that the sentence repeats this id, not that it fails.
+const UNKNOWN_TOWER_ID := "trebuchet"
 
 ## The seed the walk is recorded against. A change here changes the route, so the
 ## printed sha in RUNFLOW_START is what a reader compares, not this number.
@@ -65,6 +74,12 @@ var _levels_played: int = 0
 ## walk demonstrates is acceptance, not a refusal.
 var _planted_non_level: bool = false
 
+## What the inventory held the instant `map_ready` was emitted (T-0058), and
+## whether the build panel has been read yet. -1 means the signal never fired.
+var _towers_at_map_ready: int = -1
+var _upgrades_at_map_ready: int = -1
+var _build_panel_checked: bool = false
+
 
 func _initialize() -> void:
 	_boot()
@@ -78,6 +93,10 @@ func _boot() -> void:
 	_flow = RunFlowScript.new()
 	_flow.name = "RunFlow"
 	_flow.level_scene = load(ARENA_SCENE)
+	# Connected before `start_run()` so the handler reads the inventory at the
+	# instant the map became ready - that is what "granted before the map is ready"
+	# means, and a reading taken afterwards could not tell the two apart.
+	_flow.map_ready.connect(_on_map_ready)
 	root.add_child(_flow)
 
 	if not check(_flow.start_run(SEED), "the run starts from seed %d" % SEED):
@@ -85,6 +104,11 @@ func _boot() -> void:
 		return
 	_hq_carried = _flow.run_state().hq_health()
 	_gold_carried = _flow.run_state().gold()
+
+	_case("the starting loadout")
+	_check_starting_loadout()
+	_check_empty_loadout_refused()
+	_check_unknown_loadout_refused()
 
 	_case("planted failures")
 	_planted_failure_a()
@@ -99,6 +123,137 @@ func _boot() -> void:
 	_case("the ending")
 	_after_end()
 	_finish()
+
+
+# --- the starting loadout (T-0058) ------------------------------------------
+
+## What the inventory held at the instant `map_ready` was emitted. The grant is
+## supposed to happen before that signal, so this reading is the measurement of
+## "before the map is ready": one taken after `start_run()` returned could not tell
+## the two orders apart.
+func _on_map_ready(_seed_value: int, _selectable: Array) -> void:
+	_towers_at_map_ready = _flow.inventory().tower_count() if _flow.inventory() != null else 0
+	_upgrades_at_map_ready = _flow.inventory().upgrade_count() if _flow.inventory() != null else 0
+
+
+## A run that starts from a seed opens holding two distinct tier-1 towers and two
+## tier-1 upgrades, every one of them a pair the catalogue holds.
+func _check_starting_loadout() -> void:
+	var inventory = _flow.inventory()
+	if not check(inventory != null, "the run opened with an inventory"):
+		return
+	var snapshot: Dictionary = inventory.snapshot()
+	print("RUNFLOW_INVENTORY " + JSON.stringify(snapshot))
+
+	check_eq_int(int(snapshot["tower_count"]), 2, "the run opens holding two towers")
+	check_eq_int(int(snapshot["upgrade_count"]), 2, "the run opens holding two upgrades")
+	check_eq_int(int(snapshot["placed_count"]), 0, "nothing is placed before the first level")
+	check_eq_int(_towers_at_map_ready, 2, "both towers were granted before the map was ready")
+	check_eq_int(_upgrades_at_map_ready, 2, "both upgrades were granted before the map was ready")
+
+	var catalogue: Array = ItemCatalogueScript.entries()
+	var tower_types: Array = []
+	for tower in inventory.towers():
+		var type_id := String(tower.type_id)
+		var tier := int(tower.tier)
+		tower_types.append(type_id)
+		check_eq_int(tier, 1, "starting tower '%s' is tier 1" % type_id)
+		check(
+			not _catalogue_pair(catalogue, true, type_id, tier).is_empty(),
+			"starting tower '%s' tier %d is a pair item_catalogue.gd holds" % [type_id, tier]
+		)
+	tower_types.sort()
+	check(
+		tower_types.size() == 2 and String(tower_types[0]) != String(tower_types[1]),
+		"the two starting towers are distinct types: %s" % [tower_types]
+	)
+
+	for upgrade in inventory.upgrades():
+		var type_id := String(upgrade.type_id)
+		check(
+			not _catalogue_pair(catalogue, false, type_id, 1).is_empty(),
+			"starting upgrade '%s' tier 1 is a pair item_catalogue.gd holds" % type_id
+		)
+
+
+## Planted failure A: a run whose loadout table is empty refuses to start, with a
+## reason, instead of opening a level in which nothing can be placed.
+func _check_empty_loadout_refused() -> void:
+	var broken = _new_refused_flow([])
+	var started: bool = broken.start_run(SEED)
+	var reason: String = broken.last_refusal()
+
+	print("RUNFLOW_LOADOUT_A " + JSON.stringify({
+		"loadout": broken.starting_loadout,
+		"started": started,
+		"reason": reason,
+		"phase": broken.phase_name(),
+		"map": broken.map() != null,
+		"inventory": broken.inventory() != null,
+		"refusals": broken.refused_count(),
+	}))
+	check(not started, "an empty starting loadout refuses to start the run")
+	check(reason.find("loadout is empty") != -1, "the refusal says the loadout is empty")
+	check(broken.map() == null, "the refused start built no map")
+	check(broken.inventory() == null, "the refused start created no inventory")
+	check(broken.phase_name() == "idle", "the refused start left the session idle")
+	broken.free()
+
+
+## Planted failure B: an entry naming a type the catalogue does not hold refuses
+## the run, and the sentence names the entry so the table can be fixed by eye.
+func _check_unknown_loadout_refused() -> void:
+	var table: Array = [
+		{"kind": "tower", "type_id": "arrow", "tier": 1},
+		{"kind": "tower", "type_id": UNKNOWN_TOWER_ID, "tier": 1},
+	]
+	var broken = _new_refused_flow(table)
+	var started: bool = broken.start_run(SEED)
+	var reason: String = broken.last_refusal()
+
+	print("RUNFLOW_LOADOUT_B " + JSON.stringify({
+		"loadout": broken.starting_loadout,
+		"started": started,
+		"reason": reason,
+		"names_entry": reason.find(UNKNOWN_TOWER_ID) != -1,
+		"phase": broken.phase_name(),
+		"inventory": broken.inventory() != null,
+		"refusals": broken.refused_count(),
+	}))
+	check(not started, "a loadout naming an unknown type refuses to start the run")
+	check(
+		reason.find(UNKNOWN_TOWER_ID) != -1,
+		"the refusal names the type the catalogue lacks ('%s')" % UNKNOWN_TOWER_ID
+	)
+	check(reason.find("item_catalogue") != -1, "the refusal says which table it checked")
+	check(broken.inventory() == null, "the refused start created no inventory")
+	broken.free()
+
+
+## A session that exists only to be refused: it never enters the tree, so the
+## refusal cannot leave a level or a signal behind.
+func _new_refused_flow(table: Array):
+	var flow = RunFlowScript.new()
+	flow.name = "RunFlowRefused"
+	flow.level_scene = load(ARENA_SCENE)
+	flow.starting_loadout = table
+	return flow
+
+
+## The catalogue's entry for this (kind, id, tier), or {} when it has none. The
+## demo's own copy, on purpose: asking the session the same question would let a
+## bug in its lookup pass its own check.
+func _catalogue_pair(catalogue: Array, want_tower: bool, type_id: String, tier: int) -> Dictionary:
+	for record in catalogue:
+		var candidate: Dictionary = record
+		if String(candidate.get("id", "")) != type_id:
+			continue
+		if int(candidate.get("tier", 1)) != tier:
+			continue
+		if (String(candidate.get("kind", "")) == ItemCatalogueScript.KIND_TOWER) != want_tower:
+			continue
+		return candidate
+	return {}
 
 
 # --- planted failures -------------------------------------------------------
@@ -221,6 +376,10 @@ func _walk() -> void:
 		if not check(_flow.enter_node(target), "node %d is entered" % target):
 			return
 		_levels_played += 1
+		if not _build_panel_checked:
+			# The first level's build phase is the one the loadout exists for.
+			_build_panel_checked = true
+			await _check_build_panel()
 		var type_id: String = map.type_of(target)
 		print("RUNFLOW_ROUTE " + JSON.stringify({
 			"entered": target,
@@ -401,6 +560,60 @@ func _play_level(type_id: String) -> int:
 	await process_frame
 	check(_flow.current_level() == null, "no level scene is left open on the map")
 	return paid
+
+
+# --- the build panel at the first level -------------------------------------
+
+## The panel the arena ships, read when the first level opens and before its first
+## wave: the list a player sees in the first build phase. T-0058 exists because
+## that list was empty while the panel itself worked, so the check is the count and
+## the contents, not that the panel exists.
+func _check_build_panel() -> void:
+	var arena = _flow.current_level()
+	if not check(arena != null, "the session opened a level scene for the panel check"):
+		return
+	var panel = arena.get_node_or_null("BuildPanel")
+	if not check(panel != null, "the level scene ships a build panel"):
+		return
+
+	# The panel queues its first draw from `_ready`, and the arena's own `_ready`
+	# (which seeds the run and the inventory the draw reads) runs after its
+	# children's. Two frames is the bound the walk already uses for a queued node.
+	await process_frame
+	await process_frame
+
+	var rows: Array = panel.rows()
+	var labels: Array = []
+	var shown_types: Array = []
+	for entry in rows:
+		var row: Dictionary = entry
+		labels.append(String(row.get("label", "")))
+		if String(row.get("kind", "")) == "tower":
+			shown_types.append(String(row.get("type_id", "")))
+	shown_types.sort()
+
+	var held_types: Array = []
+	for tower in _flow.inventory().towers():
+		held_types.append(String(tower.type_id))
+	held_types.sort()
+
+	print("RUNFLOW_PANEL " + JSON.stringify({
+		"bound": panel.arena() == arena,
+		"phase": panel.phase_name(),
+		"row_count": panel.row_count(),
+		"rows": labels,
+		"tower_types": shown_types,
+		"towers": _flow.inventory().tower_count(),
+		"state": panel.state(),
+	}))
+	check(panel.arena() == arena, "the panel is bound to the level it sits in")
+	check(panel.row_count() > 0, "the build panel lists something when the level opens")
+	check_eq_int(
+		shown_types.size(),
+		_flow.inventory().tower_count(),
+		"the panel has one row per tower the run holds"
+	)
+	check(shown_types == held_types, "the panel lists the towers the inventory holds")
 
 
 # --- the ending -------------------------------------------------------------
