@@ -46,6 +46,18 @@ extends Control
 ## therefore records the arena, and the first draw and the signal connections are
 ## deferred one frame, when the arena has seeded itself.
 ##
+## SIZING (T-0062)
+## ---------------
+## A Control resolves its anchors against its **parent's** rect. This panel's
+## parent is a `CanvasLayer`, so the anchors resolve against the viewport and the
+## panel has a real rect in every run, windowed or headless - which is what makes
+## the full-rect anchors in `scenes/build_panel.tscn` mean "cover the screen".
+## It was a child of the level's `Node2D` arena until T-0062: a `Node2D` offers no
+## anchorable rect, the panel came out 0x0, and the `VBoxContainer` taller than
+## that box centred its column at a negative y, so only the last child (the hint)
+## was on screen. The panel therefore does no viewport arithmetic of its own; if
+## the rect is wrong again, the parent is wrong again.
+##
 ## Prints on stdout, one line per event:
 ##   BUILD_PANEL_SHOWN {json}     once per draw whose rows changed (a re-draw that
 ##                                changes nothing prints nothing)
