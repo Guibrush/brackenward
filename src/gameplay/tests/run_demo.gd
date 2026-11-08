@@ -396,6 +396,10 @@ func _open_level() -> Node:
 	arena.set("spawn_interval_seconds", SPAWN_INTERVAL_SECONDS)
 	if not check(arena.bind_run(_run, _inventory), "the arena accepts the run and inventory"):
 		return null
+	# T-0048: a cleared level is handed back through `level_cleared`, and the run
+	# session is the one caller of `complete_level()` (the arena no longer counts
+	# levels itself). This demo stands in for a session, so it takes the handover.
+	arena.level_cleared.connect(_on_level_cleared)
 	root.add_child(arena)
 	await process_frame
 	await physics_frame
@@ -446,6 +450,12 @@ func _on_run_ended(victory: bool, reason: String) -> void:
 	_run_ended_emissions += 1
 	_run_ended_victory = victory
 	_run_ended_reason = reason
+
+
+## The level's completion handover (T-0048): play the run session's part, which
+## is one `complete_level()` per cleared level and nothing else.
+func _on_level_cleared(_level_index: int, _elite: bool) -> void:
+	_run.complete_level()
 
 
 # --- reporting --------------------------------------------------------------
