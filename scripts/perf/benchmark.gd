@@ -8,18 +8,35 @@ extends Node2D
 ## same work in the same order. Only the stopwatch varies.
 ##
 ## Prints on stdout, in this order:
-##   PERF_INFO {json}          load, the render conditions actually in force, and
-##                             the screen refresh rate (0.0 when unreported)
+##   PERF_INFO {json}          load, the render conditions actually in force, the
+##                             screen refresh rate (0.0 when unreported), the full
+##                             screen table, and the GPU/engine flags the process
+##                             actually received
 ##   PERF_PHASE measuring      once, after warmup, before the first window
 ##   PERF_JSON {json}          one line per WINDOW_FRAMES measured frames
 ##   PERF_JSON {json}          once with "aggregate": true, then exits 0
 ##
+## With the user argument `--probe-screens` it prints one line and quits without
+## building the workload:
+##   PERF_SCREENS {json}       every screen the engine sees, the window's screen,
+##                             the GPU, and the --screen/--gpu-index flags as the
+##                             process received them
+## The gate uses that probe to choose a screen before it launches the measurement:
+## a screen has to be chosen before the process starts, so the table has to be
+## read out of the engine in a separate, trivial run.
+##
 ## Exit codes:
-##   0  measured and reported
-##   2  refused: headless, or the load is not usable - nothing was measured
+##   0  measured and reported (or, for --probe-screens, enumerated and reported)
+##   2  refused: headless, no screen, or the window is on a screen whose refresh
+##      rate is unreported while another screen reports one - nothing was measured
 ##
 ## Refusing is deliberate. A headless frame time is not a rendered frame, so a
-## number produced that way would be evidence for the wrong claim.
+## number produced that way would be evidence for the wrong claim. The same goes
+## for a frame rendered on a virtual or streaming display (refresh unreported)
+## while a real display is available: the number would describe the wrong screen.
+## When *no* screen reports a refresh rate the run continues - there is nothing
+## better to measure on - but it prints PERF_WARN so the condition cannot pass
+## unnoticed.
 
 ## Canonical load. scripts/gate/perf.ps1 asserts this value, so changing the
 ## load here without changing the gate fails the gate instead of moving the
@@ -44,6 +61,7 @@ const TEX_SIZE := 32
 var _entity_count: int = DECLARED_ENTITY_COUNT
 var _windows_requested: int = DEFAULT_WINDOWS
 var _warmup_frames: int = WARMUP_FRAMES
+var _probe_only: bool = false
 
 var _sprites: Array[Sprite2D] = []
 var _textures: Array[ImageTexture] = []
@@ -64,6 +82,23 @@ func _ready() -> void:
 
 	_parse_args()
 	_configure_display()
+
+	# Enumerated after the display has been configured, so the window's screen and
+	# the sizes below describe the state the measurement would run in.
+	var screens := _enumerate_screens()
+
+	if _probe_only:
+		print("PERF_SCREENS " + JSON.stringify(_screen_report(screens)))
+		get_tree().quit(0)
+		return
+
+	var screen_id := DisplayServer.window_get_current_screen()
+	var refusal := _screen_refusal(screens, screen_id)
+	if refusal != "":
+		print("PERF_ERROR " + refusal)
+		get_tree().quit(2)
+		return
+
 	_build_entities()
 
 	var root := get_tree().root
@@ -75,10 +110,11 @@ func _ready() -> void:
 	# capped by the machine rather than by the frame; without the number a capped
 	# machine is indistinguishable from a regression (L-040). 0.0 means the
 	# platform did not report it - recorded as unknown, never guessed.
-	var screen_id := DisplayServer.window_get_current_screen()
-	var refresh_hz := DisplayServer.screen_get_refresh_rate(screen_id)
-	if refresh_hz < 0.0:
-		refresh_hz = 0.0
+	var refresh_hz := 0.0
+	var refresh_reported := false
+	if screen_id >= 0 and screen_id < screens.size():
+		refresh_hz = float(screens[screen_id]["refresh_hz"])
+		refresh_reported = bool(screens[screen_id]["refresh_reported"])
 
 	var info := {
 		"entity_count": _sprites.size(),
@@ -93,7 +129,10 @@ func _ready() -> void:
 		"max_fps": Engine.max_fps,
 		"screen": screen_id,
 		"refresh_hz": refresh_hz,
+		"refresh_reported": refresh_reported,
+		"screens": screens,
 		"renderer": RenderingServer.get_video_adapter_name(),
+		"renderer_vendor": RenderingServer.get_video_adapter_vendor(),
 		"engine": Engine.get_version_info()["string"],
 	}
 	print("PERF_INFO " + JSON.stringify(info))
@@ -109,7 +148,71 @@ func _parse_args() -> void:
 			_windows_requested = max(3, int(a.substr(10)))
 		elif a.begins_with("--warmup="):
 			_warmup_frames = max(0, int(a.substr(9)))
+		elif a == "--probe-screens":
+			_probe_only = true
 
+
+## Every screen the engine can see, as JSON-safe dictionaries. Refresh is the
+## value the platform reported, kept raw alongside a normalised field so that
+## "0 Hz" and "not reported at all" are never confused: a Windows virtual adapter
+## commonly reports no rate, and the raw value (-1 on this API) says which case
+## happened.
+func _enumerate_screens() -> Array:
+	var out := []
+	var count := DisplayServer.get_screen_count()
+	var primary: int = DisplayServer.get_primary_screen()
+	for i in count:
+		var size: Vector2i = DisplayServer.screen_get_size(i)
+		var raw := float(DisplayServer.screen_get_refresh_rate(i))
+		var pos: Vector2i = DisplayServer.screen_get_position(i)
+		out.append({
+			"index": i,
+			"size": [size.x, size.y],
+			"area": size.x * size.y,
+			"refresh_hz_raw": raw,
+			"refresh_hz": raw if raw > 0.0 else 0.0,
+			"refresh_reported": raw > 0.0,
+			"primary": i == primary,
+			"position": [pos.x, pos.y],
+			"scale": DisplayServer.screen_get_scale(i),
+		})
+	return out
+
+
+func _screen_report(screens: Array) -> Dictionary:
+	return {
+		"count": screens.size(),
+		"primary": DisplayServer.get_primary_screen(),
+		"window_screen": DisplayServer.window_get_current_screen(),
+		"screens": screens,
+		"renderer": RenderingServer.get_video_adapter_name(),
+		"renderer_vendor": RenderingServer.get_video_adapter_vendor(),
+		"engine": Engine.get_version_info()["string"],
+	}
+
+
+## Empty string when the screen the window is on can carry a measurement, else
+## the reason it cannot. Never silently measures on a screen that reports no
+## refresh rate while a screen that does report one exists.
+func _screen_refusal(screens: Array, screen_id: int) -> String:
+	if screens.is_empty():
+		return "the platform enumerated no screens, so there is no display to measure on"
+	if screen_id < 0 or screen_id >= screens.size():
+		return "the window is on screen %d but only %d screen(s) exist - the number would not be attributable to a display" % [screen_id, screens.size()]
+	if bool(screens[screen_id]["refresh_reported"]):
+		return ""
+	for s in screens:
+		if bool(s["refresh_reported"]):
+			return "the window is on screen %d, which reports no refresh rate, while screen %d reports %s Hz - that looks like a virtual or streaming display, so this run was refused instead of measured; pass --screen <%d> to measure on the real display" % [screen_id, int(s["index"]), str(s["refresh_hz"]), int(s["index"])]
+	print("PERF_WARN only_unreported_screens no enumerated screen reports a refresh rate; this measurement cannot be attributed to a physical display")
+	return ""
+
+
+## Note on flag provenance: OS.get_cmdline_args() does not expose Godot's own
+## options, so this script cannot echo back the --screen or --gpu-index it was
+## started with (verified: both read as "" while the flags were in force). The
+## effects are recorded instead - the window's actual screen is in PERF_INFO, and
+## the gate reads the engine's own "Using Device #N" line for the render device.
 
 func _configure_display() -> void:
 	# Declared conditions, not assumptions: the same values are printed in
