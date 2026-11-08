@@ -1,21 +1,37 @@
 #requires -Version 5.1
-# G2.1 — the main scene runs headlessly for 300 s without crashing, erroring, or
+# G2.1 — the game runs headlessly for 300 s without crashing, erroring, or
 # reporting a stuck enemy.
 #
-# The exit code alone is not the gate (L-035). The arena quits cleanly on its own
-# run timer, so a *broken* run still exits 0: with the walker's despawn handler
-# disabled the scene printed three ARENA_STUCK lines and three ERROR: lines and
-# exited 0. A pass therefore needs four independent facts, and every one is
+# The exit code alone is not the gate (L-035). The entry point quits cleanly on its
+# own session timer, so a *broken* run still exits 0: with the walker's despawn
+# handler disabled the scene printed three ARENA_STUCK lines and three ERROR: lines
+# and exited 0. A pass therefore needs four independent facts, and every one is
 # printed with the value it was decided on:
 #
 #   1. exit code 0                      the process did not crash
 #   2. zero ERROR: lines                push_error and script errors both land here
 #   3. "stuck": 0 in ARENA_SUMMARY      the scene's own despawn watchdog counter
-#   4. at least `Duration` seconds      a scene that quits early with a clean
+#   4. at least `Duration` seconds      a session that quits early with a clean
 #                                       summary has not run for 300 s
+#
+# Check 4 measures the *session*, not one level (ADR-0007). The criterion reads "a
+# headless run of at least 300 s", and since the main scene is the boot
+# (res://scenes/boot.tscn) that run outlives every level inside it: the boot prints
+# `BOOT_SESSION {"seconds","runs","restarts"}` once at quit, and `seconds` is the
+# process's lifetime. When that line is absent -- a level scene run directly, an
+# older build -- check 4 falls back to the last `ARENA_SUMMARY`'s `seconds`, and the
+# gate prints `source: session` or `source: arena` before the number it decided on,
+# so a fallback can never quietly weaken the criterion. Checks 2 and 3 always read
+# ARENA_SUMMARY: they are properties of a level, so the last level is the right
+# place to read them.
 #
 # A scene that prints no ARENA_SUMMARY fails rather than passes: `stuck` cannot be
 # evaluated, and a check that did not run is not a check that passed (L-021).
+#
+# The entry point is driven with `--autostart` (src/ui/boot.gd): without it the boot
+# sits on the menu, no level opens, and check 3 has nothing to read. Autostart keeps
+# a run on screen for the whole session, replacing a finished one until the time
+# runs out (T-0053), so this gate exercises gameplay rather than an idle menu.
 #
 # The scene is expected to end its own run; it is asked to with `--seconds=<n>`
 # (the arena's documented interface, src/gameplay/arena.gd). If it does not end,
@@ -143,10 +159,29 @@ function Invoke-BoundedRun {
     }
 }
 
+# Reads a JSON "seconds" field as a double, or $null when it is not a number. A
+# malformed field must fall back and say so, not throw inside the gate or be
+# silently read as zero: zero would be a fail for the wrong reason.
+function ConvertTo-Seconds {
+    param($Value)
+    if ($null -eq $Value) { return $null }
+    $parsed = 0.0
+    $ok = [double]::TryParse(
+        [string]$Value,
+        [System.Globalization.NumberStyles]::Float,
+        [System.Globalization.CultureInfo]::InvariantCulture,
+        [ref]$parsed
+    )
+    if ($ok) { return $parsed }
+    return $null
+}
+
 # The scene is left to resolve run/main_scene itself: that is the setting G2.1
 # signs off, so it must be exercised rather than bypassed with a positional path.
+# `--autostart` is the entry point's documented headless mode: without it the boot
+# stops on the menu and no level ever reports a summary.
 $run = Invoke-BoundedRun -Exe $bin `
-    -Arguments @('--headless', '--path', $StudioRoot, '--', ('--seconds=' + $Duration)) `
+    -Arguments @('--headless', '--path', $StudioRoot, '--', '--autostart', ('--seconds=' + $Duration)) `
     -TimeoutSeconds ($Duration + $KillGraceSeconds)
 
 $lines = @($run.Output -split "`n")
@@ -161,6 +196,39 @@ if ($summaryLines.Count -gt 0) {
     try { $summary = $json | ConvertFrom-Json } catch { $summary = $null }
 }
 
+# The session's own measurement (ADR-0007), printed once and last by the entry
+# point. Last line wins, for the same reason as the summary. A line that is present
+# but blank or unparseable is treated as absent and reported as such: it is not a
+# number the criterion can be judged on.
+$session = $null
+$sessionLineCount = 0
+$sessionLines = @($lines | Where-Object { $_ -match '^BOOT_SESSION\b' })
+if ($sessionLines.Count -gt 0) {
+    $sessionLineCount = $sessionLines.Count
+    $sessionJson = ($sessionLines[$sessionLines.Count - 1] -replace '^BOOT_SESSION\s*', '').Trim()
+    if ($sessionJson -ne '') {
+        try { $session = $sessionJson | ConvertFrom-Json } catch { $session = $null }
+    }
+}
+
+# Which number check 4 is judged on, and why. Named here, printed below, and used
+# by the check itself: the source and the verdict cannot disagree.
+$durationSource = 'arena'
+$fallbackWhy = 'no BOOT_SESSION line in the output'
+$sessionSeconds = $null
+if ($sessionLineCount -gt 0) {
+    if ($session -eq $null) {
+        $fallbackWhy = 'the BOOT_SESSION line carries no usable JSON'
+    } else {
+        $sessionSeconds = ConvertTo-Seconds $session.seconds
+        if ($sessionSeconds -eq $null) {
+            $fallbackWhy = 'the BOOT_SESSION line has no usable "seconds" field'
+        } else {
+            $durationSource = 'session'
+        }
+    }
+}
+
 # The numbers the verdict is made of, printed whether they pass or not.
 Write-Host ('  scene:    ' + $sceneRes)
 Write-Host ('  exit:     ' + $run.ExitCode + ' (killed at ' + ($Duration + $KillGraceSeconds) + 's: ' + $run.TimedOut + ')')
@@ -172,6 +240,15 @@ if ($summary) {
         ', hq ' + $summary.hq_before + ' -> ' + $summary.hq_after)
 } else {
     Write-Host '  summary:  none - no ARENA_SUMMARY line in the output'
+}
+# The source of the duration number, printed before the number it decided: a
+# fallback is visible here or it does not exist (ADR-0007, accepted cost).
+if ($durationSource -eq 'session') {
+    Write-Host ('  duration: source: session - ' + [math]::Round($sessionSeconds, 2) + 's, runs ' +
+        $session.runs + ', restarts ' + $session.restarts + ' (BOOT_SESSION)')
+} else {
+    Write-Host ('  duration: source: arena - ' + $fallbackWhy +
+        '; judged on the last ARENA_SUMMARY.seconds, which measures one level, not the session (ADR-0007)')
 }
 Write-Host ('  errors:   ' + $errorLines.Count + ' matching line(s)')
 
@@ -204,14 +281,22 @@ if (-not $summary) {
     Add-Result 'G2.1.3' 'No enemy left alive after arriving' 'pass' ('stuck 0, despawned ' + $summary.despawned + ' of ' + $summary.spawned + ' spawned')
 }
 
-# 4. Duration. The criterion is "at least $RequiredSeconds seconds"; a scene that
-# quits after two seconds with a clean summary satisfies 1-3 and must still not pass.
+# 4. Duration, from the session when the entry point reports one. The criterion is
+# "at least $RequiredSeconds seconds"; a run that quits after two seconds with a
+# clean summary satisfies 1-3 and must still not pass. The source is in the detail
+# so a fallback fail reads as a fallback fail, not as a broken session.
 $reported = 0.0
-if ($summary -and $null -ne $summary.seconds) { $reported = [double]$summary.seconds }
+if ($durationSource -eq 'session') {
+    $reported = [double]$sessionSeconds
+} elseif ($summary -and $null -ne $summary.seconds) {
+    $reported = [double]$summary.seconds
+}
 if ($reported -lt ($RequiredSeconds - 2)) {
-    Add-Result 'G2.1.4' 'Ran for the full duration' 'fail' ('scene reported ' + [math]::Round($reported, 2) + 's of the ' + $RequiredSeconds + 's G2.1 requires')
+    Add-Result 'G2.1.4' 'Ran for the full duration' 'fail' ('duration ' + [math]::Round($reported, 2) +
+        's from source: ' + $durationSource + ', of the ' + $RequiredSeconds + 's G2.1 requires')
 } else {
-    Add-Result 'G2.1.4' 'Ran for the full duration' 'pass' (([math]::Round($reported, 2)).ToString() + 's of ' + $RequiredSeconds + 's required')
+    Add-Result 'G2.1.4' 'Ran for the full duration' 'pass' (([math]::Round($reported, 2)).ToString() +
+        's from source: ' + $durationSource + ', of ' + $RequiredSeconds + 's required')
 }
 
 Complete-Gate 'G2 smoke'
