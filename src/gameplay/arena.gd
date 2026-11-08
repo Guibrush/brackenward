@@ -168,6 +168,13 @@ const InventoryScript := preload("res://src/systems/inventory.gd")
 ## spot cannot pull the node out from under the code that reported it.
 signal level_cleared(level_index: int, elite: bool)
 
+## The phase changed (T-0057). Emitted after `ARENA_PHASE`, so a listener that
+## refreshes on this signal can never report a phase the log has not printed yet.
+## The build panel is the first listener: "build or wave" has to be visible the
+## moment it changes, and polling it every frame is how a panel starts to own
+## game state it does not own.
+signal phase_changed(phase_name: String)
+
 var _hq: Hq
 var _spawn_timer: Timer
 var _watchdog_timer: Timer
@@ -685,6 +692,7 @@ func _set_phase(next_phase: Phase) -> void:
 		"walkers": _live_walker_count(),
 		"gold": _ledger.gold() if _ledger != null else _gold_shadow,
 	}))
+	phase_changed.emit(phase_name())
 
 
 # --- waves -----------------------------------------------------------------
@@ -990,6 +998,42 @@ func slot_for(tower: Tower) -> BuildSlot:
 
 func towers() -> Array[Tower]:
 	return _towers.duplicate()
+
+
+## The build tiles as the panel needs them (T-0057): one dictionary per tile, in
+## scene order, so the panel can draw the board and resolve a click to a tile
+## without knowing how tiles are discovered or where they are.
+##
+##     {name: String, position: Vector2, free: bool, snap_radius_px: float,
+##      tower: Tower or null, instance_id: int}
+##
+## `tower` is a live node reference on purpose: the panel hands it straight back to
+## `upgrade_tower()` / `take_tower_back()`, which is what keeps every rule in this
+## file. A caller that prints a row must drop the reference first - a node is not
+## JSON.
+func build_slots() -> Array:
+	var out: Array = []
+	for slot in _slots:
+		var standing: Tower = null if slot.is_free() else slot.tower
+		out.append({
+			"name": String(slot.name),
+			"position": slot.world_position(),
+			"free": slot.is_free(),
+			"snap_radius_px": slot.snap_radius_px,
+			"tower": standing,
+			"instance_id": (int(standing.instance.id) if standing != null and standing.instance != null else 0),
+		})
+	return out
+
+
+## The tower node standing for the inventory instance `instance_id`, or null. The
+## panel selects by instance id (what the inventory and the run speak in) and needs
+## the node to act on the arena with.
+func tower_for_instance(instance_id: int) -> Tower:
+	for tower in _towers:
+		if tower.instance != null and int(tower.instance.id) == instance_id:
+			return tower
+	return null
 
 
 func free_slot_count() -> int:
