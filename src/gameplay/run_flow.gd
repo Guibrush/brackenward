@@ -95,6 +95,15 @@ extends Node
 ## The `ARENA_*`, `WAVE_*` and `RUN_REFUSED` lines in the same output are printed
 ## by the systems under test, not by this file.
 
+## A run began and the map is ready to be shown (T-0050): the map is generated,
+## the run is started and the player is on the map. Emitted once per `start_run()`
+## that returned true, and never for one that was refused. `selectable` is the
+## map's legal next choices at that moment, so a map screen can draw without
+## asking first; it is a convenience, not the state - the map remains the
+## authority. A screen that binds *after* this signal is not stranded:
+## `RunFlow` exposes `map()`, `run_state()` and `inventory()`, and a screen draws
+## from those whenever it is told to.
+signal map_ready(seed_value: int, selectable: Array)
 ## The level scene has been opened for `node_id` and is the run's `level_index`.
 signal level_opened(node_id: int, level_index: int, elite: bool)
 ## A level finished and control returned to the map. `levels_completed` is the
@@ -303,6 +312,7 @@ func start_run(seed_value: int, map_overrides: Dictionary = {}) -> bool:
 		"gold": _run.gold(),
 		"selectable": _map.selectable_nodes(),
 	}))
+	map_ready.emit(seed_value, _map.selectable_nodes())
 	return true
 
 

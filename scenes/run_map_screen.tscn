@@ -1,0 +1,63 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/ui/run_map_screen.gd" id="1_screen"]
+
+[node name="RunMapScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_screen")
+
+[node name="Backdrop" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.0901961, 0.109804, 0.101961, 0.921569)
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 40
+theme_override_constants/margin_top = 32
+theme_override_constants/margin_right = 40
+theme_override_constants/margin_bottom = 32
+
+[node name="Column" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Title" type="Label" parent="Margin/Column"]
+layout_mode = 2
+text = "Run map"
+
+[node name="State" type="Label" parent="Margin/Column"]
+layout_mode = 2
+text = "HQ 0/0    Gold 0    Towers 0"
+
+[node name="Position" type="Label" parent="Margin/Column"]
+layout_mode = 2
+text = "Layer 1 of 10"
+
+[node name="Nodes" type="VBoxContainer" parent="Margin/Column"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 4
+
+[node name="Reason" type="Label" parent="Margin/Column"]
+layout_mode = 2
+autowrap_mode = 3
+custom_minimum_size = Vector2(0, 40)
+
+[node name="Hint" type="Label" parent="Margin/Column"]
+layout_mode = 2
+text = "D-pad or Up/Down picks a node, A or Enter takes it, click takes it"
