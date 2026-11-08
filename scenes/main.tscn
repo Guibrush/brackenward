@@ -1,4 +1,4 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://src/gameplay/arena.gd" id="1_arena"]
 [ext_resource type="PackedScene" path="res://scenes/hq.tscn" id="2_hq"]
@@ -6,6 +6,7 @@
 [ext_resource type="Script" path="res://src/gameplay/build_slot.gd" id="4_slot"]
 [ext_resource type="PackedScene" path="res://scenes/tower.tscn" id="5_tower"]
 [ext_resource type="Script" path="res://src/gameplay/gold_ledger.gd" id="6_ledger"]
+[ext_resource type="PackedScene" path="res://scenes/build_panel.tscn" id="7_panel"]
 
 [node name="Arena" type="Node2D"]
 script = ExtResource("1_arena")
@@ -48,3 +49,6 @@ script = ExtResource("4_slot")
 [node name="Slot" type="Polygon2D" parent="TowerSlot3"]
 color = Color(0.5451, 0.5098, 0.56863, 0.55)
 polygon = PackedVector2Array(-14, -14, 14, -14, 14, 14, -14, 14)
+
+[node name="BuildPanel" parent="." instance=ExtResource("7_panel")]
+arena_path = NodePath("..")
