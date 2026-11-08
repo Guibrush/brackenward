@@ -13,7 +13,7 @@ extends SceneTree
 ##   RUNFLOW_CASE {text}         one line per phase of the walk
 ##   RUNFLOW_PLANTED_A {json}    a node that is visible but not selectable, refused
 ##   RUNFLOW_PLANTED_B {json}    completion with no level open, refused
-##   RUNFLOW_NOT_IMPLEMENTED {json}  a T-0049 node type, refused and not entered
+##   RUNFLOW_NON_LEVEL {json}    a non-level node resolved and the route moved onto it
 ##   RUNFLOW_ROUTE {json}        the route and the numbers after each level
 ##   RUNFLOW_AFTER_END {json}    a node entry after the run ended, refused
 ##   RUNFLOW_RUN {json}          the ending: status, victory, HQ, gold, route
@@ -60,9 +60,10 @@ var _failures: Array[String] = []
 var _hq_carried: int = 0
 var _gold_carried: int = 0
 var _levels_played: int = 0
-## Set once the "not implemented" refusal has been demonstrated: the walk plants
-## it on the first layer that offers such a node.
-var _planted_not_implemented: bool = false
+## Set once a non-level node has been resolved: the walk plants it on the first
+## layer that offers such a node. Every type resolves since T-0049, so what the
+## walk demonstrates is acceptance, not a refusal.
+var _planted_non_level: bool = false
 
 
 func _initialize() -> void:
@@ -176,16 +177,29 @@ func _planted_failure_b() -> void:
 
 # --- the walk ---------------------------------------------------------------
 
-## Enters one level node per layer until the map is complete, playing each level
-## and checking the numbers the completion left behind.
+## Walks the map to the boss: resolves a non-level node where the route offers
+## one (T-0049), plays every level node it can, and checks the numbers the
+## completion left behind.
 func _walk() -> void:
 	var map = _flow.map()
 	var steps := 0
 	while not map.is_complete() and steps < MAX_ROUTE_STEPS:
 		steps += 1
-		if not _planted_not_implemented:
-			_planted_not_implemented = _plant_not_implemented(map)
 		var target := _next_level_node(map)
+		# A route can pass through a non-level node (T-0049 makes every one of
+		# them resolvable). The first such node on offer is demonstrated even
+		# when a level is available too; a later one is taken only when it is
+		# the only way forward. Either way the route moves without a level being
+		# played, so the numbers a level must open with are re-read: they still
+		# mean "what the route left behind".
+		if target == -1 or not _planted_non_level:
+			_planted_non_level = _plant_non_level(map)
+			if _planted_non_level:
+				_hq_carried = _flow.run_state().hq_health()
+				_gold_carried = _flow.run_state().gold()
+				if _flow.run_state().is_over():
+					break
+				continue
 		if not check(
 			target != -1, "layer %d offers a level node to enter" % (map.current_layer() + 1)
 		):
@@ -277,17 +291,22 @@ func _next_level_node(map) -> int:
 	return fallback
 
 
-## A selectable node whose type belongs to T-0049. Entering it must be refused
-## with "not implemented" and must not move the route: a stop nobody can resolve
-## would strand the run on it.
-func _plant_not_implemented(map) -> bool:
+## A selectable node whose type resolves inside the session rather than opening a
+## level (T-0049). Entering it must succeed and move the route onto it, with no
+## level opened and no completion counted: the opposite of the "not implemented"
+## refusal this demo planted while some types had no effect. Returns false when
+## the layer offers no such node, and the walk then takes a level instead.
+func _plant_non_level(map) -> bool:
 	for id in map.selectable_nodes():
 		var type_id := String(map.type_of(id))
-		if not RunFlowScript.NOT_IMPLEMENTED_TYPES.has(type_id):
+		if not RunFlowScript.NON_LEVEL_TYPES.has(type_id):
 			continue
 		var route_before: Array = map.route()
+		var levels_before: int = _flow.run_state().level_index()
+		var effects_before: int = _flow.node_effects().size()
 		var entered: bool = _flow.enter_node(id)
-		print("RUNFLOW_NOT_IMPLEMENTED " + JSON.stringify({
+		var recorded: Array = _flow.node_effects()
+		print("RUNFLOW_NON_LEVEL " + JSON.stringify({
 			"node": id,
 			"type": type_id,
 			"entered": entered,
@@ -295,14 +314,30 @@ func _plant_not_implemented(map) -> bool:
 			"route_before": route_before,
 			"route_after": map.route(),
 			"level_open": _flow.is_in_level(),
+			"levels_completed": _flow.run_state().level_index(),
+			"effect": {} if recorded.is_empty() else recorded[-1],
 		}))
-		check(not entered, "a '%s' node is refused, not entered" % type_id)
+		check(entered, "a '%s' node resolves instead of being refused" % type_id)
 		check(
-			_flow.last_refusal().find("not implemented") != -1,
-			"the refusal says the type is not implemented"
+			map.route() == route_before + [id],
+			"the '%s' node was entered and the route advanced onto it" % type_id
 		)
-		check(map.route() == route_before, "the refused '%s' node did not advance the route" % type_id)
-		check(not _flow.is_in_level(), "the refused '%s' node opened no level" % type_id)
+		check(not _flow.is_in_level(), "the '%s' node opened no level" % type_id)
+		check_eq_int(
+			_flow.run_state().level_index(),
+			levels_before,
+			"the '%s' node completed no level" % type_id
+		)
+		check(
+			recorded.size() == effects_before + 1
+			and String(recorded[-1].get("type", "")) == type_id,
+			"the '%s' node recorded exactly one effect, of its own type" % type_id
+		)
+		if _flow.event_offer() != null:
+			# An event set blocks movement until one offer is taken
+			# (`run_flow.gd`: a between-level offer cannot be skipped), so the
+			# walk takes one and the route keeps moving.
+			check(_flow.choose_event(0), "the '%s' node offers an item to take" % type_id)
 		return true
 	return false
 
