@@ -74,14 +74,14 @@ begun.
 
 | Metric | Baseline | Target | How it is counted |
 | --- | --- | --- | --- |
-| Dispatch cap-hit rate | **70%** — 7 of the last 10 builder dispatches ended at "maximum steps reached" (2026-11-06) | **under 10%** | envelopes whose final line is a step-cap notice |
-| Usable-delivery rate under a cap hit | **100%** — the two dispatches after the reserve rule both hit 40 steps and both returned complete, verified work (2026-11-06) | keep at 100% | a cap-hit envelope whose files parse and whose evidence is present |
+| Dispatch cap-hit rate | **~90%** — every builder dispatch since the change hit 40 steps (2026-11-08) | **under 10%** | envelopes whose final line is a step-cap notice |
+| Usable-delivery rate under a cap hit | **100%** — every one of those returns still produced verified work | keep at 100% | a cap-hit envelope whose files parse and whose evidence is present |
 
-Both post-change dispatches (T-0039 waves, T-0040 run map) still reached the 40-step cap,
-which by the standing rule means **both briefs were too big** — the reserve rule turned
-those hits from wasted work into usable deliveries, but it did not stop them happening.
-Next briefs in this area split further: waves and map were multi-demo tasks and should
-have been two dispatches each.
+The reserve rule works and the cap did not. Since 2026-11-06 almost every builder dispatch
+has still reached 40 steps, so by the standing rule **the briefs are still too big** — the
+change converted waste into usable partials, it did not stop the ceiling being hit. The next
+step is not a higher cap but smaller briefs: the ones that completed cleanly were the single
+-file, single-demonstration ones.
 
 ## Blockers
 | Blocker | Waiting on |
@@ -89,14 +89,15 @@ have been two dispatches each.
 | Batch music | ADR-0005 accepted **and** implemented (loop-seam measurement) |
 | G1 repo in a full run | only when CI is mid-run on the merge commit; `repo.ps1` is 5/5 once settled |
 
-**G2.3 is not blocked any more, and the earlier attribution was wrong.** The 82 fps /
-p99 45 ms result did not reproduce: four back-to-back runs measured 611–684 fps at
-p50 ≈ 1.3 ms, and the full gate passes at 693.9 fps / p99 2.77 ms. Pinning the screen and
-GPU (`--screen`, `--gpu-index 0`, both now enforced) changed nothing. Two facts stand:
-the physical monitor runs at **59.98 Hz**, and the collapse was **transient and
-unattributed** — most likely Parsec streaming or background load, since a Parsec virtual
-adapter is in the stack. If it recurs, the run to keep is one where `p50` sits near
-16.67 ms.
+**G2.3 is green on an idle machine and was never broken.** Both failures came from a game
+(World of Warcraft, 78% GPU utilisation) running alongside the benchmark: 77–82 fps while it
+ran, 687–693 fps with it closed. Screen and GPU pinning changed nothing, and the earlier
+attribution to Parsec was wrong — no Parsec process was running on either occasion. The
+physical monitor does run at 59.98 Hz.
+
+**Full G2 run on 2026-11-08: 13 scripts, 0 fail, 0 blocked, 0 error.** Every scripted
+criterion passes; the human criteria (G2.2 playable run, G2.6 art reads as one game, G2.8
+audio in the busiest moment, G2.11 fun hypothesis) are untouched by scripted progress.
 
 **Batch art is unblocked.** `art/director` accepted
 `assets/art/towers/arrow/idle/south.png` as the quality bar (36×57, 10 tones, zero
