@@ -31,11 +31,23 @@ extends Control
 ##   inventory and gold, and a disagreement is reported (`INVENTORY_BAR_STALE`)
 ##   and *not displayed*: a bar that can show a wrong inventory is worse than one
 ##   that says it cannot show one.
+## * **Square slots, one border per state (T-0075).** A slot is a square of
+##   `slot_side` pixels, drawn as its own rect - nothing inside it is clipped away
+##   or drawn outside it, so the rect a click lands on is the rect the player sees.
+##   The border says **where the tower is**: `hand_border_colour` for a tower in
+##   hand, `placed_border_colour` for one standing in the level, and
+##   `locked_border_colour` while `set_wave_locked()` says a wave is running. All
+##   three are exported. Selection keeps its own channel - fill, text colour and
+##   the `selected_prefix` marker - so it never overwrites what the border means.
+## * **A placed tower stays listed.** The bar and the board are two views of one
+##   object, so placing a tower changes its border and its header count, not its
+##   presence here.
 ## * **No modifying actions.** Selecting a tower is the only thing a click here
 ##   does; the floating tower window is the next task, so this file raises
 ##   `tower_selected` and marks the selection, and builds no window. During a wave
 ##   the bar stays drawn and readable for the same reason: with no modifying
-##   action of its own, there is nothing here to lock.
+##   action of its own, there is nothing here to lock - `set_wave_locked()` only
+##   repaints the border for the task that will own the lock.
 ## * **Input comes through one door**, `handle_input()`, which asks `MapInput` for
 ##   the intent. The bar acts on a pointer `CONFIRM` that lands on one of its own
 ##   slots or page controls and on nothing else - it never moves focus and never
@@ -87,6 +99,12 @@ signal page_changed(group_id: String, page: int, pages: int)
 @export var gold_format: String = "Gold %d"
 ## A tower's tier, next to its type.
 @export var tier_format: String = "T%d"
+## The towers header's count: total, then how many of those are on the board.
+## Showing both is the choice T-0075 asked for: "2" alone cannot say whether the
+## two towers are in hand, placed, or one of each, and that is the question the
+## header exists to answer.
+@export var tower_count_format: String = "%d (%d %s)"
+@export var placed_word: String = "placed"
 ## An upgrade's tier, when the instance does not carry one. The inventory does not
 ## store an upgrade's tier today (`run_flow.gd` records the divergence), so this is
 ## a statement about the data, not a zero.
@@ -107,17 +125,28 @@ signal page_changed(group_id: String, page: int, pages: int)
 @export var no_session_text: String = "no run"
 
 @export_group("Tuning — slot layout (PLACEHOLDER)")
-## Minimum height of one slot, in pixels. Range 36-72; shorter clips two lines of
-## text, much taller and the bar eats the board.
-@export var slot_min_height: int = 46
+## Side of one square slot, in pixels: width and height are the same number.
+## Range 48-72; below 48 two lines of text stop fitting, and much above 72 the bar
+## eats the board (the bar's own height is set by `scenes/inventory_bar.tscn`).
+@export var slot_side: int = 56
 ## Gap between slots in a group, in pixels. Range 0-12.
 @export var slot_separation: int = 4
 ## Gap between the two groups and the gold label, in pixels. Range 8-32.
 @export var group_separation: int = 18
 
+@export_group("Tuning — slot borders by state (PLACEHOLDER)")
+## Border of a slot whose tower is **in hand** (upgrades are always in hand).
+@export var hand_border_colour: Color = Color(0.3, 0.36, 0.31, 1.0)
+## Border of a slot whose tower is **placed** on the board.
+@export var placed_border_colour: Color = Color(0.93, 0.72, 0.29, 1.0)
+## Border of every slot while the wave lock is on (`set_wave_locked(true)`).
+@export var locked_border_colour: Color = Color(0.55, 0.2, 0.2, 1.0)
+
 @export_group("Tuning — the selected cue (PLACEHOLDER)")
-## Text colour of the selected tower's slot, and the border of its band. The same
-## cool tint the build panel uses for a selection, so one state keeps one look.
+## Text colour of the selected tower's slot. The same cool tint the build panel
+## uses for a selection, so one state keeps one look. Selection is drawn with this
+## colour, `selected_fill` and `selected_prefix`; the border belongs to the
+## slot's state (T-0075), so the two cues never overwrite each other.
 @export var selected_colour: Color = Color(0.55, 0.86, 1.0, 1.0)
 ## Fill behind the selected slot. Same hue as `selected_colour`, darker than the
 ## text or the text stops reading.
@@ -158,6 +187,10 @@ var _slots: Array = []
 var _page_controls: Array = []
 
 var _selected_id: int = -1
+## True while `set_wave_locked(true)` says a wave is running. This file owns no
+## lock rule (T-0075): the arena will own the phase, and its caller flips this so
+## every slot shows the locked border.
+var _wave_locked: bool = false
 var _stale: bool = false
 var _last_signature: String = ""
 
@@ -195,6 +228,7 @@ func unbind() -> void:
 	_forced = {}
 	_stale = false
 	_selected_id = -1
+	_wave_locked = false
 	_slots.clear()
 	_page_controls.clear()
 	_last_signature = ""
@@ -262,12 +296,17 @@ func groups() -> Array:
 	var out: Array = []
 	for group_id in [GROUP_TOWERS, GROUP_UPGRADES]:
 		var items := _page_items(group_id)
+		var nodes: Dictionary = _group_nodes.get(group_id, {})
 		out.append({
 			"id": group_id,
 			"label": _group_label(group_id),
 			"page": _page_of(group_id) + 1,
 			"pages": _page_count(_items_of(group_id).size()),
 			"total": _items_of(group_id).size() if not _stale else 0,
+			"placed": _placed_count(group_id) if not _stale else 0,
+			# The header's count as drawn, not as computed: "what is on screen"
+			# has one answer, and it is the label the player is reading.
+			"count_text": (nodes["count"] as Label).text if not nodes.is_empty() else "",
 			"stale": _stale,
 			"items": items,
 		})
@@ -292,6 +331,36 @@ func slot_rect(group_id: String, index: int) -> Rect2:
 	if entry.is_empty():
 		return Rect2()
 	return (entry["node"] as Control).get_global_rect()
+
+
+## The state a drawn slot is in: `"in_hand"`, `"placed"`, or `"locked"` while the
+## wave lock is on. Read from the same facts the border is painted from, so the
+## answer and the paint cannot disagree.
+func slot_state(group_id: String, index: int) -> String:
+	var entry := _slot_entry(group_id, index)
+	if entry.is_empty():
+		return ""
+	return _state_of(entry)
+
+
+## The border colour a drawn slot is drawn with, read off its own stylebox - not
+## recomputed here, so a demo checks the pixels' source, not a second copy of it.
+func slot_border(group_id: String, index: int) -> Color:
+	var entry := _slot_entry(group_id, index)
+	if entry.is_empty():
+		return Color(0, 0, 0, 0)
+	var node = entry["node"]
+	if not (node is PanelContainer):
+		return Color(0, 0, 0, 0)
+	var box := (node as PanelContainer).get_theme_stylebox("panel")
+	if box is StyleBoxFlat:
+		return (box as StyleBoxFlat).border_color
+	return Color(0, 0, 0, 0)
+
+
+## True while the bar is painting every slot with the locked border.
+func wave_locked() -> bool:
+	return _wave_locked
 
 
 ## The global rect of a group's page control (`-1` previous, `+1` next), or an
@@ -388,6 +457,22 @@ func mark_selected(instance_id: int) -> void:
 	_selected_id = instance_id
 	_rebuild()
 	_apply_copy()
+
+
+## The seam for the wave lock (T-0075). The bar owns no lock rule: the arena will
+## own the phase, and whoever owns it calls this once when the phase changes, so
+## every slot repaints with `locked_border_colour`. A no-op (and no repaint) when
+## the value does not change, so a per-frame caller is cheap.
+func set_wave_locked(locked: bool) -> void:
+	if _wave_locked == locked:
+		return
+	_wave_locked = locked
+	_rebuild()
+	print("INVENTORY_BAR_LOCK " + JSON.stringify({
+		"locked": _wave_locked,
+		"slots": _slots.size(),
+		"states": _states(),
+	}))
 
 
 # --- the stale binding ------------------------------------------------------
@@ -638,8 +723,15 @@ func _rebuild() -> void:
 			var slot := PanelContainer.new()
 			slot.name = "Slot%d" % index
 			slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			slot.custom_minimum_size = Vector2(0, slot_min_height)
-			slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			# A square: the same number for both sides, and no expand flag, so the
+			# container cannot stretch it wider than it is tall. Nothing inside is
+			# allowed to draw outside it (`clip_contents`), which keeps the drawn
+			# square and the rect a click is tested against the same rectangle.
+			var side := float(_slot_side())
+			slot.custom_minimum_size = Vector2(side, side)
+			slot.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+			slot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			slot.clip_contents = true
 			var text := Label.new()
 			text.name = "Text"
 			text.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -692,6 +784,9 @@ func _add_page_controls(group_id: String, nodes: Dictionary) -> void:
 
 ## One slot's text and cue: type, tier, where the tower is, and the selection
 ## marker. Rebuilt from the item on every draw, so a marker cannot be left behind.
+## The **border is the state** (in hand / placed / locked, T-0075); the selection is
+## drawn with the fill, the text colour and the prefix, so neither cue hides the
+## other.
 func _dress_slot(entry: Dictionary, label: Label, slot: PanelContainer) -> void:
 	var text := String(entry["type_id"])
 	if String(entry["tier"]) != "":
@@ -704,13 +799,53 @@ func _dress_slot(entry: Dictionary, label: Label, slot: PanelContainer) -> void:
 	label.text = text
 	var box := StyleBoxFlat.new()
 	box.bg_color = selected_fill if chosen else Color(0.14, 0.17, 0.15, 0.9)
-	box.border_color = selected_colour if chosen else Color(0.3, 0.36, 0.31, 1.0)
+	box.border_color = _border_colour(_state_of(entry))
 	box.set_border_width_all(slot_border_width)
 	box.set_corner_radius_all(slot_corner_radius)
 	box.content_margin_left = slot_padding
 	box.content_margin_right = slot_padding
 	slot.add_theme_stylebox_override("panel", box)
 	label.add_theme_color_override("font_color", selected_colour if chosen else idle_colour)
+
+
+## Where a drawn slot's item is: "locked" beats "placed" beats "in hand", because
+## a locked slot cannot be acted on whatever it holds.
+func _state_of(entry: Dictionary) -> String:
+	if _wave_locked:
+		return "locked"
+	if bool(entry["placed"]):
+		return "placed"
+	return "in_hand"
+
+
+func _border_colour(state: String) -> Color:
+	match state:
+		"placed":
+			return placed_border_colour
+		"locked":
+			return locked_border_colour
+		_:
+			return hand_border_colour
+
+
+func _slot_side() -> int:
+	return maxi(slot_side, 1)
+
+
+func _placed_count(group_id: String) -> int:
+	var total := 0
+	for raw in _items_of(group_id):
+		if bool((raw as Dictionary).get("placed", false)):
+			total += 1
+	return total
+
+
+## The state of every drawn slot, in drawing order: `group:index=state`.
+func _states() -> Array:
+	var out: Array = []
+	for entry in _slots:
+		out.append("%s:%d=%s" % [String(entry["group"]), int(entry["index"]), _state_of(entry)])
+	return out
 
 
 # --- internals: input lookups -----------------------------------------------
@@ -796,7 +931,7 @@ func _apply_copy() -> void:
 			continue
 		var total := _items_of(group_id).size()
 		(nodes["name"] as Label).text = _group_label(group_id)
-		(nodes["count"] as Label).text = "" if _stale else str(total)
+		(nodes["count"] as Label).text = _count_text(group_id) if not _stale else ""
 		var pages := _page_count(total)
 		(nodes["page"] as Label).text = page_format % [_page_of(group_id) + 1, pages]
 		(nodes["page"] as Label).visible = pages > 1 and not _stale
@@ -810,6 +945,17 @@ func _group_label(group_id: String) -> String:
 	if group_id == GROUP_TOWERS:
 		return towers_label
 	return upgrades_label
+
+
+## The header's count. Towers show both numbers (T-0075): how many the run holds,
+## and how many of those stand on the board. Upgrades are all in hand by
+## construction (an equipped upgrade has left the pool), so a second number there
+## would always be zero - noise, not information.
+func _count_text(group_id: String) -> String:
+	var total := _items_of(group_id).size()
+	if group_id == GROUP_TOWERS:
+		return tower_count_format % [total, _placed_count(group_id), placed_word]
+	return str(total)
 
 
 func _empty_text(group_id: String) -> String:
