@@ -1,10 +1,11 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://src/ui/boot.gd" id="1_boot"]
 [ext_resource type="PackedScene" path="res://scenes/main_menu.tscn" id="2_menu"]
 [ext_resource type="PackedScene" path="res://scenes/run_map_screen.tscn" id="3_map"]
 [ext_resource type="PackedScene" path="res://scenes/main.tscn" id="4_level"]
 [ext_resource type="PackedScene" path="res://scenes/choice_modal.tscn" id="5_modal"]
+[ext_resource type="PackedScene" path="res://scenes/inventory_bar.tscn" id="6_bar"]
 
 [node name="Boot" type="Control"]
 layout_mode = 3
@@ -19,6 +20,7 @@ menu_scene = ExtResource("2_menu")
 map_scene = ExtResource("3_map")
 level_scene = ExtResource("4_level")
 choice_modal_scene = ExtResource("5_modal")
+inventory_bar_scene = ExtResource("6_bar")
 
 [node name="Backdrop" type="ColorRect" parent="."]
 layout_mode = 1
@@ -40,3 +42,6 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
+
+[node name="Hud" type="CanvasLayer" parent="."]
+layer = 10

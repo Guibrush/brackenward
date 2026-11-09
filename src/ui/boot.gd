@@ -18,6 +18,17 @@ extends Control
 ##   reusable component (`src/ui/choice_modal.gd`) and knows nothing about towers:
 ##   this file builds the groups from `RunFlow.opening_offers()`, which is the
 ##   opening rule, and is the right place for it.
+## * **The inventory bar (T-0067).** One bar per run, mounted by this file in the
+##   `Hud` CanvasLayer above the screens and bound to the run's session, so the map
+##   screen and every level read the same object and the same inventory - there is
+##   nothing to copy between screens because there is only one bar (its own
+##   contract). It is **hidden while the opening choice is up**: a run that has
+##   granted nothing has no inventory to view yet, and the modal is the thing the
+##   player is answering. It is shown by the confirm that lands the picks - both
+##   paths (`_on_opening_confirmed` for a player, `_autostart_confirm_opening` for
+##   `--autostart`) - and freed with the run in `_release_run()`. A boot that
+##   cannot mount it refuses the run rather than opening one with no inventory
+##   view.
 ## * **One run, one session object.** A `RunFlow` owns the map, the run state and
 ##   the inventory for exactly one run, and the map screen binds to exactly one
 ##   session (both contracts live in those files). So the boot creates both on
@@ -66,6 +77,8 @@ extends Control
 ##   BOOT_OPENING {json}    once per run: the groups the opening choice shows
 ##   BOOT_OPENING_CONFIRMED {json}  once per applied opening pick, with the items
 ##   BOOT_OPENING_AUTO {json}       once per autostart run: the picks it made
+##   BOOT_HUD {json}        once per inventory-bar mount, show and hide, with what
+##                          the bar is bound to and whether it is on screen
 ##   BOOT_RESTART {json}    once per run replaced because the session goes on
 ##   BOOT_LEVEL {json}      once per level opened: the mode in force (`autostart`
 ##                          or `player`) and whether wave 1 started
@@ -141,6 +154,10 @@ const ItemCatalogueScript := preload("res://src/gameplay/item_catalogue.gd")
 ## the event node and the store. Required for a run - a run with nothing granted
 ## and no way to choose would be an empty run.
 @export var choice_modal_scene: PackedScene
+## The inventory bar, one instance per run, mounted in the HUD layer and bound to
+## the run's session (T-0067). Required for a run: it is the game's inventory view
+## on both the map screen and in a level.
+@export var inventory_bar_scene: PackedScene
 
 @export_group("Layout — node paths")
 ## Where the level and the run session are mounted. Behind the screens, so a
@@ -148,6 +165,10 @@ const ItemCatalogueScript := preload("res://src/gameplay/item_catalogue.gd")
 @export var game_layer_path: NodePath = ^"Game"
 ## Where the menu and the map screen are mounted.
 @export var screens_path: NodePath = ^"Screens"
+## Where the inventory bar is mounted: the HUD layer, drawn above the screens so
+## the bar is on top of both the map screen and a level without either of them
+## knowing it exists.
+@export var hud_layer_path: NodePath = ^"Hud"
 
 @export_group("Copy — the opening choice")
 ## Title of the opening choice the modal shows. Player-facing.
@@ -183,6 +204,9 @@ var _map_screen = null
 ## The run's opening choice, or null once it is confirmed. One per run, freed with
 ## the run; while it is open the map screen under it is inert (its own contract).
 var _opening_modal = null
+## The run's inventory bar, mounted in the HUD layer and bound to the run session,
+## or null between runs. One per run, freed with it.
+var _inventory_bar = null
 ## The run session for the current run, or null between runs.
 var _flow = null
 var _screen: int = Screen.NONE
@@ -290,6 +314,15 @@ func _start_run(entry_id: String) -> bool:
 	if game_layer_path.is_empty() or get_node_or_null(game_layer_path) == null:
 		_refuse("start a run", "the game layer '%s' is missing from the scene" % game_layer_path)
 		return false
+	if inventory_bar_scene == null:
+		# The bar is the game's inventory view (T-0067). A run without it would be
+		# a run the player cannot see their inventory in, so it is refused here
+		# rather than opened and left thin.
+		_refuse("start a run", "inventory_bar_scene is not wired: the run would have no inventory view")
+		return false
+	if hud_layer_path.is_empty() or get_node_or_null(hud_layer_path) == null:
+		_refuse("start a run", "the HUD layer '%s' is missing from the scene" % hud_layer_path)
+		return false
 
 	# The session is created and wired before the run begins, so `map_ready` is
 	# heard by the screen that is about to draw it (T-0050's documented order).
@@ -326,6 +359,12 @@ func _start_run(entry_id: String) -> bool:
 
 	if _menu != null:
 		_menu.hide()
+	# The bar is mounted with the run, before the choice goes up: a mount failure
+	# must leave the player on the menu, not on a map with no inventory view.
+	if not _mount_inventory_bar():
+		_show_menu("the inventory bar could not be mounted")
+		return false
+
 	# The choice goes up before the run counts as started: a run with nothing
 	# granted is only usable once the modal is on top of the map (T-0065). A
 	# modal that cannot be shown leaves the player on the menu with the reason
@@ -357,6 +396,7 @@ func _release_run() -> void:
 	# The choice first: a modal bound to a session that is going away must never
 	# outlive it, or the next run's map would be held by a dead choice.
 	_free_opening_modal()
+	_free_inventory_bar()
 	if _map_screen != null:
 		_map_screen.name = "MapScreen@released"
 		_map_screen.queue_free()
@@ -365,6 +405,94 @@ func _release_run() -> void:
 		_flow.name = "RunFlow@released"
 		_flow.queue_free()
 		_flow = null
+
+
+# --- the inventory bar (T-0067) ---------------------------------------------
+
+## Mounts one bar in the HUD layer and binds it to the run session, hidden while
+## the opening choice still holds the run: a run with nothing granted has no
+## inventory to view, and the choice is what the player is answering. Returns
+## whether the bar is mounted and bound; every failure is printed and changes
+## nothing, so the caller can release the run and stay on the menu.
+func _mount_inventory_bar() -> bool:
+	if _flow == null:
+		_refuse("mount the inventory bar", "no run has started")
+		return false
+	var hud := _hud_layer()
+	if hud == null:
+		_refuse("mount the inventory bar", "the HUD layer '%s' is missing" % hud_layer_path)
+		return false
+	var bar = inventory_bar_scene.instantiate()
+	if bar == null:
+		_refuse("mount the inventory bar", "the inventory bar scene did not instantiate")
+		return false
+	bar.name = "InventoryBar"
+	# Set before binding, so the first draw the bar prints already carries the
+	# visibility the player will get (its `INVENTORY_BAR_SHOWN` line reports it).
+	bar.visible = not _flow.opening_pending()
+	hud.add_child(bar)
+	if not bar.bind_session(_flow):
+		# The bar printed its own reason; this copy names what the boot asked for.
+		_refuse("mount the inventory bar", "the bar refused the run session")
+		bar.name = "InventoryBar@refused"
+		bar.queue_free()
+		return false
+	_inventory_bar = bar
+	_print_hud("mount", "the run began")
+	return true
+
+
+## Shows the bar once the opening picks have been applied - the same call from a
+## player's confirm and from the autostart pick, so the two paths cannot diverge.
+## A no-op when no bar is mounted (an autostart run that never reached here) and a
+## printed no-op when the bar is already showing, so one action prints one line.
+func _show_inventory_bar(why: String) -> void:
+	if _inventory_bar == null or not is_instance_valid(_inventory_bar):
+		return
+	if _inventory_bar.visible:
+		return
+	_inventory_bar.visible = true
+	_print_hud("show", why)
+
+
+## Releases the run's bar. Unbound before it is freed, so the session's signals
+## stop feeding a bar that is going away, and renamed first for the reason
+## `_release_run()` gives: a restart mounts the next run's bar in the same frame.
+func _free_inventory_bar() -> void:
+	if _inventory_bar == null:
+		return
+	var bar = _inventory_bar
+	_inventory_bar = null
+	if not is_instance_valid(bar):
+		return
+	bar.unbind()
+	bar.name = "InventoryBar@released"
+	bar.queue_free()
+
+
+## What the boot decided about the bar, in the bar's own terms: whether it is on
+## screen, what it is bound to, and the run's counts at that moment.
+func _print_hud(action: String, why: String) -> void:
+	var counts := _inventory_counts()
+	print("BOOT_HUD " + JSON.stringify({
+		"action": action,
+		"why": why,
+		"visible": _inventory_bar != null and is_instance_valid(_inventory_bar) and _inventory_bar.visible,
+		"bound": _flow != null and _inventory_bar != null and is_instance_valid(_inventory_bar),
+		"towers": counts["towers"],
+		"upgrades": counts["upgrades"],
+		"opening_pending": _flow.opening_pending() if _flow != null else false,
+		"screen": screen_name(),
+	}))
+
+
+func _inventory_counts() -> Dictionary:
+	if _flow == null:
+		return {"towers": 0, "upgrades": 0}
+	var inventory = _flow.inventory()
+	if inventory == null:
+		return {"towers": 0, "upgrades": 0}
+	return {"towers": inventory.tower_count(), "upgrades": inventory.upgrade_count()}
 
 
 # --- the menu's actions -----------------------------------------------------
@@ -498,6 +626,7 @@ func _on_opening_confirmed(picks: Array) -> void:
 		"pending": _flow.opening_pending(),
 	}))
 	_refresh_map_after_choice()
+	_show_inventory_bar("the opening choice was confirmed")
 	if _opening_modal != null:
 		_opening_modal.close()
 	_free_opening_modal()
@@ -798,6 +927,7 @@ func _autostart_confirm_opening(entry_id: String) -> bool:
 		"pending": _flow.opening_pending(),
 	}))
 	_refresh_map_after_choice()
+	_show_inventory_bar("the opening choice was auto-confirmed")
 	if _opening_modal != null:
 		_opening_modal.close()
 	_free_opening_modal()
@@ -946,6 +1076,12 @@ func opening_modal():
 	return _opening_modal
 
 
+## The run's inventory bar while a run is bound to it, or null before a run and
+## between runs. One instance for the whole run, on both screens.
+func inventory_bar():
+	return _inventory_bar
+
+
 ## Handled menu actions since the boot started.
 func effects() -> int:
 	return _effects
@@ -1012,6 +1148,10 @@ func _game_layer() -> Node:
 
 func _screens() -> Node:
 	return get_node_or_null(screens_path)
+
+
+func _hud_layer() -> Node:
+	return get_node_or_null(hud_layer_path)
 
 
 func _set_screen(next_screen: int, why: String) -> void:
