@@ -23,7 +23,16 @@ extends SceneTree
 ##      Point 4 is the planted-failure target: with `add_pointer_guard()` removed
 ##      from a copy, the same call answers `tile` and the panel handles the click
 ##      the bar already handled;
-##   5. the panel's last line sits above the bar, not under it.
+##   5. (T-0078) the drag gesture: a press on a tower **in hand** starts a drag whose
+##      ghost is a drawn, visible node centred under the pointer and carrying the
+##      tower's type and tier; a release 200 px onto the board raises
+##      `tower_dropped` **once** with that id and that point; a release inside the
+##      bar - with or without passing `drag_threshold_px` - raises nothing and leaves
+##      the selection standing; a **placed** tower's slot starts no drag; and
+##      `set_wave_locked(true)` suppresses the drag until it is turned off. The bar
+##      only announces the drop (T-0079 owns the receiver), and the click-then-tile
+##      path still places afterwards;
+##   6. the panel's last line sits above the bar, not under it.
 ##
 ## The same file produces the acceptance frame. With `--write-movie` on the command
 ## line it holds the final state for `MOVIE_HOLD_FRAMES`, so the last PNG the movie
@@ -36,13 +45,15 @@ extends SceneTree
 ##   PANEL_BAR_CASE {text}        one line per case
 ##   PANEL_BAR_EVENT {json}       every event pushed, and where it was aimed
 ##   PANEL_BAR_STATE {json}       what the panel and the bar each report
+##   PANEL_BAR_DRAG {json}        the live drag and the ghost, mid-gesture
+##   PANEL_BAR_DROP {json}        every tower_dropped the bar raised, with its point
 ##   PANEL_BAR_GEOMETRY {json}    the rects the overlap case is decided on
 ##   PANEL_BAR_FRAME {json}       the movie is holding the frame
 ##   PANEL_BAR_SELF_TEST {json}   once, last; carries checks and failures
 ##
 ## The exit code is not evidence (L-035); `PANEL_BAR_SELF_TEST` is. `BOOT_*`,
-## `ARENA_*`, `BUILD_PANEL_*` and `INVENTORY_BAR_*` lines around these belong to the
-## objects under test.
+## `ARENA_*`, `BUILD_PANEL_*`, `TOWER_WINDOW_*` and `INVENTORY_BAR_*` lines around
+## these belong to the objects under test.
 
 const BOOT_SCENE := "res://scenes/boot.tscn"
 
@@ -78,6 +89,16 @@ var _flow = null
 
 var _checks: int = 0
 var _failures: Array[String] = []
+
+## Every `tower_dropped` the bar raised, in order: `{id, point}`. Recorded from the
+## signal itself, so the count the demo asserts is the count the bar emitted.
+var _drops: Array = []
+## Every `tower_drag_started` the bar raised, in order: the instance ids. Same rule:
+## recorded from the signal, not from the bar's own state.
+var _starts: Array = []
+var _signals_connected: bool = false
+## Where the demo last put the mouse, so a motion event carries a real `relative`.
+var _pointer: Vector2 = Vector2.ZERO
 
 
 func _initialize() -> void:
@@ -290,6 +311,202 @@ func _run() -> void:
 	check_eq_int(int(_bar.selected_instance()), picked_id, "the bar was told by the panel, not by a click on itself")
 	check(not _kinds().has("tower"), "the selection still draws no tower row in the panel: %s" % [_kinds()])
 
+	# --- 4b. the drag gesture (T-0078) -------------------------------------
+	# Everything below is pushed into the root viewport as the OS delivers it - a
+	# move, the press, real motion, the release - and every assertion reads a node
+	# or a read-back off the bar the run itself mounted. The ghost is asserted as a
+	# rect and a Label text, not as a flag (L-041).
+	_case("the bar carries the drag contract (T-0078)")
+	check(_bar.has_signal("tower_dropped"), "the bar carries the tower_dropped signal")
+	check(_bar.has_signal("tower_drag_started"), "the bar carries the tower_drag_started signal (T-0080)")
+	if not _signals_connected:
+		if _bar.has_signal("tower_dropped"):
+			_bar.connect("tower_dropped", _on_tower_dropped)
+		if _bar.has_signal("tower_drag_started"):
+			_bar.connect("tower_drag_started", _on_tower_drag_started)
+		_signals_connected = true
+	check(_signals_connected, "this demo is listening to both drag signals")
+	check_eq_int(_drops.size(), 0, "no drop has been raised yet")
+	check_eq_int(_starts.size(), 0, "no drag has been announced yet")
+	check(not _bar.drag_active(), "no drag is live before the first press")
+
+	# The tower the case above placed, pressed in its own slot: the click meaning it
+	# has today, with no drag behind it - and therefore no `tower_drag_started`.
+	_case("a placed tower's slot starts no drag")
+	var placed_rect: Rect2 = _bar.slot_rect("towers", 0)
+	check(_bar.slot_state("towers", 0) == "placed",
+		"the slot this case presses holds the placed tower: '%s'" % _bar.slot_state("towers", 0))
+	await _drag_press(placed_rect.get_center(), "left press on the placed tower's slot")
+	check(not _bar.drag_active(), "the placed slot started no drag: %s" % [_drag_json()])
+	check(_bar.ghost_rect().size.x <= 0.0, "no ghost was drawn for a placed tower: %s" % [_bar.ghost_rect()])
+	check_eq_int(_starts.size(), 0, "a placed slot announced no drag start")
+	await _drag_release(placed_rect.get_center(), "release on the placed tower's own slot")
+	check_eq_int(_drops.size(), 0, "a release on the placed slot raised no drop")
+
+	# A drag needs a tower in hand and this run holds one tower, so the player's own
+	# route back - the window's Take back row - is the route taken here. The drag is
+	# then proved on a tower the player really has, in hand, on the real boot path.
+	# The window is still up: the press that selected the placed tower opened it, and
+	# that is asserted here rather than assumed.
+	_case("the placed tower is taken back, so there is a tower in hand to drag")
+	var take_back_window = _window()
+	if check(_window_open(take_back_window), "the press on the placed slot opened its window"):
+		var take_back_row := _window_row_index(take_back_window, "take_back")
+		if check(take_back_row >= 0, "the window offers taking it back: %s" % [take_back_window.rows()]):
+			var row_point: Vector2 = take_back_window.row_rect(take_back_row).get_center()
+			check(not _bar.claim_point(row_point),
+				"the window's row is off the bar, so that click is the window's: %s" % [row_point])
+			await _click(row_point, "left click on the window's Take back row")
+	await _close_window("close the window after taking the tower back")
+	_state_evidence("taken back")
+	check(_bar.slot_state("towers", 0) == "in_hand",
+		"the slot holds a tower in hand again: '%s'" % _bar.slot_state("towers", 0))
+	check(not _arena_has_tower(picked_id), "the board no longer holds the tower: %d" % picked_id)
+	check_eq_int(_starts.size(), 0, "the press on a placed slot announced no drag start")
+
+	_case("press on an in-hand slot and drag the tower 200 px onto the board")
+	var hand_rect: Rect2 = _bar.slot_rect("towers", 0)
+	var press_point: Vector2 = hand_rect.get_center()
+	var drop_point: Vector2 = press_point + Vector2(0, -200)
+	check(not _bar.get_global_rect().has_point(drop_point),
+		"the drop point is off the bar: %s in %s" % [drop_point, _bar.get_global_rect()])
+	await _drag_press(press_point, "left press on the in-hand tower at (%.0f, %.0f)" % [press_point.x, press_point.y])
+	check(_bar.drag_active(), "the press on a tower in hand starts a drag: %s" % [_drag_json()])
+	check_eq_int(int(_bar.drag_instance()), picked_id, "the drag carries the tower that was pressed")
+	check_eq_int(_starts.size(), 0,
+		"a press alone announces no drag: this could still be a click (tower_drag_started)")
+	var ghost_pressed: Rect2 = _bar.ghost_rect()
+	check(ghost_pressed.size.x > 0.0, "the ghost is a drawn node from the press: %s" % [ghost_pressed])
+	check(absf(ghost_pressed.size.x - float(_bar.slot_side)) <= 1.0,
+		"the ghost is one slot square: %.1f vs %d" % [ghost_pressed.size.x, int(_bar.slot_side)])
+	check(ghost_pressed.get_center().distance_to(press_point) <= 2.0,
+		"the ghost is centred on the press: %s vs %s" % [ghost_pressed.get_center(), press_point])
+
+	await _drag_move(drop_point, "drag 200 px up onto the board")
+	var ghost: Rect2 = _bar.ghost_rect()
+	check(_bar.drag_active(), "the drag is still live after the motion: %s" % [_drag_json()])
+	check(_bar.drag_point().distance_to(drop_point) <= 1.0,
+		"the drag's point follows the pointer: %s vs %s" % [_bar.drag_point(), drop_point])
+	check(ghost.size.x > 0.0, "the ghost is still drawn while the drag is live: %s" % [ghost])
+	check(ghost.get_center().distance_to(drop_point) <= 2.0,
+		"the ghost is centred within 2 px of the pointer: %s vs %s" % [ghost.get_center(), drop_point])
+	var ghost_text := String(_bar.ghost_text())
+	check_eq_int(_starts.size(), 1,
+		"the motion past the threshold announced the drag exactly once (tower_drag_started)")
+	if _starts.size() == 1:
+		check_eq_int(int(_starts[0]), picked_id, "the announced drag names the tower carried")
+	check(ghost_text.contains(String(picked["type_id"])),
+		"the ghost names the tower: '%s' carries '%s'" % [ghost_text, String(picked["type_id"])])
+	check(ghost_text.contains(String(picked["tier_text"])),
+		"the ghost names the tier: '%s' carries '%s'" % [ghost_text, String(picked["tier_text"])])
+	print("PANEL_BAR_DRAG " + JSON.stringify({
+		"case": "dragging",
+		"instance": int(_bar.drag_instance()),
+		"point": [_bar.drag_point().x, _bar.drag_point().y],
+		"ghost": _rect_json(ghost),
+		"ghost_text": ghost_text,
+	}))
+
+	await _drag_release(drop_point, "release the tower on the board")
+	check_eq_int(_drops.size(), 1, "the release raised tower_dropped exactly once")
+	if _drops.size() == 1:
+		check_eq_int(int(_drops[0]["id"]), picked_id, "the drop names the tower the drag carried")
+		var dropped_at: Vector2 = _drops[0]["point"]
+		check(dropped_at.distance_to(drop_point) <= 1.0,
+			"the drop point is the release point: %s vs %s" % [dropped_at, drop_point])
+		print("PANEL_BAR_DROP " + JSON.stringify({
+			"case": "board release",
+			"count": _drops.size(),
+			"instance": int(_drops[0]["id"]),
+			"point": [dropped_at.x, dropped_at.y],
+			"release": [drop_point.x, drop_point.y],
+		}))
+	check(not _bar.drag_active(), "the release ended the drag")
+	check(_bar.ghost_rect().size.x <= 0.0, "the ghost is hidden after the release: %s" % [_bar.ghost_rect()])
+	# The bar's half only: nothing is placed until T-0079 wires the receiver.
+	check(not _arena_has_tower(picked_id),
+		"the bar announced the drop and placed nothing itself: %d" % picked_id)
+
+	_case("a press and release inside the bar is a click, not a drop")
+	await _close_window("close the window the drag press opened")
+	var before_inside: int = _drops.size()
+	var starts_before_click: int = _starts.size()
+	var inside: Vector2 = _bar.slot_rect("towers", 0).get_center()
+	await _drag_press(inside, "left press on the in-hand tower")
+	check(_bar.drag_active(), "the press still starts a drag")
+	await _drag_release(inside, "release without moving")
+	check_eq_int(_drops.size(), before_inside, "a release without motion raised no drop")
+	check_eq_int(_starts.size(), starts_before_click,
+		"a press that never moved announced no drag, so the window it opened stays up")
+	check(not _bar.drag_active(), "the release ended the drag")
+	check(_bar.ghost_rect().size.x <= 0.0, "the ghost is hidden again: %s" % [_bar.ghost_rect()])
+	check_eq_int(int(_bar.selected_instance()), picked_id, "the click's selection stands")
+	await _close_window("close the window that click opened")
+
+	# Far enough to pass the threshold, but released inside the bar: the "outside"
+	# half of the rule alone, with the distance half satisfied.
+	var far_inside: Vector2 = inside + Vector2(0, -(float(_bar.drag_threshold_px) + 20.0))
+	check(_bar.get_global_rect().has_point(far_inside),
+		"the far-inside point is still in the bar: %s in %s" % [far_inside, _bar.get_global_rect()])
+	await _drag_press(inside, "left press on the in-hand tower again")
+	await _drag_move(far_inside, "drag past the threshold, staying inside the bar")
+	check_eq_int(_starts.size(), starts_before_click + 1,
+		"a motion past the threshold inside the bar does announce a drag")
+	await _drag_release(far_inside, "release inside the bar, past the threshold")
+	check_eq_int(_drops.size(), before_inside,
+		"a release inside the bar raised no drop, however far it travelled")
+	check(not _bar.drag_active(), "that release ended the drag too")
+	await _close_window("close the window the second in-bar press opened")
+
+	_case("the wave lock suppresses the drag and unlocking restores it (T-0078)")
+	var before_lock: int = _drops.size()
+	var starts_before_lock: int = _starts.size()
+	# `set_wave_locked()` rebuilds the slot row, so the demo lets the container lay
+	# it out before aiming a real press at it: a press at a rect from before the
+	# rebuild would land nowhere and prove nothing about the lock.
+	_bar.set_wave_locked(true)
+	await _settle()
+	_state_evidence("wave lock on")
+	check(_bar.wave_locked(), "the bar reports the wave lock")
+	var locked_point: Vector2 = _bar.slot_rect("towers", 0).get_center()
+	await _drag_press(locked_point, "left press on the in-hand tower while locked")
+	check(not _bar.drag_active(), "no drag starts while the wave lock is on: %s" % [_drag_json()])
+	check(_window_open(_window()),
+		"the locked press still selected the tower it landed on: its window opened")
+	check(_bar.ghost_rect().size.x <= 0.0, "no ghost is drawn while locked: %s" % [_bar.ghost_rect()])
+	await _drag_move(locked_point + Vector2(0, -200), "drag 200 px up while locked")
+	check_eq_int(_starts.size(), starts_before_lock, "a locked press announced no drag")
+	check(_bar.ghost_rect().size.x <= 0.0, "a locked drag draws no ghost either: %s" % [_bar.ghost_rect()])
+	await _drag_release(_bar.slot_rect("towers", 0).get_center(), "release while locked")
+	check_eq_int(_drops.size(), before_lock, "a locked press raised no drop")
+	await _close_window("close the window the locked press opened")
+	_bar.set_wave_locked(false)
+	await _settle()
+	_state_evidence("wave lock off")
+	var unlocked_point: Vector2 = _bar.slot_rect("towers", 0).get_center()
+	await _drag_press(unlocked_point, "left press on the in-hand tower, lock off")
+	check(_bar.drag_active(), "with the lock off the same press drags again: %s" % [_drag_json()])
+	await _drag_release(unlocked_point, "release inside the bar")
+	check_eq_int(_drops.size(), before_lock, "that release inside the bar raised no drop")
+	check_eq_int(_starts.size(), starts_before_lock,
+		"unlocking restores the press, and a press that never moved still announces nothing")
+	check(not _bar.drag_active(), "the release ended the drag")
+	await _close_window("close the window the unlocked press opened")
+
+	# The drag changed what a press on a slot means, so the path it must not have
+	# broken is proved last: click a tower in hand, click a tile, see it stand.
+	_case("the click-then-tile path still places a tower after the drag (T-0078)")
+	await _wait_for_settle("before the re-place click")
+	await _click(_bar.slot_rect("towers", 0).get_center(), "left click on the tower in hand")
+	await _close_window("close the window that click opened")
+	await _wait_for_settle("before the re-place tile click")
+	await _click(_canvas_point(slot["position"]), "left click on tile %s" % String(slot["name"]))
+	_state_evidence("placed again")
+	var replanted := _bar_tower(picked_id)
+	check(bool(replanted.get("placed", false)), "the tile click placed the tower again: %s" % [replanted])
+	check(_arena_has_tower(picked_id), "the board holds it again: %d" % picked_id)
+	check_eq_int(_drops.size(), before_lock, "the click-then-tile path raised no drop")
+
 	# --- 5. no overlap -----------------------------------------------------
 	_case("the panel's content stops above the bar")
 	var geometry := _geometry()
@@ -486,6 +703,118 @@ func _mouse_press(point: Vector2) -> InputEventMouseButton:
 	ev.position = point
 	ev.global_position = point
 	return ev
+
+
+## A left press, pushed the way the OS delivers it: a move first (so the GUI
+## hit-tester has a hovered control), then the press. The release is a separate call,
+## because a drag is a press, then motion, then a release (T-0078).
+func _drag_press(point: Vector2, what: String) -> void:
+	print("PANEL_BAR_EVENT " + JSON.stringify({
+		"device": "mouse",
+		"what": what,
+		"press": [point.x, point.y],
+	}))
+	await _mouse_move(point)
+	var ev := InputEventMouseButton.new()
+	ev.device = -1
+	ev.button_index = MOUSE_BUTTON_LEFT
+	ev.pressed = true
+	ev.button_mask = MOUSE_BUTTON_MASK_LEFT
+	ev.position = point
+	ev.global_position = point
+	get_root().push_input(ev)
+	await process_frame
+	await _settle()
+
+
+## A motion event with the left button held: what the OS sends between a drag's press
+## and its release. Pushed, never handed to a private method.
+func _drag_move(point: Vector2, what: String) -> void:
+	print("PANEL_BAR_EVENT " + JSON.stringify({
+		"device": "mouse",
+		"what": what,
+		"move": [point.x, point.y],
+	}))
+	await _mouse_move(point, MOUSE_BUTTON_MASK_LEFT)
+	await _settle()
+
+
+## The left release that ends a gesture, at `point`.
+func _drag_release(point: Vector2, what: String) -> void:
+	print("PANEL_BAR_EVENT " + JSON.stringify({
+		"device": "mouse",
+		"what": what,
+		"release": [point.x, point.y],
+	}))
+	var ev := InputEventMouseButton.new()
+	ev.device = -1
+	ev.button_index = MOUSE_BUTTON_LEFT
+	ev.pressed = false
+	ev.button_mask = 0
+	ev.position = point
+	ev.global_position = point
+	get_root().push_input(ev)
+	await process_frame
+	await _settle()
+
+
+## One pointer move, with `mask` as the held buttons. `relative` is a real delta from
+## the last point this demo pushed, so the event is shaped like the OS's.
+func _mouse_move(point: Vector2, mask: int = 0) -> void:
+	var motion := InputEventMouseMotion.new()
+	motion.position = point
+	motion.global_position = point
+	motion.button_mask = mask
+	motion.relative = point - _pointer
+	_pointer = point
+	get_root().push_input(motion)
+	await process_frame
+
+
+## Every `tower_dropped` the bar raises, recorded from the signal: the count, the id
+## and the point the demo asserts are the ones the bar emitted, not a reconstruction.
+func _on_tower_dropped(instance_id: int, screen_point: Vector2) -> void:
+	_drops.append({"id": instance_id, "point": screen_point})
+	print("PANEL_BAR_DROP " + JSON.stringify({
+		"case": "signal",
+		"instance": instance_id,
+		"point": [screen_point.x, screen_point.y],
+		"count": _drops.size(),
+	}))
+
+
+## Every `tower_drag_started` the bar raises: the id it announced, so "one drag
+## began" is the bar's own count and not the demo's belief.
+func _on_tower_drag_started(instance_id: int) -> void:
+	_starts.append(instance_id)
+	print("PANEL_BAR_START " + JSON.stringify({
+		"instance": instance_id,
+		"count": _starts.size(),
+	}))
+
+
+## The bar's drag state as one dictionary, for a failure message: what is being
+## carried, where the pointer is, and the ghost's rect and text as drawn.
+func _drag_json() -> Dictionary:
+	return {
+		"active": _bar.drag_active(),
+		"instance": int(_bar.drag_instance()),
+		"point": [_bar.drag_point().x, _bar.drag_point().y],
+		"ghost": _rect_json(_bar.ghost_rect()),
+		"ghost_text": String(_bar.ghost_text()),
+	}
+
+
+## The index of the first row of `kind` in the tower window's drawn row list, read
+## from the window's own `rows()`. -1 for a row it does not draw. The same shape as
+## `_row_index()` for the opening modal, and for the same reason: the demo aims at
+## what the window drew, never at a layout it assumed.
+func _window_row_index(window, kind: String) -> int:
+	for entry in window.rows():
+		var row: Dictionary = entry
+		if String(row["kind"]) == kind:
+			return int(row["index"])
+	return -1
 
 
 func _settle(frames: int = SETTLE_FRAMES) -> void:

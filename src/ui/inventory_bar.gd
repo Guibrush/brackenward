@@ -56,12 +56,34 @@ extends Control
 ##   stops the map screen underneath from reading the same click as a node choice.
 ##   The build panel asks `claim_point()` before it answers a pointer, because
 ##   `_input` reaches it first (see `add_pointer_guard()` there).
+## * **The bar's half of drag-and-drop (T-0078).** A left press on a tower **in
+##   hand** keeps its meaning - the slot is selected and the panel arms it - and
+##   also begins a drag. Motion carries a ghost square under the pointer; a release
+##   further than `drag_threshold_px` from the press *and* outside the bar raises
+##   `tower_dropped(instance_id, screen_point)` exactly once and hides the ghost. A
+##   release inside the bar, or a shorter one, is a click: the selection stands and
+##   nothing is emitted. The drag is stored as **scalars**, never as a node,
+##   because `_select()` rebuilds the slot row on the very press that starts it;
+##   the ghost is one persistent child of the bar, built outside `_rebuild()`, so
+##   no rebuild can free it mid-gesture. While a drag is live the release is
+##   consumed (`set_input_as_handled`), so nothing under the bar answers the same
+##   gesture. A **placed** tower begins no drag (its click opens the window), and
+##   `set_wave_locked(true)` suppresses one. The point is in viewport coordinates,
+##   the space `MapInput.intent_for()` reports: the bar does not convert to world,
+##   because it does not own the board's transform.
+## * **Pointer only.** The gesture reads the mouse button and motion directly,
+##   because `MapInput` has no drag intent - a stick has no "drag", and inventing
+##   one there would make a pointer gesture look like a pad action. Gamepad and
+##   keyboard keep the click-then-tile path; the press itself still goes through
+##   `MapInput` in `handle_input()`, so the selection keeps its one door.
 ##
 ## Prints on stdout, one line per event:
 ##   INVENTORY_BAR_SHOWN {json}    once per draw whose content changed
 ##   INVENTORY_BAR_STALE {json}    once per distinct stale mismatch caught
 ##   INVENTORY_BAR_PAGE {json}     once per page change, with the page before/after
 ##   INVENTORY_BAR_SELECT {json}   once per tower selected
+##   INVENTORY_BAR_DRAG {json}     once per drag begun or cancelled
+##   INVENTORY_BAR_DROP {json}     once per release that ended a drag
 ##   INVENTORY_BAR_REJECTED {json} a bind or call this bar refused
 
 const MapInputScript := preload("res://src/ui/map_input.gd")
@@ -74,6 +96,22 @@ const GROUP_UPGRADES := "upgrades"
 ## A tower in the bar was selected. `instance_id` is the inventory's id. The
 ## floating tower window (next task) listens here; this task only raises it.
 signal tower_selected(instance_id: int)
+## A tower **in hand** was pressed in the bar and released past
+## `drag_threshold_px`, outside the bar (T-0078). `screen_point` is the release
+## position in viewport coordinates - the space `MapInput.intent_for()` reports - so
+## the receiver resolves it with the same `_pointer_world()` a click uses. The bar
+## does not convert to world: it does not own the board's transform. A release
+## inside the bar, or a shorter one, raises nothing at all.
+signal tower_dropped(instance_id: int, screen_point: Vector2)
+## A drag began: `instance_id` is the tower the player is carrying (T-0078). Raised
+## **once per gesture**, the first time the pointer has travelled past
+## `drag_threshold_px` and the gesture is therefore no longer a click - so a plain
+## click on a tower in hand announces nothing, which is what keeps the tower window
+## it opens from being closed again by a signal meant for drags. Never raised for a
+## placed slot and never while `set_wave_locked(true)` is in force. It exists because
+## every bar selection opens the tower window (`boot.gd`), so a drag has to say so
+## before it is dragged under an open window; T-0080 is the receiver that closes it.
+signal tower_drag_started(instance_id: int)
 ## A group moved to another page.
 signal page_changed(group_id: String, page: int, pages: int)
 
@@ -141,6 +179,14 @@ signal page_changed(group_id: String, page: int, pages: int)
 ## Border of every slot while the wave lock is on (`set_wave_locked(true)`).
 @export var locked_border_colour: Color = Color(0.55, 0.2, 0.2, 1.0)
 
+@export_group("Tuning — the drag gesture (T-0078, PLACEHOLDER)")
+## How far, in pixels, the pointer must travel from the press before a release
+## **outside** the bar counts as a drop instead of a click. Range 2-24: below 2 a
+## click that trembles becomes a throw, above 24 the gesture starts to feel like a
+## deliberate cast rather than a drag. This is a feel decision - change it here, not
+## in the code, and say so to `design/systems`.
+@export var drag_threshold_px: float = 6.0
+
 @export_group("Tuning — the selected cue (PLACEHOLDER)")
 ## Text colour of the selected tower's slot. The same cool tint the build panel
 ## uses for a selection, so one state keeps one look. Selection is drawn with this
@@ -193,9 +239,28 @@ var _wave_locked: bool = false
 var _stale: bool = false
 var _last_signature: String = ""
 
+## The live drag as scalars (T-0078): `_drag_id` is the instance carried, or -1 when
+## no drag is live. Never a node: `_select()` rebuilds the slot row on the press that
+## starts the drag, so any node reference taken there would be freed immediately.
+var _drag_id: int = -1
+var _drag_from: Vector2 = Vector2.ZERO
+var _drag_to: Vector2 = Vector2.ZERO
+## The text the ghost shows: the carried tower's type and tier, taken from the slot
+## the press landed on.
+var _drag_text: String = ""
+## True once this gesture has raised `tower_drag_started`: a gesture announces itself
+## once, on the first motion past the threshold, and a drop that never saw one
+## announces itself before the drop.
+var _drag_announced: bool = false
+## The ghost: one persistent child of the bar, built once outside `_rebuild()` so a
+## slot rebuild cannot free it mid-gesture. Added last, so it draws over the row.
+var _ghost: Panel = null
+var _ghost_label: Label = null
+
 
 func _ready() -> void:
 	_build()
+	_ensure_ghost()
 	_apply_copy()
 	call_deferred("_deferred_refresh")
 
@@ -222,6 +287,7 @@ func bind_session(flow) -> bool:
 
 func unbind() -> void:
 	_disconnect_session()
+	_cancel_drag("the bar was unbound")
 	_flow = null
 	_shown = {}
 	_forced = {}
@@ -342,6 +408,42 @@ func slot_state(group_id: String, index: int) -> String:
 	return _state_of(entry)
 
 
+## True while a drag is live: pressed on a tower in hand, not yet released. A
+## boolean of the drag's own scalars, not of the ghost's visibility - the ghost is
+## a view of the drag, and this is the drag.
+func drag_active() -> bool:
+	return _drag_id != -1
+
+
+## The instance the live drag carries, or -1 when no drag is live.
+func drag_instance() -> int:
+	return _drag_id
+
+
+## The pointer position (viewport coordinates) the live drag last saw: the press
+## point until the first motion arrives, and the release point afterwards.
+func drag_point() -> Vector2:
+	return _drag_to
+
+
+## The ghost's rect as the player sees it, or an empty rect while it is not showing.
+## Read off the node, not from a flag (L-041): a ghost the demo cannot point at is a
+## ghost the player is not looking at either, and an empty rect is how "not there"
+## is reported here, the same convention as `slot_rect()`.
+func ghost_rect() -> Rect2:
+	if _ghost == null or not is_instance_valid(_ghost) or not _ghost.visible:
+		return Rect2()
+	return _ghost.get_global_rect()
+
+
+## The text the ghost carries, read off the Label it draws - the string the player
+## reads, not a stored copy of it. Empty when the ghost was never built.
+func ghost_text() -> String:
+	if _ghost_label == null or not is_instance_valid(_ghost_label):
+		return ""
+	return String(_ghost_label.text)
+
+
 ## The border colour a drawn slot is drawn with, read off its own stylebox - not
 ## recomputed here, so a demo checks the pixels' source, not a second copy of it.
 func slot_border(group_id: String, index: int) -> Color:
@@ -385,6 +487,13 @@ func is_stale() -> bool:
 func claim_point(point: Vector2) -> bool:
 	if not visible:
 		return false
+	return _bar_contains(point)
+
+
+## True when `point` is inside the bar's own rect. The drop test (T-0078) and
+## `claim_point()` are the same question, so they are the same function: a release
+## the bar calls a click and a release it calls "inside" cannot disagree.
+func _bar_contains(point: Vector2) -> bool:
 	var rect := get_global_rect()
 	if rect.size.x <= 0.0 or rect.size.y <= 0.0:
 		return false
@@ -395,7 +504,8 @@ func claim_point(point: Vector2) -> bool:
 
 ## The single action path: a click on a slot selects a tower, a click on a page
 ## control moves that group's page. Nothing here modifies the inventory - this
-## task has no modifying action of its own.
+## task has no modifying action of its own. On a tower **in hand** the click also
+## begins a drag (T-0078): the selection is today's meaning and stands either way.
 func handle_input(event: InputEvent) -> Dictionary:
 	var result: Dictionary = _router.intent_for(event)
 	var out := result.duplicate()
@@ -417,9 +527,18 @@ func handle_input(event: InputEvent) -> Dictionary:
 
 	var slot := _slot_at(point)
 	if not slot.is_empty():
+		# Read out as scalars first: `_select()` rebuilds the slot row, which frees
+		# the node this entry points at, and `_begin_drag()` must survive that.
+		var slot_id := int(slot["id"])
+		var slot_text := _item_text(String(slot["type_id"]), String(slot["tier"]))
+		var drags := String(slot["group"]) == GROUP_TOWERS and not bool(slot["placed"])
 		out["target"] = "slot"
-		out["id"] = int(slot["id"])
-		out["applied"] = _select(int(slot["id"]), "bar")
+		out["id"] = slot_id
+		out["applied"] = _select(slot_id, "bar")
+		# A drag needs a pointer, so a pad or a key can never start one: those never
+		# carry a `pointer` and never reach here (see the header).
+		if drags and bool(out["applied"]):
+			out["drag"] = _begin_drag(slot_id, point, slot_text)
 		return out
 
 	out["target"] = "none"
@@ -466,12 +585,198 @@ func set_wave_locked(locked: bool) -> void:
 	if _wave_locked == locked:
 		return
 	_wave_locked = locked
+	# A tower held mid-gesture when a wave starts is put down, not thrown: the lock
+	# suppresses the drag, so it also ends one that is already live (T-0078).
+	if locked:
+		_cancel_drag("the wave lock came on")
 	_rebuild()
 	print("INVENTORY_BAR_LOCK " + JSON.stringify({
 		"locked": _wave_locked,
 		"slots": _slots.size(),
 		"states": _states(),
 	}))
+
+
+# --- the drag gesture (T-0078) ----------------------------------------------
+
+## Begins a drag for a tower in hand that was just pressed. Refused while the wave
+## lock is on and for a second press while one is already live; the caller has
+## already checked that the slot holds a tower in hand. The scalars are stored
+## before anything is drawn, so a press that rebuilds the row cannot lose them.
+func _begin_drag(instance_id: int, point: Vector2, text: String) -> bool:
+	if _wave_locked:
+		print("INVENTORY_BAR_DRAG " + JSON.stringify({
+			"instance": instance_id,
+			"started": false,
+			"reason": "the wave lock is on",
+		}))
+		return false
+	if _drag_id != -1:
+		return false
+	_drag_id = instance_id
+	_drag_from = point
+	_drag_to = point
+	_drag_text = text
+	_drag_announced = false
+	_ensure_ghost()
+	_ghost_label.text = _drag_text
+	_ghost.visible = true
+	_place_ghost(point)
+	print("INVENTORY_BAR_DRAG " + JSON.stringify({
+		"instance": instance_id,
+		"started": true,
+		"from": [point.x, point.y],
+		"threshold_px": drag_threshold_px,
+		"text": _drag_text,
+	}))
+	return true
+
+
+## Announces the drag, once per gesture: the pointer has left the click behind, so a
+## receiver may now clear the screen the press opened (T-0080). Called from the first
+## motion past `drag_threshold_px` and, defensively, from a drop that never saw such
+## a motion - a release further from the press than the threshold *is* a drag, and
+## the receiver must hear about it before it hears about the drop.
+func _announce_drag() -> void:
+	if _drag_announced or _drag_id == -1:
+		return
+	_drag_announced = true
+	print("INVENTORY_BAR_DRAG " + JSON.stringify({
+		"instance": _drag_id,
+		"announced": true,
+		"from": [_drag_from.x, _drag_from.y],
+		"to": [_drag_to.x, _drag_to.y],
+		"threshold_px": drag_threshold_px,
+	}))
+	tower_drag_started.emit(_drag_id)
+
+
+## Motion and release while a drag is live. Returns true when the event belonged to
+## the drag, so `_input()` stops there: a drag's motion and its release arrive
+## outside the bar's rect, where `claim_point()` is false and the click path above
+## would never see them.
+##
+## This reads the mouse directly on purpose: `MapInput` has no drag intent, and
+## adding one would let a stick look like a drag. Only a release is consumed; a
+## motion is not, because nothing else in the session acts on a move and consuming
+## it would blind the GUI during a gesture.
+func _update_drag(event: InputEvent) -> bool:
+	if _drag_id == -1:
+		return false
+	if event is InputEventMouseMotion:
+		_drag_to = (event as InputEventMouseMotion).position
+		_place_ghost(_drag_to)
+		# The moment the gesture stops being a click is the moment it is announced.
+		if _drag_to.distance_to(_drag_from) > drag_threshold_px:
+			_announce_drag()
+		return true
+	if event is InputEventMouseButton:
+		var button := event as InputEventMouseButton
+		if button.button_index != MOUSE_BUTTON_LEFT or button.pressed:
+			return false
+		_drag_to = button.position
+		_finish_drag(_drag_to)
+		get_viewport().set_input_as_handled()
+		return true
+	return false
+
+
+## Ends the live drag at `point`: a release further than `drag_threshold_px` from
+## the press **and** outside the bar raises `tower_dropped` once; anything else was
+## a click, whose work (the selection) the press already did.
+func _finish_drag(point: Vector2) -> void:
+	var instance := _drag_id
+	var travelled := point.distance_to(_drag_from)
+	var outside := not _bar_contains(point)
+	var dropped := travelled > drag_threshold_px and outside
+	if dropped:
+		_announce_drag()
+	_drag_id = -1
+	_drag_text = ""
+	_drag_announced = false
+	_hide_ghost()
+	print("INVENTORY_BAR_DROP " + JSON.stringify({
+		"instance": instance,
+		"dropped": dropped,
+		"from": [_drag_from.x, _drag_from.y],
+		"to": [point.x, point.y],
+		"travel_px": snappedf(travelled, 0.01),
+		"threshold_px": drag_threshold_px,
+		"outside_bar": outside,
+	}))
+	if dropped:
+		tower_dropped.emit(instance, point)
+
+
+## Puts down a tower held mid-gesture without raising `tower_dropped`: the gesture
+## stopped being the player's (a wave started, or the bar was unbound), so nothing
+## was thrown anywhere.
+func _cancel_drag(why: String) -> void:
+	if _drag_id == -1:
+		return
+	print("INVENTORY_BAR_DRAG " + JSON.stringify({
+		"instance": _drag_id,
+		"cancelled": true,
+		"reason": why,
+	}))
+	_drag_id = -1
+	_drag_text = ""
+	_drag_announced = false
+	_hide_ghost()
+
+
+# --- internals: the ghost ---------------------------------------------------
+
+## Builds the ghost once: one persistent child of the bar, added last so it draws
+## over the slot row. It is deliberately not built in `_rebuild()` - a rebuild runs
+## on the press that starts the drag and on every page and inventory change, and a
+## ghost rebuilt with the slots would be freed under the player's hand.
+func _ensure_ghost() -> void:
+	if _ghost != null and is_instance_valid(_ghost):
+		return
+	var ghost := Panel.new()
+	ghost.name = "DragGhost"
+	# A view, never a target: the ghost must not take the click it is following.
+	ghost.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ghost.clip_contents = true
+	ghost.visible = false
+	var label := Label.new()
+	label.name = "Text"
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	ghost.add_child(label)
+	add_child(ghost)
+	# The selection's colours, so the tower being carried looks like the slot it was
+	# picked out of and no new palette enters the bar (T-0078).
+	var box := StyleBoxFlat.new()
+	box.bg_color = selected_fill
+	box.border_color = selected_colour
+	box.set_border_width_all(slot_border_width)
+	box.set_corner_radius_all(slot_corner_radius)
+	box.content_margin_left = slot_padding
+	box.content_margin_right = slot_padding
+	ghost.add_theme_stylebox_override("panel", box)
+	label.add_theme_color_override("font_color", selected_colour)
+	_ghost = ghost
+	_ghost_label = label
+
+
+## Moves and sizes the ghost so it sits centred under `point`: the ghost is the slot
+## the player is carrying, and the pointer is where they are holding it. The side is
+## `_slot_side()` - the same square the slot they picked it out of is drawn at.
+func _place_ghost(point: Vector2) -> void:
+	_ensure_ghost()
+	var side := float(_slot_side())
+	_ghost.size = Vector2(side, side)
+	_ghost.global_position = point - Vector2(side, side) * 0.5
+
+
+func _hide_ghost() -> void:
+	if _ghost != null and is_instance_valid(_ghost):
+		_ghost.visible = false
 
 
 # --- the stale binding ------------------------------------------------------
@@ -791,9 +1096,7 @@ func _add_page_controls(group_id: String, nodes: Dictionary) -> void:
 ## `selected_prefix` marker - all of which are drawn from the same entry, so neither
 ## cue can hide the other and neither touches the placement border.
 func _dress_slot(entry: Dictionary, label: Label, slot: PanelContainer) -> void:
-	var text := String(entry["type_id"])
-	if String(entry["tier"]) != "":
-		text += field_separator + String(entry["tier"])
+	var text := _item_text(String(entry["type_id"]), String(entry["tier"]))
 	var chosen := int(entry["id"]) == _selected_id and String(entry["group"]) == GROUP_TOWERS
 	if chosen:
 		text = selected_prefix + text
@@ -807,6 +1110,16 @@ func _dress_slot(entry: Dictionary, label: Label, slot: PanelContainer) -> void:
 	box.content_margin_right = slot_padding
 	slot.add_theme_stylebox_override("panel", box)
 	label.add_theme_color_override("font_color", selected_colour if chosen else idle_colour)
+
+
+## One item's text: its type and its tier, joined by `field_separator` - "arrow ·
+## T2". The slot and the drag ghost both read it from here, so the tower the player
+## carries and the slot they picked it out of cannot drift apart (T-0078).
+func _item_text(type_id: String, tier_text: String) -> String:
+	var text := type_id
+	if tier_text != "":
+		text += field_separator + tier_text
+	return text
 
 
 ## Where a drawn slot's item is: "locked" beats "placed" beats "in hand", because
@@ -877,8 +1190,12 @@ func _page_at(point: Vector2) -> Dictionary:
 ## A click the bar takes is marked handled so the screen under it does not read the
 ## same event: without this, a click on a slot would also be a node choice on the
 ## map. Keys and focus are deliberately not taken - the level's panel owns those.
+## A live drag is answered first (T-0078), because its motion and its release land
+## outside the bar's rect, where `claim_point()` is false.
 func _input(event: InputEvent) -> void:
 	if not visible:
+		return
+	if _update_drag(event):
 		return
 	var result: Dictionary = _router.intent_for(event)
 	if int(result["intent"]) != MapInputScript.Intent.CONFIRM or not result.has("pointer"):
