@@ -6,10 +6,18 @@ extends Control
 ## CONTRACT
 ## --------
 ## * **The screen sequence is this scene's whole job:**
-##       menu --(Start Game)--> map --(node entered)--> level
-##            --(level completed)--> map --> ... --> menu (when the run ends)
+##       menu --(Start Game)--> map + opening choice --(confirmed)--> map
+##            --(node entered)--> level --(level completed)--> map --> ... --> menu
 ##   `Exit` quits the application. Nothing else in the game decides which screen
 ##   is up.
+## * **The opening choice (T-0065).** After Start Game the map is up and the choice
+##   modal is on top of it; the run has granted nothing, the map is inert, and the
+##   player picks one tower and one upgrade. `confirmed` lands the picks through
+##   `RunFlow.confirm_opening()`; the modal is closed only after that call succeeds,
+##   so a refused grant leaves the player held by the choice. The modal itself is a
+##   reusable component (`src/ui/choice_modal.gd`) and knows nothing about towers:
+##   this file builds the groups from `RunFlow.opening_offers()`, which is the
+##   opening rule, and is the right place for it.
 ## * **One run, one session object.** A `RunFlow` owns the map, the run state and
 ##   the inventory for exactly one run, and the map screen binds to exactly one
 ##   session (both contracts live in those files). So the boot creates both on
@@ -31,7 +39,12 @@ extends Control
 ##   gameplay from this same entry point instead of an idle menu. It also forces
 ##   `start_first_wave`, because a headless session cannot press the build
 ##   panel's Start Wave row (T-0060); a player's level opens in the build phase
-##   and waits for it.
+##   and waits for it. Since the opening choice blocks the map, autostart
+##   **confirms the first offer of every group** itself (T-0065) - the same
+##   config the modal would show, so a designer changing the offer table changes
+##   the automatic pick with it. That branch is guarded on `autostart`, so an
+##   automatic pick can never land in a player's run: the player's run is held by
+##   the modal until they confirm it.
 ## * **`--seconds=N` is the session length**, the same flag the arena reads:
 ##   whichever screen is up, the application quits after N seconds. Without it
 ##   the game runs until the player quits.
@@ -50,6 +63,9 @@ extends Control
 ##   BOOT_AUTOSTART {json}  once, before the menu is skipped
 ##   BOOT_SCREEN {json}     once per screen transition, with why
 ##   BOOT_START {json}      once per run started: seed, map sha, next choices
+##   BOOT_OPENING {json}    once per run: the groups the opening choice shows
+##   BOOT_OPENING_CONFIRMED {json}  once per applied opening pick, with the items
+##   BOOT_OPENING_AUTO {json}       once per autostart run: the picks it made
 ##   BOOT_RESTART {json}    once per run replaced because the session goes on
 ##   BOOT_LEVEL {json}      once per level opened: the mode in force (`autostart`
 ##                          or `player`) and whether wave 1 started
@@ -111,6 +127,8 @@ const SCREEN_NAMES: Array[String] = ["none", "menu", "map", "level"]
 # gives: `--check-only` must not depend on the global class cache having been
 # built by a prior `--import`.
 const RunFlowScript := preload("res://src/gameplay/run_flow.gd")
+const ChoiceModalScript := preload("res://src/ui/choice_modal.gd")
+const ItemCatalogueScript := preload("res://src/gameplay/item_catalogue.gd")
 
 @export_group("Scenes")
 ## The menu. Its entries are the menu's data; this scene interprets their actions.
@@ -119,6 +137,10 @@ const RunFlowScript := preload("res://src/gameplay/run_flow.gd")
 @export var map_scene: PackedScene
 ## One level of the run. Handed to `RunFlow`, which instantiates it per level.
 @export var level_scene: PackedScene
+## The blocking choice modal, one instance per run: the opening pick, and later
+## the event node and the store. Required for a run - a run with nothing granted
+## and no way to choose would be an empty run.
+@export var choice_modal_scene: PackedScene
 
 @export_group("Layout — node paths")
 ## Where the level and the run session are mounted. Behind the screens, so a
@@ -126,6 +148,14 @@ const RunFlowScript := preload("res://src/gameplay/run_flow.gd")
 @export var game_layer_path: NodePath = ^"Game"
 ## Where the menu and the map screen are mounted.
 @export var screens_path: NodePath = ^"Screens"
+
+@export_group("Copy — the opening choice")
+## Title of the opening choice the modal shows. Player-facing.
+@export var opening_title: String = "Choose your opening"
+## Group heading for the tower offers.
+@export var opening_tower_label: String = "Tower"
+## Group heading for the upgrade offers.
+@export var opening_upgrade_label: String = "Upgrade"
 
 @export_group("Run")
 ## The seed the next run is built from, or `SEED_RANDOM` to pick one.
@@ -150,6 +180,9 @@ const RunFlowScript := preload("res://src/gameplay/run_flow.gd")
 ## (`run_flow.gd` records the same reason).
 var _menu = null
 var _map_screen = null
+## The run's opening choice, or null once it is confirmed. One per run, freed with
+## the run; while it is open the map screen under it is inert (its own contract).
+var _opening_modal = null
 ## The run session for the current run, or null between runs.
 var _flow = null
 var _screen: int = Screen.NONE
@@ -246,6 +279,14 @@ func _start_run(entry_id: String) -> bool:
 	if map_scene == null or level_scene == null:
 		_refuse("start a run", "map_scene or level_scene is not wired")
 		return false
+	if choice_modal_scene == null:
+		# A run starts with nothing granted (T-0065), so a boot with no way to
+		# choose would open an empty run behind an inert map: refused, loudly.
+		_refuse(
+			"start a run",
+			"choice_modal_scene is not wired: the run would start with nothing granted and no way to choose"
+		)
+		return false
 	if game_layer_path.is_empty() or get_node_or_null(game_layer_path) == null:
 		_refuse("start a run", "the game layer '%s' is missing from the scene" % game_layer_path)
 		return false
@@ -285,6 +326,13 @@ func _start_run(entry_id: String) -> bool:
 
 	if _menu != null:
 		_menu.hide()
+	# The choice goes up before the run counts as started: a run with nothing
+	# granted is only usable once the modal is on top of the map (T-0065). A
+	# modal that cannot be shown leaves the player on the menu with the reason
+	# printed rather than on an inert map they cannot leave.
+	if not _show_opening_choice():
+		_show_menu("the opening choice could not be shown")
+		return false
 	print("BOOT_START " + JSON.stringify({
 		"entry": entry_id,
 		"seed": seed_value,
@@ -306,6 +354,9 @@ func _start_run(entry_id: String) -> bool:
 ## would warn that the name is already in use. Nothing looks these nodes up by
 ## name - the scene's own layers are the exported paths.
 func _release_run() -> void:
+	# The choice first: a modal bound to a session that is going away must never
+	# outlive it, or the next run's map would be held by a dead choice.
+	_free_opening_modal()
 	if _map_screen != null:
 		_map_screen.name = "MapScreen@released"
 		_map_screen.queue_free()
@@ -374,6 +425,197 @@ func _print_session_summary() -> void:
 		"runs": runs_started(),
 		"restarts": _restarts,
 	}))
+
+
+# --- the opening choice ------------------------------------------------------
+
+## Puts the opening choice over the map, built from the session's own offer table.
+## Returns whether the modal is open and waiting.
+##
+## The **groups** are this file's business, not the modal's: "one tower and one
+## upgrade" is the opening rule (T-0065), and `RunFlow.opening_offers()` is the
+## data it applies to. The modal only ever sees groups, options and a selection
+## rule, which is what lets the event node and the store reuse it.
+func _show_opening_choice() -> bool:
+	if _flow == null:
+		_refuse("show the opening choice", "no run has started")
+		return false
+	if not _flow.opening_pending():
+		_refuse("show the opening choice", "the run has no opening choice to make")
+		return false
+	var modal = choice_modal_scene.instantiate()
+	if modal == null:
+		_refuse("show the opening choice", "the choice modal scene did not instantiate")
+		return false
+	modal.name = "ChoiceModal"
+	# Connected before `open()`, per the modal's contract: a confirm with nobody
+	# listening would grant nothing and close nothing.
+	_connect(modal, "confirmed", _on_opening_confirmed)
+	# Mounted after the map screen, so it draws over it and takes the pointer
+	# first. Nothing else is needed to make the map inert - a full-screen overlay
+	# that stops the pointer and consumes mapped keys is the blocking (the
+	# modal's own contract).
+	_screens().add_child(modal)
+	_opening_modal = modal
+
+	var config := _opening_config()
+	if not modal.open(config):
+		# The modal printed why; the boot's copy names what it could not do.
+		_refuse("show the opening choice", "the choice modal refused the opening config")
+		_free_opening_modal()
+		return false
+
+	print("BOOT_OPENING " + JSON.stringify({
+		"title": String(config["title"]),
+		"groups": _opening_group_summary(config),
+		"rows": modal.row_count(),
+		"towers": _flow.inventory().tower_count(),
+		"upgrades": _flow.inventory().upgrade_count(),
+		"pending": _flow.opening_pending(),
+		"screen": screen_name(),
+	}))
+	return true
+
+
+## The player's pick, applied through the session's own rule. The modal is closed
+## only once the grant succeeded: a refused grant leaves the choice up with the
+## session's reason, so the player is held by it instead of released with nothing.
+func _on_opening_confirmed(picks: Array) -> void:
+	if _flow == null:
+		_refuse("apply the opening choice", "no run has started")
+		return
+	var entries := _entries_from_picks(picks)
+	if not _flow.confirm_opening(entries):
+		var why: String = _flow.last_refusal()
+		if _opening_modal != null and _opening_modal.has_method("show_reason"):
+			_opening_modal.show_reason(why)
+		_refuse("apply the opening choice", why)
+		return
+	print("BOOT_OPENING_CONFIRMED " + JSON.stringify({
+		"picks": entries,
+		"towers": _flow.inventory().tower_count(),
+		"upgrades": _flow.inventory().upgrade_count(),
+		"pending": _flow.opening_pending(),
+	}))
+	_refresh_map_after_choice()
+	if _opening_modal != null:
+		_opening_modal.close()
+	_free_opening_modal()
+
+
+## The map screen captured the run's numbers when the run began, before the choice
+## was applied, and it refuses a choice while its snapshot disagrees with the
+## session (its own contract). Once the picks land the screen is still showing
+## "Towers 0" against a run that holds one, so every node is refused as stale: the
+## map would be inert *after* the choice as well as before it. The grant is what
+## changes the numbers the screen reads, so the grant is what refreshes it - the
+## boot owns this ordering, the screen only reports what it was handed.
+func _refresh_map_after_choice() -> void:
+	if _map_screen != null and is_instance_valid(_map_screen) and _map_screen.has_method("refresh"):
+		_map_screen.refresh()
+
+
+## Releases the opening modal, if one is mounted. Queued rather than freed for
+## the reason `_release_run()` gives - a confirm handler can reach here and the
+## modal still has a line to print - and renamed first so a restart can mount the
+## next run's modal in the same frame without a sibling-name clash.
+func _free_opening_modal() -> void:
+	if _opening_modal == null:
+		return
+	_opening_modal.name = "ChoiceModal@released"
+	_opening_modal.queue_free()
+	_opening_modal = null
+
+
+## The groups the opening choice shows, in order. The opening rule in one place:
+## a tower group and an upgrade group, and the modal knows about neither.
+func _opening_groups() -> Array:
+	return [
+		{"id": "tower", "label": opening_tower_label, "tower": true},
+		{"id": "upgrade", "label": opening_upgrade_label, "tower": false},
+	]
+
+
+## The opening choice as data: one group per kind in the run's offer table, each
+## option carrying the catalogue entry as its payload (what `_on_opening_confirmed()`
+## hands back to the session). Every group is guaranteed non-empty because
+## `start_run()` refuses a table without one tower and one upgrade.
+func _opening_config() -> Dictionary:
+	var offers: Array = _flow.opening_offers() if _flow != null else []
+	var groups: Array = []
+	for descriptor in _opening_groups():
+		var want_tower := bool((descriptor as Dictionary)["tower"])
+		var options: Array = []
+		for raw in offers:
+			var offer: Dictionary = raw
+			if _offer_is_tower(offer) != want_tower:
+				continue
+			options.append({
+				"id": String(offer.get("id", "")),
+				"label": String(offer.get("display_name", offer.get("id", ""))),
+				"detail": "tier %d" % int(offer.get("tier", 1)),
+				"payload": offer,
+			})
+		if options.is_empty():
+			continue
+		groups.append({
+			"id": String((descriptor as Dictionary)["id"]),
+			"label": String((descriptor as Dictionary)["label"]),
+			"options": options,
+		})
+	return {
+		"title": opening_title,
+		"rule": ChoiceModalScript.RULE_ONE_PER_GROUP,
+		"groups": groups,
+	}
+
+
+## An offer is a tower when the catalogue says so; every other offer kind is an
+## upgrade (a rune or a relic), which is exactly how `RunFlow` counts the picks.
+func _offer_is_tower(offer: Dictionary) -> bool:
+	return String(offer.get("kind", "")) == ItemCatalogueScript.KIND_TOWER
+
+
+## `{group, id, options}` per group, for the `BOOT_OPENING` line.
+func _opening_group_summary(config: Dictionary) -> Array:
+	var out: Array = []
+	for raw in (config.get("groups", []) as Array):
+		var group: Dictionary = raw
+		var ids: Array = []
+		for option in (group["options"] as Array):
+			ids.append(String((option as Dictionary)["id"]))
+		out.append({"id": String(group["id"]), "label": String(group["label"]), "options": ids})
+	return out
+
+
+## The picks `confirmed` carries, as the `{kind, type_id, tier}` triples the
+## session's own rule takes. A pick with no payload is dropped rather than
+## guessed at, so a malformed pick is refused by the session instead of granted.
+func _entries_from_picks(picks: Array) -> Array:
+	var entries: Array = []
+	for raw in picks:
+		if not (raw is Dictionary):
+			continue
+		var entry := _pick_entry(raw as Dictionary)
+		if entry.is_empty():
+			continue
+		entries.append(entry)
+	return entries
+
+
+func _pick_entry(pick: Dictionary) -> Dictionary:
+	var payload = pick.get("payload", null)
+	if not (payload is Dictionary):
+		return {}
+	var entry: Dictionary = payload
+	var type_id := String(entry.get("id", ""))
+	if type_id == "":
+		return {}
+	return {
+		"kind": String(entry.get("kind", "")),
+		"type_id": type_id,
+		"tier": int(entry.get("tier", 0)),
+	}
 
 
 # --- the session's signals --------------------------------------------------
@@ -474,6 +716,9 @@ func _autostart_begin(entry_id: String, refusal_why: String) -> bool:
 	if not _start_run(entry_id):
 		_show_menu(refusal_why)
 		return false
+	if not _autostart_confirm_opening(entry_id):
+		_show_menu(refusal_why)
+		return false
 
 	var steps := 0
 	while _flow != null and _flow.run_state() != null and not _flow.is_in_level():
@@ -522,6 +767,59 @@ func _autostart_begin(entry_id: String, refusal_why: String) -> bool:
 		"steps": steps,
 	}))
 	return true
+
+
+## Takes the first option in every group of the choice a player would have been
+## shown, because a headless session has nobody to pick one. The guard is
+## `autostart` and nothing else: `_autostart_begin()` is only ever reached from
+## `--autostart` and from the replacement run a `--seconds=` session starts, so a
+## player's run can never be confirmed here - it stays held by the modal.
+##
+## The modal `_start_run()` mounted is closed and released in the same call: in a
+## headless session nobody reads it, and leaving it up would draw the level under
+## a choice that has already been made.
+func _autostart_confirm_opening(entry_id: String) -> bool:
+	if not autostart or _flow == null or not _flow.opening_pending():
+		return true
+	var picks := _autostart_opening_entries()
+	if picks.is_empty():
+		_refuse(
+			"pick the opening choice", "the offer table resolves to no pickable group"
+		)
+		return false
+	if not _flow.confirm_opening(picks):
+		_refuse("pick the opening choice", _flow.last_refusal())
+		return false
+	print("BOOT_OPENING_AUTO " + JSON.stringify({
+		"entry": entry_id,
+		"picks": picks,
+		"towers": _flow.inventory().tower_count(),
+		"upgrades": _flow.inventory().upgrade_count(),
+		"pending": _flow.opening_pending(),
+	}))
+	_refresh_map_after_choice()
+	if _opening_modal != null:
+		_opening_modal.close()
+	_free_opening_modal()
+	return true
+
+
+## The first option of every group of the opening choice, as the session's
+## `{kind, type_id, tier}` triples. Read from the same config the modal would show,
+## so "the first offer" moves with the offer table instead of being a second list
+## of items that can drift out of it.
+func _autostart_opening_entries() -> Array:
+	var entries: Array = []
+	for raw in (_opening_config().get("groups", []) as Array):
+		var group: Dictionary = raw
+		var options: Array = group.get("options", [])
+		if options.is_empty():
+			continue
+		var entry := _pick_entry(options[0] as Dictionary)
+		if entry.is_empty():
+			continue
+		entries.append(entry)
+	return entries
 
 
 ## Replaces the run that just ended with another, because the `--seconds=` session
@@ -640,6 +938,12 @@ func map_screen():
 ## The run session of the current run, or null between runs.
 func flow():
 	return _flow
+
+
+## The opening choice modal while the run is held by it: null before a run, once
+## the pick is applied, and in autostart play, where the boot confirms it itself.
+func opening_modal():
+	return _opening_modal
 
 
 ## Handled menu actions since the boot started.

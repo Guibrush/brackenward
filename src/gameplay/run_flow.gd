@@ -59,25 +59,28 @@ extends Node
 ##   A refusal (no gold, a switched-on inventory cap, a spent reroll ladder) leaves
 ##   gold, the shelf and the inventory exactly as they were.
 ##
-## PLACEHOLDER: the starting loadout, not the choice screen (T-0058)
-## -----------------------------------------------------------------
-## A run begins with items in hand, because a build phase with nothing to place is
-## not a run. The grant is data: `starting_loadout` is a list of `{kind, type_id,
-## tier}` entries, and `start_run()` lands it in the inventory before the map is
-## ready. `kind` is `tower`, or `upgrade` for any rune or relic, and the
-## (type_id, tier) pair must be one `item_catalogue.gd` holds for that kind.
+## THE OPENING CHOICE (T-0065): offered, not granted
+## ------------------------------------------------
+## A run begins with **nothing in hand**. `starting_loadout` is now the **offer
+## table**, not a grant: a list of `{kind, type_id, tier}` entries, resolved
+## against `item_catalogue.gd`, and `start_run()` exposes the resolved entries
+## through `opening_offers()` for the UI to put in a choice modal. `kind` is
+## `tower`, or `upgrade` for any rune or relic.
 ##
-## The design the human chose is a **choice** between two tier-1 towers and two
-## tier-1 upgrades at the start of a run. That screen is UI for later and is not
-## here. This table is the placeholder for it: it grants one such pair
-## unconditionally, so the loop can be played now. Because the grant is data, the
-## choice screen replaces the table - and nothing else in this file - when it
-## arrives; nothing downstream reads an item by name.
+## The player's picks land through `confirm_opening(entries)`, which validates every
+## entry against that offer table before it grants any of them, and requires at
+## least one tower and one upgrade among the picks. Until it succeeds the run is
+## **pending**: `enter_node()` refuses, so a skipped choice cannot start an empty
+## run - it refuses loudly with a printed reason instead.
 ##
-## A refusal, not a workaround: an **empty** table refuses to start the run, and an
-## entry whose type or tier the catalogue does not hold refuses it too, naming the
-## entry. A run with nothing to place, or holding an item no system knows, is a
-## broken run and says so rather than opening an unplayable level.
+## Unchosen offers are not exclusive. Nothing marks them taken, and the store and
+## the event nodes still draw the whole catalogue: the opening pick is a head
+## start, not an exclusion.
+##
+## A refusal, not a workaround: an **empty** offer table refuses to start the run,
+## and an entry whose type or tier the catalogue does not hold refuses it too,
+## naming the entry. A run that can offer nothing is broken and says so rather
+## than opening an unplayable level.
 ##
 ## KNOWN GAP, reported to `eng/systems` rather than worked around
 ## -------------------------------------------------------------
@@ -100,8 +103,10 @@ extends Node
 ##   towers from `inventory()`. This object exposes them and copies none of them.
 ##
 ## Prints on stdout, in this order:
-##   RUNFLOW_LOADOUT {json}   once, when a run begins: what the loadout granted
+##   RUNFLOW_LOADOUT {json}   once, when a run begins: what the opening choice offers
+##                            (nothing is granted here; `granted` is always empty)
 ##   RUNFLOW_START {json}     once, when a run begins: seed, map sha, opening numbers
+##   RUNFLOW_OPENING {json}   once, when the opening choice is applied: what landed
 ##   RUNFLOW_ENTER {json}     once per level node entered, with the level it opened
 ##   RUNFLOW_NODE {json}      once per non-level node entered, with its effect
 ##   RUNFLOW_BUY {json}       once per accepted store purchase
@@ -216,17 +221,17 @@ const PHASE_NAMES: Array[String] = ["idle", "on_map", "in_level", "finished"]
 @export var starting_hq_max: int = RunStateScript.DEFAULT_HQ_MAX
 @export var starting_gold: int = RunStateScript.STARTING_GOLD
 
-@export_group("Starting loadout — PLACEHOLDER (T-0058, replaces the choice screen)")
-## What a run begins holding, granted by `start_run()` before the map is ready.
-## A list of `{kind, type_id, tier}`; `kind` is `tower` or `upgrade` (see
-## `LOADOUT_TOWER`), and the pair must exist in `item_catalogue.gd`.
+@export_group("Opening choice — the offer table (T-0065)")
+## What the opening choice **offers**, in the order the UI shows it, grouped by
+## `kind` there. A list of `{kind, type_id, tier}`; `kind` is `tower` or `upgrade`
+## (see `LOADOUT_TOWER`), and the pair must exist in `item_catalogue.gd`.
 ##
-## The default is two distinct tier-1 towers and two tier-1 upgrades - `arrow`,
+## Nothing is granted here: the picks arrive through `confirm_opening()`. The
+## default is two distinct tier-1 towers and two tier-1 upgrades - `arrow`,
 ## `bramble`, the rune `piercer` and the relic `chain_link` - which is the band
-## `towers.md` §Tower table and `items.md` put a first run in. It is the
-## placeholder for the choice screen (see the header), not a tuning decision: a
-## designer replaces the table, and a designer setting the count sets it here.
-## Empty refuses the run.
+## `towers.md` §Tower table and `items.md` put a first run in. It is placeholder
+## content, not a tuning decision: a designer replaces the table, and a designer
+## setting the count sets it here. Empty refuses the run.
 @export var starting_loadout: Array = [
 	{"kind": "tower", "type_id": "arrow", "tier": 1},
 	{"kind": "tower", "type_id": "bramble", "tier": 1},
@@ -290,6 +295,11 @@ var _pending_tier_up_node: int = -1
 var _revealed_boss: Dictionary = {}
 ## One record per resolved non-level node, oldest first, for a demo or a HUD.
 var _node_effects: Array = []
+## The resolved opening offers (`item_catalogue.gd` entries) `opening_offers()`
+## hands to the choice UI, and whether the pick is still owed. Nothing is granted
+## while `_opening_pending` is true, and `enter_node()` refuses until it is false.
+var _opening_offers: Array = []
+var _opening_pending: bool = false
 
 var _phase: int = Phase.IDLE
 ## Completions this session has handed to `RunState`. Compared against
@@ -309,9 +319,10 @@ var _last_refusal: String = ""
 ## own reason is carried through). A refused start leaves no map, no run and no
 ## inventory behind, and does not emit `map_ready`.
 ##
-## The starting loadout is granted into the inventory here, before `map_ready`: the
-## first build phase the player is shown already has what it takes to place a tower
-## (see the header's PLACEHOLDER section).
+## The opening offer table is resolved here, before `map_ready`, and nothing is
+## granted: `opening_offers()` is what the choice UI puts in front of the player,
+## and `confirm_opening()` is what lands the picks. Until then the run is pending
+## and `enter_node()` refuses (see the header's OPENING CHOICE section).
 ##
 ## `map_overrides` is authoring and test input, exactly as
 ## `RunMap.generate(seed, overrides)` defines it — `{"forced_types": {layer:
@@ -326,11 +337,11 @@ func start_run(seed_value: int, map_overrides: Dictionary = {}) -> bool:
 		return _refuse(
 			"start a run", "no level_scene is wired, so a level node would have nothing to open"
 		)
-	# The loadout is resolved before a map is built and before a run object exists,
-	# so a broken table refuses here with nothing half-started behind it.
-	var loadout := _resolve_starting_loadout()
-	if not bool(loadout.get("ok", false)):
-		return _refuse("start a run", String(loadout.get("reason", "")))
+	# The offer table is resolved before a map is built and before a run object
+	# exists, so a broken table refuses here with nothing half-started behind it.
+	var offer := _resolve_opening_offers()
+	if not bool(offer.get("ok", false)):
+		return _refuse("start a run", String(offer.get("reason", "")))
 
 	var map = RunMapScript.new()
 	if not map.generate(seed_value, map_overrides):
@@ -356,33 +367,22 @@ func start_run(seed_value: int, map_overrides: Dictionary = {}) -> bool:
 	_revealed_boss = {}
 	_node_effects.clear()
 	_completions = 0
-
-	# Before the map is ready and before the first level opens: the build phase the
-	# player is first shown already has something to place (see the header).
-	var granted := _grant_starting_loadout(loadout["items"])
-	if not bool(granted.get("ok", false)):
-		# Unreachable while resolution above proved every id and tier: a brand-new
-		# inventory has no cap to hit and `add_*` refuses nothing else. Loud,
-		# because this would be a broken run rather than a refusal a player made.
-		push_error(
-			"RUNFLOW_ERROR the starting loadout was refused by the inventory: %s"
-			% String(granted.get("reason", ""))
-		)
-		# Nothing is left half-started: no map, no run, no inventory, and `map_ready`
-		# was never emitted.
-		_map = null
-		_run = null
-		_inventory = null
-		return _refuse("start a run", String(granted.get("reason", "")))
+	# The offers are this session's answer to "what may the player pick": the
+	# resolved catalogue entries, kept so `confirm_opening()` validates against the
+	# same list `opening_offers()` showed. Nothing is granted here.
+	_opening_offers = offer["items"]
+	_opening_pending = true
 
 	_phase = Phase.ON_MAP
 	_last_refusal = ""
 
 	print("RUNFLOW_LOADOUT " + JSON.stringify({
-		"granted": granted["granted"],
+		"offered": _opening_offer_summary(),
+		"granted": [],
 		"towers": _inventory.tower_count(),
 		"upgrades": _inventory.upgrade_count(),
 		"tower_types": _starting_tower_types(),
+		"opening_pending": _opening_pending,
 	}))
 	print("RUNFLOW_START " + JSON.stringify({
 		"seed": seed_value,
@@ -398,6 +398,102 @@ func start_run(seed_value: int, map_overrides: Dictionary = {}) -> bool:
 	return true
 
 
+## Applies the opening choice: lands exactly the picked entries in the inventory
+## and clears the pending state, after which `enter_node()` is legal again.
+##
+## Each entry must be one the run's offer table resolves to - the (id, kind, tier)
+## triple, matched against `opening_offers()` - and no entry may appear twice. The
+## picks must include **at least one tower and one upgrade**: that is the run's
+## opening rule (one from each), and it is what stops a caller that skipped the
+## choice from starting a run with nothing to place.
+##
+## Every entry is validated **before** any is granted, so a refused call grants
+## nothing and leaves the run pending. The single narrowing of that promise is an
+## inventory refusal after validation, which a brand-new uncapped inventory cannot
+## produce; it is loud (`push_error`) rather than silent, because gold has not
+## moved but the run would be half-granted.
+func confirm_opening(entries: Array) -> bool:
+	if _run == null:
+		return _refuse("confirm the opening choice", "no run has started")
+	if not _opening_pending:
+		return _refuse(
+			"confirm the opening choice", "the opening choice is already made; nothing was granted"
+		)
+	if entries.is_empty():
+		return _refuse(
+			"confirm the opening choice",
+			"nothing was picked, so this would start an empty run; pick one tower and one upgrade"
+		)
+
+	var towers: int = 0
+	var upgrades: int = 0
+	var checked: Array = []
+	for index in entries.size():
+		var raw = entries[index]
+		if typeof(raw) != TYPE_DICTIONARY:
+			return _refuse(
+				"confirm opening pick %d" % index, "it is not a {kind, type_id, tier} dictionary"
+			)
+		var entry: Dictionary = raw
+		var kind := String(entry.get("kind", ""))
+		var type_id := String(entry.get("type_id", String(entry.get("id", ""))))
+		var tier := int(entry.get("tier", 0))
+		var offered := _offered_entry(kind, type_id, tier)
+		if offered.is_empty():
+			return _refuse(
+				"confirm opening pick %d (%s '%s' tier %d)" % [index, kind, type_id, tier],
+				"it is not one of this run's opening offers; nothing was granted"
+			)
+		for earlier in checked:
+			if String((earlier as Dictionary)["id"]) == type_id \
+					and String((earlier as Dictionary)["kind"]) == kind \
+					and int((earlier as Dictionary)["tier"]) == tier:
+				return _refuse(
+					"confirm opening pick %d" % index,
+					"'%s' was already picked; nothing was granted" % type_id
+				)
+		checked.append(offered)
+		if kind == LOADOUT_TOWER:
+			towers += 1
+		else:
+			upgrades += 1
+
+	if towers < 1 or upgrades < 1:
+		return _refuse(
+			"confirm the opening choice",
+			"the opening pick is one tower and one upgrade; got %d tower(s) and %d upgrade(s)"
+			% [towers, upgrades]
+		)
+
+	var granted: Array = []
+	for index in checked.size():
+		var landed := _add_item(checked[index], "opening pick")
+		if not bool(landed.get("ok", false)):
+			# Unreachable while every entry above matched the catalogue and the
+			# inventory is uncapped. Loud because items are already in hand.
+			push_error(
+				"RUNFLOW_ERROR opening pick %d was refused by the inventory: %s"
+				% [index, String(landed.get("reason", ""))]
+			)
+			return _refuse("grant opening pick %d" % index, String(landed.get("reason", "")))
+		granted.append({
+			"kind": String((checked[index] as Dictionary)["kind"]),
+			"id": String((checked[index] as Dictionary)["id"]),
+			"tier": int((checked[index] as Dictionary)["tier"]),
+		})
+
+	_opening_pending = false
+	print("RUNFLOW_OPENING " + JSON.stringify({
+		"granted": granted,
+		"towers": _inventory.tower_count(),
+		"upgrades": _inventory.upgrade_count(),
+		"tower_types": _starting_tower_types(),
+		"upgrade_types": _upgrade_types(),
+		"opening_pending": _opening_pending,
+	}))
+	return true
+
+
 ## Moves the player onto `node_id`. Legal only for a visible node that is one of
 ## the map's next choices and whose type this session can resolve; anything else
 ## is refused with a printed reason and changes nothing. A level-type node opens
@@ -407,6 +503,14 @@ func start_run(seed_value: int, map_overrides: Dictionary = {}) -> bool:
 func enter_node(node_id: int) -> bool:
 	if _map == null or _run == null:
 		return _refuse("enter node %d" % node_id, "no run has started")
+	if _opening_pending:
+		# The choice is blocking: a run with nothing granted must not open a level,
+		# and skipping the modal must be loud rather than an empty run (T-0065).
+		return _refuse(
+			"enter node %d" % node_id,
+			"the opening choice is unresolved: %d offer(s) waiting, nothing granted yet"
+			% _opening_offers.size()
+		)
 	if _phase == Phase.IN_LEVEL:
 		return _refuse(
 			"enter node %d" % node_id,
@@ -718,6 +822,20 @@ func inventory():
 	return _inventory
 
 
+## Whether the opening choice is still owed. True from a successful `start_run()`
+## until `confirm_opening()` lands the picks; while true nothing is granted and
+## `enter_node()` refuses.
+func opening_pending() -> bool:
+	return _opening_pending
+
+
+## The opening offers as catalogue entries (`{id, kind, tier, path_cost,
+## display_name, weight}`), in table order. A copy, so a choice UI cannot edit the
+## list `confirm_opening()` validates against.
+func opening_offers() -> Array:
+	return _opening_offers.duplicate(true)
+
+
 ## The open store's shelf, or null when no store visit is open. The caller reads
 ## slots (`slot(i)`, `stock()`) and may flip the site's own reroll switch; buying
 ## goes through `buy()` so the cap and the purse are checked in one place.
@@ -822,6 +940,8 @@ func snapshot() -> Dictionary:
 		"event": _event.snapshot() if _event != null else {},
 		"store_visits": _store_visits,
 		"event_visits": _event_visits,
+		"opening_pending": _opening_pending,
+		"opening_offers": _opening_offer_summary(),
 		"high_stakes": _rolls.duplicate(true),
 		"pending_tier_up": _pending_tier_up_node,
 		"revealed_boss": _revealed_boss.duplicate(true),
@@ -1136,34 +1256,38 @@ func _record_node_effect(node_id: int, type_id: String, effect: Dictionary) -> v
 	print("RUNFLOW_NODE " + JSON.stringify(record))
 
 
-# --- internals: the starting loadout ----------------------------------------
+# --- internals: the opening offers ------------------------------------------
 
-## Turns `starting_loadout` into catalogue entries, or says why it cannot. This is
-## the only place the table is read, so an entry's refusal is worded once and
-## names the entry by index, kind, type and tier.
+## Turns `starting_loadout` into the catalogue entries the opening choice offers,
+## or says why it cannot. This is the only place the table is read, so an entry's
+## refusal is worded once and names the entry by index, kind, type and tier.
 ##
 ## Returns `{ok, reason, items}`: `items` are the catalogue's own dictionaries,
-## which is what `_add_item()` lands, so the grant cannot invent an item the store
-## and the event nodes do not draw from.
-func _resolve_starting_loadout() -> Dictionary:
+## which is what `_add_item()` lands, so a pick cannot invent an item the store and
+## the event nodes do not draw from. The table must offer at least one tower and one
+## upgrade: the choice is one of each, and a table that offers only one kind could
+## not be confirmed at all (`confirm_opening()` would refuse every pick).
+func _resolve_opening_offers() -> Dictionary:
 	if starting_loadout.is_empty():
-		# A run with nothing to place is broken, not quiet: the build panel would
-		# open with an empty list and the player would have no move.
+		# A run with nothing to offer is broken, not quiet: the choice could never
+		# be confirmed and the map would stay blocked for the whole run.
 		return {
 			"ok": false,
 			"reason": (
-				"the starting loadout is empty, so the first build phase would have "
-				+ "nothing to place; grant at least one tower and one upgrade"
+				"the starting loadout is empty, so the opening choice would offer "
+				+ "nothing; list at least one tower and one upgrade"
 			),
 			"items": [],
 		}
 
 	var catalogue: Array = ItemCatalogueScript.entries()
 	var items: Array = []
+	var towers: int = 0
+	var upgrades: int = 0
 	for index in starting_loadout.size():
 		var raw = starting_loadout[index]
 		if typeof(raw) != TYPE_DICTIONARY:
-			return _loadout_refusal(
+			return _offer_refusal(
 				"starting loadout entry %d is not a {kind, type_id, tier} dictionary" % index
 			)
 		var entry: Dictionary = raw
@@ -1172,21 +1296,64 @@ func _resolve_starting_loadout() -> Dictionary:
 		var tier := int(entry.get("tier", 0))
 
 		if kind != LOADOUT_TOWER and kind != LOADOUT_UPGRADE:
-			return _loadout_refusal(
+			return _offer_refusal(
 				"starting loadout entry %d has kind '%s'; an entry is '%s' or '%s'"
 				% [index, kind, LOADOUT_TOWER, LOADOUT_UPGRADE]
 			)
 		if type_id == "":
-			return _loadout_refusal("starting loadout entry %d names no type_id" % index)
+			return _offer_refusal("starting loadout entry %d names no type_id" % index)
 
 		var found := _catalogue_entry(catalogue, kind, type_id, tier)
 		if found.is_empty():
-			return _loadout_refusal(
+			return _offer_refusal(
 				"starting loadout entry %d names %s '%s' at tier %d, which item_catalogue.gd does not have"
 				% [index, kind, type_id, tier]
 			)
+		if String(found.get("kind", "")) == ItemCatalogueScript.KIND_TOWER:
+			towers += 1
+		else:
+			upgrades += 1
 		items.append(found)
+
+	if towers < 1 or upgrades < 1:
+		return _offer_refusal(
+			"the starting loadout offers %d tower(s) and %d upgrade(s); the opening choice needs at least one of each"
+			% [towers, upgrades]
+		)
 	return {"ok": true, "reason": "", "items": items}
+
+
+## The opening offer that matches `kind`/`type_id`/`tier`, or {} when the table
+## does not offer it. Searching the **offers**, not the whole catalogue, is what
+## makes "the picks are one of the offers" a real rule: a caller cannot grant a
+## tower the run never put in front of the player.
+func _offered_entry(kind: String, type_id: String, tier: int) -> Dictionary:
+	var want_tower := kind == LOADOUT_TOWER
+	for record in _opening_offers:
+		var candidate: Dictionary = record
+		if String(candidate.get("id", "")) != type_id:
+			continue
+		if int(candidate.get("tier", 0)) != tier:
+			continue
+		if (String(candidate.get("kind", "")) == ItemCatalogueScript.KIND_TOWER) != want_tower:
+			continue
+		return candidate
+	return {}
+
+
+## The offer table as a JSON-safe list, in table order. Evidence for
+## `RUNFLOW_LOADOUT` and the choice UI's own reading of what was offered.
+func _opening_offer_summary() -> Array:
+	var out: Array = []
+	for record in _opening_offers:
+		var entry: Dictionary = record
+		out.append({
+			"id": String(entry.get("id", "")),
+			"kind": String(entry.get("kind", "")),
+			"tier": int(entry.get("tier", 1)),
+			"display_name": String(entry.get("display_name", "")),
+		})
+	return out
 
 
 ## The catalogue entry `kind`/`type_id`/`tier` names, or {} when it names none. A
@@ -1207,40 +1374,29 @@ func _catalogue_entry(catalogue: Array, kind: String, type_id: String, tier: int
 	return {}
 
 
-func _loadout_refusal(reason: String) -> Dictionary:
+func _offer_refusal(reason: String) -> Dictionary:
 	return {"ok": false, "reason": reason, "items": []}
 
 
-## Lands every resolved entry in the inventory, in table order, and records what
-## was granted for the `RUNFLOW_LOADOUT` line. Refused only if the inventory
-## refuses, which a brand-new uncapped inventory does not do for a validated id.
-func _grant_starting_loadout(items: Array) -> Dictionary:
-	var granted: Array = []
-	for i in items.size():
-		var entry: Dictionary = items[i]
-		var landed := _add_item(entry, "starting loadout")
-		if not bool(landed.get("ok", false)):
-			return {
-				"ok": false,
-				"reason": String(landed.get("reason", "")),
-				"granted": granted,
-			}
-		granted.append({
-			"kind": String(entry.get("kind", "")),
-			"id": String(entry.get("id", "")),
-			"tier": int(entry.get("tier", 1)),
-		})
-	return {"ok": true, "reason": "", "granted": granted}
-
-
-## The type ids the run begins holding, in acquisition order. Evidence for the
-## opening line; a HUD reads the inventory instead.
+## The type ids the run holds, in acquisition order. Evidence for the opening
+## lines; a HUD reads the inventory instead.
 func _starting_tower_types() -> Array:
 	var out: Array = []
 	if _inventory == null:
 		return out
 	for tower in _inventory.towers():
 		out.append(String(tower.type_id))
+	return out
+
+
+## The type ids of the upgrades in hand, in acquisition order. Paired with
+## `_starting_tower_types()` so an evidence line shows exactly what landed.
+func _upgrade_types() -> Array:
+	var out: Array = []
+	if _inventory == null:
+		return out
+	for upgrade in _inventory.upgrades():
+		out.append(String(upgrade.type_id))
 	return out
 
 
