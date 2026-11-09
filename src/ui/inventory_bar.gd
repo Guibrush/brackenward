@@ -109,12 +109,11 @@ signal page_changed(group_id: String, page: int, pages: int)
 ## store an upgrade's tier today (`run_flow.gd` records the divergence), so this is
 ## a statement about the data, not a zero.
 @export var upgrade_tier_text: String = "T?"
-## Appended to a tower's slot while it is standing on the board.
-@export var placed_marker: String = "placed"
 ## Prepended to the selected tower's slot. Not colour, so the state survives a
-## colourblind eye and a greyscale screenshot.
+## colourblind eye and a greyscale screenshot. Selection is the only thing that
+## changes a slot's text (T-0076); placement changes the border and nothing else.
 @export var selected_prefix: String = "\u25C6 "
-## Between fields of a slot's text: "arrow · T2 · placed".
+## Between fields of a slot's text: "arrow · T2".
 @export var field_separator: String = " \u00B7 "
 ## Shown inside a group with nothing in it.
 @export var no_towers_text: String = "no towers"
@@ -782,17 +781,19 @@ func _add_page_controls(group_id: String, nodes: Dictionary) -> void:
 		})
 
 
-## One slot's text and cue: type, tier, where the tower is, and the selection
-## marker. Rebuilt from the item on every draw, so a marker cannot be left behind.
-## The **border is the state** (in hand / placed / locked, T-0075); the selection is
-## drawn with the fill, the text colour and the prefix, so neither cue hides the
-## other.
+## One slot's text and cue: **the type and the tier, and nothing else** (T-0076).
+## Where the tower is - in hand, placed, or locked - is the **border colour alone**,
+## so placing a tower cannot change the slot's text and therefore cannot change the
+## slot. Before T-0076 a `placed` word was appended, which made the slot's contents
+## (and, with a wide label, its size) move under the player the moment they placed
+## the first tower.
+## The selection is still a separate channel: the fill and the text colour, plus the
+## `selected_prefix` marker - all of which are drawn from the same entry, so neither
+## cue can hide the other and neither touches the placement border.
 func _dress_slot(entry: Dictionary, label: Label, slot: PanelContainer) -> void:
 	var text := String(entry["type_id"])
 	if String(entry["tier"]) != "":
 		text += field_separator + String(entry["tier"])
-	if bool(entry["placed"]):
-		text += field_separator + placed_marker
 	var chosen := int(entry["id"]) == _selected_id and String(entry["group"]) == GROUP_TOWERS
 	if chosen:
 		text = selected_prefix + text

@@ -1,6 +1,22 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://src/ui/build_panel.gd" id="1_panel"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_block"]
+content_margin_left = 10.0
+content_margin_top = 8.0
+content_margin_right = 10.0
+content_margin_bottom = 8.0
+bg_color = Color(0.0862745, 0.105882, 0.0980392, 0.921569)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.317647, 0.360784, 0.32549, 1)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
 
 [node name="BuildPanel" type="Control"]
 layout_mode = 3
@@ -12,57 +28,51 @@ grow_vertical = 2
 mouse_filter = 2
 script = ExtResource("1_panel")
 
-[node name="Backdrop" type="ColorRect" parent="."]
+[node name="Block" type="PanelContainer" parent="."]
 layout_mode = 1
-anchors_preset = 9
-anchor_bottom = 1.0
-offset_right = 320.0
-grow_vertical = 2
-color = Color(0.0901961, 0.109804, 0.101961, 0.858824)
+offset_left = 12.0
+offset_top = 12.0
+offset_right = 292.0
+offset_bottom = 12.0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_block")
 
-[node name="Margin" type="MarginContainer" parent="."]
-layout_mode = 1
-anchors_preset = 9
-anchor_bottom = 1.0
-offset_right = 320.0
-grow_vertical = 2
-theme_override_constants/margin_left = 16
-theme_override_constants/margin_top = 16
-theme_override_constants/margin_right = 16
-theme_override_constants/margin_bottom = 16
-
-[node name="Column" type="VBoxContainer" parent="Margin"]
+[node name="Margin" type="MarginContainer" parent="Block"]
 layout_mode = 2
-theme_override_constants/separation = 8
+mouse_filter = 2
 
-[node name="Title" type="Label" parent="Margin/Column"]
+[node name="Column" type="VBoxContainer" parent="Block/Margin"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 6
+
+[node name="Title" type="Label" parent="Block/Margin/Column"]
 layout_mode = 2
 text = "Build"
 
-[node name="State" type="Label" parent="Margin/Column"]
+[node name="State" type="Label" parent="Block/Margin/Column"]
 layout_mode = 2
-text = "HP 0/0    build phase"
+text = "HQ 0/0"
 
-[node name="Wave" type="Label" parent="Margin/Column"]
+[node name="Wave" type="Label" parent="Block/Margin/Column"]
 layout_mode = 2
+autowrap_mode = 3
 text = "Wave 0/0"
 
-[node name="Status" type="Label" parent="Margin/Column"]
+[node name="Actions" type="VBoxContainer" parent="Block/Margin/Column"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Status" type="Label" parent="Block/Margin/Column"]
 layout_mode = 2
 autowrap_mode = 3
 text = ""
 
-
-[node name="Actions" type="VBoxContainer" parent="Margin/Column"]
+[node name="Reason" type="Label" parent="Block/Margin/Column"]
 layout_mode = 2
-size_flags_vertical = 3
-theme_override_constants/separation = 4
-
-[node name="Reason" type="Label" parent="Margin/Column"]
-layout_mode = 2
-custom_minimum_size = Vector2(0, 48)
+custom_minimum_size = Vector2(0, 34)
 autowrap_mode = 3
 
-[node name="Hint" type="Label" parent="Margin/Column"]
+[node name="Hint" type="Label" parent="Block/Margin/Column"]
 layout_mode = 2
 autowrap_mode = 3
