@@ -86,6 +86,29 @@ extends Control
 ##   this panel without a word. The panel reads at `_input` instead: it sees every
 ##   event first and decides, which is what one owner means in practice.
 ##
+## THE LEVEL DOES NOT TAKE THE CLICK THAT OPENED IT (T-0071)
+## ---------------------------------------------------------
+## A level is opened by a confirm - a click on a map node, or Enter - and the
+## panel is drawn under the pointer the instant the level exists. The first row is
+## Start Wave, so that same click, arriving after the screen change, would start
+## wave 1: a wave the player never asked for, indistinguishable from the bug
+## `start_level()` used to cause by calling `start_wave(0)` itself.
+## Two independent things stop it:
+##   * **No row is focused when the panel appears.** `_focus` starts at -1 and is
+##     only moved by a focus intent or by taking a row, so a confirm with no focus
+##     takes nothing. That is why a stray Enter cannot reach row 0.
+##   * **A settle window.** `input_settle_seconds` after the panel appears, a
+##     confirm - a click or a confirm press - is spent closing the level it
+##     belongs to, not on the row underneath it. The event is dropped, not queued:
+##     it is never replayed after the window, so a fast double click starts one
+##     wave or none, never two.
+## The window is a clock, not a "did the pointer move" test: a pointer that has
+## not moved is exactly the case a second click produces, so motion cannot be the
+## condition that ends the window. It is enforced in `_input()`, the door every
+## player event comes through; `handle_input()` stays the code door a demo drives,
+## which is why a demo that calls it directly is not subject to the window.
+## Both are visible in the log (`BUILD_PANEL_SETTLED`), never silent.
+##
 ## THE BAR OWNS ITS OWN POINTS (T-0068)
 ## ------------------------------------
 ## The inventory bar is drawn over the lower part of the level, so a click there
@@ -131,6 +154,9 @@ extends Control
 ##   BUILD_PANEL_UPGRADED {json}  once per successful upgrade, with the cost
 ##   BUILD_PANEL_TAKEN_BACK {json} once per tower returned to the inventory
 ##   BUILD_PANEL_REFUSED {json}   every refusal this panel reports, with the reason
+##   BUILD_PANEL_SETTLED {json}   a confirm dropped because the panel had just
+##                                appeared (T-0071), with how much of the window
+##                                was left
 ##
 ## `ARENA_*` lines in the same output are the arena's, not this file's.
 
@@ -262,6 +288,16 @@ const KIND_TAKE_BACK := "take_back"
 ## much taller and the list stops reading as a list.
 @export var row_min_height: int = 32
 
+@export_group("Tuning — the settle window (T-0071)")
+## Seconds after this panel appears during which a confirm is dropped instead of
+## taken (T-0071). The click or key that opened the level is still in flight when
+## the panel is drawn under the pointer, and the first row is Start Wave, so
+## without this window that click starts wave 1.
+## Range 0.1-1.0 s. Shorter than 0.1 does not cover a double click, and much longer
+## than half a second reads as a panel that ignores the player. `0` disables the
+## window, which is what a demo measuring the pre-T-0071 behaviour sets.
+@export var input_settle_seconds: float = 0.35
+
 @export_group("Tuning — the armed and selected cue (T-0064)")
 ## Text colour of an armed row and the border of its band. Warm, because it is the
 ## row the player is about to act on. Suggested range: amber to orange, luminance
@@ -305,6 +341,12 @@ var _selected_id: int = -1
 
 var _reason: String = ""
 var _last_signature: String = ""
+## When the settle window ends, in `Time.get_ticks_msec()` terms (T-0071). Set
+## when the panel appears, and read by `is_settling()`.
+var _settle_until_msec: int = 0
+## Confirms the settle window dropped since this panel appeared. A count, so
+## "the click was spent closing the level" is visible in the log and to a demo.
+var _settled: int = 0
 ## True while this panel is waiting on an arena call. The inventory emits
 ## `contents_changed` from inside `place_tower()` / `take_tower_back()` /
 ## `raise_tower_tier()`, i.e. before the arena has finished the action; drawing then
@@ -314,6 +356,9 @@ var _acting: bool = false
 
 
 func _ready() -> void:
+	# The window starts with the panel, not with the bind: a panel that appears
+	# under the pointer that opened the level is what the window is for (T-0071).
+	_begin_settle()
 	if not arena_path.is_empty():
 		var target := get_node_or_null(arena_path)
 		if target != null:
@@ -339,6 +384,10 @@ func bind_arena(arena: Node) -> bool:
 		return false
 
 	_arena = arena
+	# A panel bound to a level that already exists has just appeared over it, so
+	# it settles from now: the confirm that opened the level must not reach a row
+	# (T-0071).
+	_begin_settle()
 	# The arena is usually this panel's parent, and a parent's `_ready` runs
 	# **after** its children's: at this moment the arena has not resolved its
 	# ledger or its phase yet, so drawing now would show "Gold 0" for one frame.
@@ -444,6 +493,33 @@ func row(index: int) -> Dictionary:
 
 func focus_index() -> int:
 	return _focus
+
+
+# --- the settle window (T-0071) ---------------------------------------------
+
+## Starts the settle window: `input_settle_seconds` from now. Called when the
+## panel appears (`_ready`, and a successful `bind_arena`), so the confirm that
+## opened the level cannot be taken as a row press once the level is up.
+func _begin_settle() -> void:
+	var window := maxf(input_settle_seconds, 0.0)
+	_settle_until_msec = Time.get_ticks_msec() + int(round(window * 1000.0))
+
+
+## Whether this panel is still settling, i.e. whether a confirm arriving now is
+## input from before the level opened rather than a decision made in it.
+func is_settling() -> bool:
+	return Time.get_ticks_msec() < _settle_until_msec
+
+
+## Milliseconds left in the window; 0 once it has passed, or when it is disabled.
+func settle_left_msec() -> int:
+	return maxi(_settle_until_msec - Time.get_ticks_msec(), 0)
+
+
+## Confirms the window has dropped since this panel appeared. A count, not a
+## bool, so "the click was dropped" and "the click never arrived" differ.
+func settled_count() -> int:
+	return _settled
 
 
 func armed_instance() -> int:
@@ -818,6 +894,12 @@ func handle_input(event: InputEvent) -> Dictionary:
 		MapInputScript.Intent.CONFIRM:
 			if result.has("pointer"):
 				out["applied"] = _confirm_pointer(result["pointer"], out)
+			elif _focus < 0:
+				# Nothing is focused when the panel appears, on purpose (T-0071):
+				# row 0 is Start Wave, and a confirm with no focus must take no
+				# row just because one is drawn there.
+				out["target"] = "none"
+				out["ignored"] = "no row is focused"
 			else:
 				out["index"] = _focus
 				out["target"] = "row"
@@ -849,6 +931,23 @@ func _input(event: InputEvent) -> void:
 	if not visible:
 		return
 	if result.has("pointer") and is_point_claimed(result["pointer"]):
+		return
+	# The settle window (T-0071): a confirm that arrives while the panel has just
+	# appeared belongs to the screen that was there when it was made, so it is
+	# taken and dropped rather than handed to a row. Marked handled as well, so
+	# nothing under this panel acts on input that predates the level either.
+	if int(result["intent"]) == MapInputScript.Intent.CONFIRM and is_settling():
+		_settled += 1
+		print("BUILD_PANEL_SETTLED " + JSON.stringify({
+			"device": String(result.get("device", "")),
+			"pointer": _pointer_json(result.get("pointer", null)),
+			"settle_left_ms": settle_left_msec(),
+			"settled": _settled,
+			"focused": _focus,
+			"phase": phase_name(),
+			"wave": int(wave()["wave"]),
+		}))
+		get_viewport().set_input_as_handled()
 		return
 	get_viewport().set_input_as_handled()
 	handle_input(event)
@@ -961,10 +1060,15 @@ func _rebuild_rows() -> void:
 
 	if _rows.is_empty():
 		_focus = -1
-	else:
+	elif _focus >= 0:
+		# A re-draw keeps the focus on the row it was on (T-0064); when that row is
+		# gone, the first row is where it lands.
 		_focus = _index_of_key(previous_key)
 		if _focus < 0:
 			_focus = 0
+	# else: nothing was focused when the panel appeared (T-0071). It stays that
+	# way until the player moves the focus or takes a row - the first row being
+	# Start Wave is exactly why a redraw must not put the focus there.
 
 
 ## The Start Wave row's text, by the state of the level: ready, locked by a
@@ -1123,6 +1227,16 @@ func _printable_rows() -> Array:
 		copy.erase("node")
 		out.append(copy)
 	return out
+
+
+## A pointer position as JSON-safe numbers, or `null` for an intent that carries
+## none (a key or a pad button). One shape, so every line that prints one reads the
+## same way.
+func _pointer_json(pointer) -> Variant:
+	if pointer == null:
+		return null
+	var point: Vector2 = pointer
+	return [point.x, point.y]
 
 
 func _signature() -> String:
