@@ -144,10 +144,11 @@ extends Node2D
 @export var level_index: int = 1
 ## Whether this level is an elite: its final wave carries exactly one sub-boss.
 @export var elite_level: bool = false
-## Whether the arena starts its first wave on its own. False for the tested
-## scene: what starts a level is the run loop's decision and no run loop exists
-## yet, so the gates keep running a scene with nobody playing it. `start_level()`
-## is the public door, and T-0039's demo uses it.
+## Whether the arena starts its first wave on its own, as `start_wave(0)`. False
+## for the tested scene: what starts a wave is the caller's decision, so the
+## gates keep running a scene with nobody playing it. `start_level()` does not
+## start one (T-0070) - a level that started its own first wave is why every
+## level opened in the wave phase whatever the caller asked for.
 @export var autostart_waves: bool = false
 
 ## The run's two planning modes. During WAVE, placement, upgrade and sell are
@@ -302,8 +303,10 @@ func _ready() -> void:
 	# that opened on an ended run spawns nothing - there is no level to play.
 	if not _run_is_over():
 		spawn_walker()
+	# A scene that asks for it names the wave: `start_level()` prepares the level
+	# and starts nothing (T-0070), so the request is `start_wave(0)` here.
 	if autostart_waves:
-		start_level()
+		start_wave(0)
 
 
 func _exit_tree() -> void:
@@ -722,8 +725,15 @@ func build_level_plan() -> void:
 	_waves_cleared = 0
 
 
-## Starts the level's first wave. The arena's own entry point for "this level has
-## begun", so no caller has to know the plan's index arithmetic.
+## The arena's entry point for "this level has begun". It prepares the level and
+## leaves it in the **build phase**: the plan is already built (`_ready` calls
+## `build_level_plan()`), the towers are placeable, and the level waits for
+## whoever owns it to start wave 1.
+##
+## It does **not** start a wave (T-0070). Starting one is `start_wave(0)`, and it
+## is the caller's decision: this method used to end in `start_wave(0)`, so every
+## level opened in the wave phase no matter what the caller asked for - which is
+## why a flag on the boot could not make a player's level wait.
 ##
 ## Refused when the run is over: a defeated (or already won) run has no level to
 ## play, and the arena must not invent a way to keep going (T-0045 DoD 3).
@@ -735,7 +745,7 @@ func start_level() -> bool:
 			% [_run.status_name(), _run.end_reason()]
 		)
 		return false
-	return start_wave(0)
+	return true
 
 
 ## Starts one wave of the plan (0-based) and locks the build phase for its

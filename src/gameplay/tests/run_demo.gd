@@ -257,7 +257,7 @@ func _clear_level_one() -> void:
 	var gold_before: int = _run.gold()
 	var paid := 0
 	var ticks := 0
-	if not check(_arena.start_level(), "the level's first wave starts"):
+	if not check(_arena.start_wave(0), "the level's first wave starts"):
 		return
 	while ticks < MAX_WAVE_TICKS and not director.is_level_complete():
 		director.tick(TICK_SECONDS)
@@ -361,7 +361,7 @@ func _step_level_two() -> void:
 	check_eq_int(_run.gold(), gold_before_defeat, "a kill after the run ended paid nothing")
 
 	# And the arena refuses to start another level on a run that is over.
-	var started: bool = _arena.start_level()
+	var started: bool = _arena.start_wave(0)
 	print("RUNDEMO_REFUSED " + _arena.last_refusal())
 	check(not started, "the arena refuses to start another level")
 	check(
