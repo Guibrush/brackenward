@@ -341,6 +341,16 @@ func _start_run(entry_id: String) -> bool:
 		# rather than opened and left thin.
 		_refuse("start a run", "inventory_bar_scene is not wired: the run would have no inventory view")
 		return false
+	if tower_window_scene == null:
+		# The window is the only door to a tower's tier, what it carries and its
+		# three actions (T-0074), and the only place an upgrade in hand can be
+		# equipped. A run without it would hold towers the player can never open,
+		# so the run is refused here rather than opened half-playable.
+		_refuse(
+			"start a run",
+			"tower_window_scene is not wired: the run would have no tower window"
+		)
+		return false
 	if hud_layer_path.is_empty() or get_node_or_null(hud_layer_path) == null:
 		_refuse("start a run", "the HUD layer '%s' is missing from the scene" % hud_layer_path)
 		return false
@@ -424,6 +434,7 @@ func _release_run() -> void:
 	# outlive it, or the next run's map would be held by a dead choice.
 	_free_opening_modal()
 	_free_inventory_bar()
+	_free_tower_window()
 	if _map_screen != null:
 		_map_screen.name = "MapScreen@released"
 		_map_screen.queue_free()
@@ -470,9 +481,9 @@ func _mount_inventory_bar() -> bool:
 
 
 ## The run's tower window: mounted after the bar so it draws over it, and bound to
-## the same session. Its two doors (the bar's `tower_selected` and the build
-## panel's `tower_inspected`) are wired in `_wire_level_panel()` and
-## `_mount_tower_window()` - see the notes there.
+## the same session. The bar's `tower_selected` door is wired here, with the mount;
+## the level's `tower_inspected` door and the arena are wired per level in
+## `_wire_level_panel()` - see the notes there.
 func _mount_tower_window() -> bool:
 	if _flow == null:
 		_refuse("mount the tower window", "no run has started")
@@ -497,6 +508,12 @@ func _mount_tower_window() -> bool:
 		window.queue_free()
 		return false
 	_tower_window = window
+	# The bar's door, wired where the bar is: the bar is the one inventory view on
+	# both screens, so a click on a tower in hand opens the window on the map as well
+	# as in a level - and the map is where a tower in hand is selected to equip
+	# (T-0074). The level's door follows in `_wire_level_panel()`.
+	if _inventory_bar != null and is_instance_valid(_inventory_bar):
+		_connect(_inventory_bar, "tower_selected", _on_tower_open_requested)
 	_print_hud("mount_window", "the run began")
 	return true
 
@@ -543,6 +560,27 @@ func _free_tower_window() -> void:
 	window.unbind()
 	window.name = "TowerWindow@released"
 	window.queue_free()
+
+
+## The one door both of the window's sources reach (T-0074): the bar's
+## `tower_selected` - a click on a tower in hand, on the map screen as well as in a
+## level - and the level's build panel `tower_inspected`, raised for a click on a
+## **placed** tower only. One handler, so the two sources cannot open two windows
+## or disagree about which ids open one.
+##
+## A negative id is "nothing is selected" (the bar sends -1 when its own selection
+## is dropped), not a tower that could not be found: it is ignored silently rather
+## than printed as a refusal, because nothing went wrong.
+func _on_tower_open_requested(instance_id: int) -> void:
+	if instance_id < 0:
+		return
+	if _tower_window == null or not is_instance_valid(_tower_window):
+		_refuse("open the tower window", "no tower window is mounted for this run")
+		return
+	if not _tower_window.open_for(instance_id):
+		# The window printed its own reason; this copy is the boot's record that the
+		# door it wired was the one that failed.
+		_refuse("open the tower window", "the window refused instance %d" % instance_id)
 
 
 ## What the boot decided about the bar, in the bar's own terms: whether it is on
@@ -610,12 +648,21 @@ func _wire_level_panel() -> void:
 	if panel.has_method("select_instance"):
 		_connect(bar, "tower_selected", Callable(panel, "select_instance"))
 	_connect(panel, "tower_selected", Callable(bar, "mark_selected"))
+	# The window's second door and its arena (T-0074). The arena is the level that
+	# owns the phase lock and the tier price, and a run opens more than one level, so
+	# it is bound here - once per level - rather than at the mount.
+	var window_arena := false
+	if _tower_window != null and is_instance_valid(_tower_window):
+		window_arena = bool(_tower_window.bind_arena(arena))
+		_connect(panel, "tower_inspected", _on_tower_open_requested)
 	print("BOOT_WIRED " + JSON.stringify({
 		"panel": String(panel.name),
 		"bar": String(bar.name),
 		"guard": guard_added,
 		"reserve": bar_height,
 		"panel_reserve": int(panel.content_reserve()) if panel.has_method("content_reserve") else 0,
+		"window": _tower_window != null and is_instance_valid(_tower_window),
+		"window_arena": window_arena,
 		"level": _flow.level_node_id(),
 		"screen": screen_name(),
 	}))

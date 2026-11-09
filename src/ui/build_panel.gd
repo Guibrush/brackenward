@@ -27,6 +27,11 @@ extends Control
 ##   inventing a second sentence for the same rule. The one exception is a refusal
 ##   the arena never hears - placing with nothing armed - because that is this
 ##   panel's own refusal, and it says so.
+## * **A placed tower has a window, and placing one does not open it (T-0074).**
+##   Selecting a tower that is already on a tile raises `tower_inspected`, and the
+##   boot opens the tower window on it. Placing raises `tower_placed` and only
+##   selects, so the window never appears over the board the player is still
+##   building on; a selection arriving from the bar is the bar's own signal.
 ## * **Always visible:** HQ current/max and the phase, in one line that is re-read
 ##   from the run on every signal rather than cached. Gold left this line in
 ##   T-0068 with the inventory: it is the bar's number now.
@@ -175,6 +180,13 @@ signal tower_taken_back(instance_id: int, tier: int, gold: int)
 ## so one selection is shown in two places. A selection that arrived *from* the bar
 ## does not raise this, which is what keeps the two views from echoing.
 signal tower_selected(instance_id: int)
+## A **placed** tower was selected on the board (T-0074), so the boot can open the
+## tower window for it. Raised only when the selection was made here, on a tower
+## that is already on a tile: placing a tower raises `tower_placed` instead, because
+## a window over the tile the player just clicked would cover the board they are
+## still building on; and a selection arriving from the bar is already that bar's
+## `tower_selected`, which the boot wires to the same door.
+signal tower_inspected(instance_id: int)
 ## The player started the level's next wave (T-0059): `wave` is the one now
 ## running, `waves` the level's total. Emitted after the arena printed its own
 ## `WAVE_START`/`ARENA_PHASE`, so a listener cannot report a wave the log has not.
@@ -719,6 +731,12 @@ func _select(instance_id: int, announce: bool = true) -> bool:
 		tower_armed.emit(_armed_id)
 	if announce:
 		tower_selected.emit(_selected_id)
+	# The placed tower's window (T-0074). Only for a selection made here, on a tower
+	# that is on a tile: an armed in-hand tower is opened by the bar's own signal,
+	# and `place_at()` selects the tower it just placed without passing through here,
+	# so placing one never pops a window over the board.
+	if bool(instance.placed) and announce:
+		tower_inspected.emit(_selected_id)
 	return true
 
 
