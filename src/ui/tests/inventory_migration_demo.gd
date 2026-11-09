@@ -12,9 +12,12 @@ extends SceneTree
 ##
 ## What it proves, in order:
 ##   1. the panel lists no tower rows and shows no gold, while the bar shows both;
-##   2. a real click on a tower in the bar selects it in the panel;
+##   2. a real click on a tower in the bar selects it in the panel, and (T-0074)
+##      opens the tower window; Escape closes the window and both views keep the
+##      selection behind it;
 ##   3. a real click on a placed tower in the level selects it in the bar, and
-##      Escape clears the selection in both;
+##      Escape clears the selection in both - after closing the window that same
+##      click raised (T-0074);
 ##   4. a click on the bar does not reach the board - and, at the panel's own action
 ##      door, a bar-owned point is answered `guard` rather than as a board click.
 ##      Point 4 is the planted-failure target: with `add_pointer_guard()` removed
@@ -142,6 +145,20 @@ func _run() -> void:
 	check_eq_int(int(_panel.selected_instance()), picked_id, "the panel shows the same tower selected")
 	check(String(_panel.reason()) == "", "the click on the bar invented no refusal in the panel: '%s'" % String(_panel.reason()))
 
+	# T-0074: the bar's selection is also the window's door, so this click opens
+	# the tower window. It is asserted (that is the new behaviour) and then closed
+	# with the key a player uses, and the selection behind it is checked intact -
+	# closing a view must not be a deselection.
+	var window = _window()
+	if check(window != null, "the run mounted a tower window"):
+		check(window.is_open(), "the click on the bar opened the tower window (T-0074)")
+		check_eq_int(int(window.opened_instance()), picked_id, "the window opened on the tower the bar selected")
+	await _press(KEY_ESCAPE, "game_dismiss (Escape): close the tower window")
+	_state_evidence("tower window closed")
+	check(not _window_open(window), "Escape closed the tower window")
+	check_eq_int(int(_bar.selected_instance()), picked_id, "closing the window left the bar's selection alone")
+	check_eq_int(int(_panel.selected_instance()), picked_id, "closing the window left the panel's selection alone")
+
 	# --- 3. the board did not hear it --------------------------------------
 	_case("the click on the bar did not reach the board")
 	var free_before: int = _arena.free_slot_count()
@@ -164,14 +181,27 @@ func _run() -> void:
 	check_eq_int(int(_arena.free_slot_count()), free_before, "still no board action from a bar-owned point")
 	check(String(_panel.reason()) == "", "still no refusal sentence from a bar-owned point: '%s'" % String(_panel.reason()))
 
+	# That click is a bar selection too, so it re-opened the window. Closed here so
+	# the board click below is the panel's to answer.
+	await _close_window("close the window the second bar click opened")
+
 	# --- 4. panel -> bar ---------------------------------------------------
 	_case("a real click on a build tile places the armed tower and the bar follows the selection")
 	var slot := _free_slot()
 	if not check(not slot.is_empty(), "the level has a free build tile"):
 		_finish()
 		return
+	# The panel drops confirms during its settle window (T-0071) - a click that
+	# predates the level belongs to the screen that was up then. A headless demo
+	# fires its clicks far faster than a player, so it waits the window out rather
+	# than hoping the frame budget outlasts it; no click is skipped or faked.
+	await _wait_for_settle("before the first board click")
 	await _click(_canvas_point(slot["position"]), "left click on tile %s" % String(slot["name"]))
 	_state_evidence("placed")
+	var placed_item := _bar_tower(picked_id)
+	check(bool(placed_item.get("placed", false)),
+		"the tower the click placed is marked placed in the bar: %s" % [placed_item])
+	check(_arena_has_tower(picked_id), "the board holds a tower for that instance: %d" % picked_id)
 	check_eq_int(int(_panel.selected_instance()), picked_id, "the panel selected the tower it placed")
 	check_eq_int(int(_bar.selected_instance()), picked_id, "the bar shows the placed tower selected")
 
@@ -182,8 +212,20 @@ func _run() -> void:
 	check_eq_int(int(_bar.selected_instance()), -1, "Escape cleared the bar's selection too")
 
 	var placed_point := _canvas_point(slot["position"])
+	await _wait_for_settle("before the placed-tower click")
 	await _click(placed_point, "left click on the placed tower at %s" % String(slot["name"]))
 	_state_evidence("placed tower clicked")
+	# T-0074: selecting a placed tower raises `tower_inspected`, and the boot opens
+	# the window on it. That is what this click now means; the selection is asserted
+	# after the window is closed, because the window owns the keyboard while it is up.
+	var placed_window = _window()
+	if check(placed_window != null, "the run mounted a tower window"):
+		check(placed_window.is_open(), "the click on the placed tower opened the tower window (T-0074)")
+		check_eq_int(int(placed_window.opened_instance()), picked_id,
+			"the window opened on the tower standing there")
+	await _press(KEY_ESCAPE, "game_dismiss (Escape): close the tower window")
+	_state_evidence("placed tower window closed")
+	check(not _window_open(placed_window), "Escape closed the placed tower's window")
 	check_eq_int(int(_panel.selected_instance()), picked_id, "the panel selected the tower standing there")
 	check_eq_int(int(_bar.selected_instance()), picked_id, "the bar was told by the panel, not by a click on itself")
 	check(not _kinds().has("tower"), "the selection still draws no tower row in the panel: %s" % [_kinds()])
@@ -383,6 +425,63 @@ func _mouse_press(point: Vector2) -> InputEventMouseButton:
 
 func _settle(frames: int = SETTLE_FRAMES) -> void:
 	await _hold(frames)
+
+
+## Waits out the build panel's settle window (T-0071), which drops a confirm that
+## arrives while the panel has just appeared. That window is wall-clock; a headless
+## demo's frames are much faster than a player's, so a demo that wants a board click
+## to land has to wait for it explicitly. It is not a fake input: the same click is
+## delivered after, through `push_input`.
+func _wait_for_settle(what: String) -> void:
+	if _panel == null or not _panel.has_method("settle_left_msec"):
+		return
+	var left := int(_panel.settle_left_msec())
+	if left <= 0:
+		return
+	print("PANEL_BAR_EVENT " + JSON.stringify({"device": "wait", "what": what, "settle_ms": left}))
+	await create_timer(float(left) / 1000.0 + 0.05).timeout
+	await _settle()
+
+
+# --- the tower window (T-0074) ----------------------------------------------
+
+## The run's tower window, found by what it can do (`open_for`) rather than by a
+## node path: the boot owns where it lives, and this file must not be a second one
+## that knows.
+func _window():
+	return _find_with(_boot, "open_for")
+
+
+## True while `window` is valid and open. A null ref is closed, not an error.
+func _window_open(window) -> bool:
+	return window != null and is_instance_valid(window) and window.is_open()
+
+
+## Closes the tower window with Escape - the key a player uses - and checks it
+## closed. A window that is already shut is a no-op, so this is safe to call after
+## any step whose click may or may not have opened one.
+func _close_window(what: String) -> void:
+	var window = _window()
+	if not _window_open(window):
+		return
+	await _press(KEY_ESCAPE, "game_dismiss (Escape): %s" % what)
+	check(not _window_open(window), "%s: Escape closed it" % what)
+
+
+## One tower as the bar draws it, by inventory id; {} when it is not listed.
+func _bar_tower(instance_id: int) -> Dictionary:
+	for raw in _bar.state().get("towers", []):
+		if int((raw as Dictionary).get("id", -1)) == instance_id:
+			return raw
+	return {}
+
+
+## True when the level holds a tower node for `instance_id`. The board's own
+## answer, so "placed" in the bar is checked against the scene, not against itself.
+func _arena_has_tower(instance_id: int) -> bool:
+	if not _arena.has_method("tower_for_instance"):
+		return false
+	return _arena.tower_for_instance(instance_id) != null
 
 
 func _hold(frames: int) -> void:
