@@ -47,6 +47,12 @@ text = "HP 0/0    Gold 0"
 layout_mode = 2
 text = "Wave 0/0"
 
+[node name="Status" type="Label" parent="Margin/Column"]
+layout_mode = 2
+autowrap_mode = 3
+text = ""
+
+
 [node name="Towers" type="VBoxContainer" parent="Margin/Column"]
 layout_mode = 2
 size_flags_vertical = 3
