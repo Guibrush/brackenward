@@ -395,7 +395,7 @@ func _step_integration() -> void:
 	_case("the arena runs level 1 wave 1 and returns to the build phase")
 	_arena.build_level_plan()
 	check_eq_int(_arena.level_wave_count(), LEVEL1_WAVES, "the arena built a %d-wave level" % LEVEL1_WAVES)
-	check(_arena.start_level(), "the arena starts the level")
+	check(_arena.start_wave(0), "the arena starts the level")
 	check(_arena.is_wave_active(), "a running wave locks the build phase")
 
 	var director: WaveDirector = _arena.wave_director()

@@ -1210,7 +1210,7 @@ func _start_first_wave() -> bool:
 	if arena == null:
 		_refuse("start wave 1", "the session reports a level but has none")
 		return false
-	if not arena.start_level():
+	if not arena.start_wave(0):
 		_refuse("start wave 1", "the level refused its first wave")
 		return false
 	return true

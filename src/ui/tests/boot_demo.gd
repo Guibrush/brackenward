@@ -464,7 +464,7 @@ func _play_level(flow) -> int:
 	if not check(director != null, "the level has a wave director"):
 		return 0
 	if not director.is_active() and not director.is_level_complete():
-		if not check(arena.start_level(), "the level's first wave starts"):
+		if not check(arena.start_wave(0), "the level's first wave starts"):
 			return 0
 
 	var paid := 0
