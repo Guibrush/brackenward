@@ -39,6 +39,45 @@ extends Control
 ##   row, a point over the board places or selects. Mouse, keyboard and pad are
 ##   therefore the same code path with a different device.
 ##
+## THE ARMED AND SELECTED STATE IS VISIBLE (T-0064)
+## ------------------------------------------------
+## T-0063 proved with pushed events that a click on a row arms it; the human still
+## said "clicking did nothing", because the only feedback was a text suffix. A
+## state the player cannot see is indistinguishable from a state that never
+## changed, so the panel draws three signals at once:
+##   * the row's **band** - a filled `StyleBoxFlat` with a border, which no other
+##     row has;
+##   * the row's **text colour** - warm for armed, cool for selected;
+##   * a **leading marker** on the row, and a **status line** (`status_path`) that
+##     says what happens next: "arrow armed - click a build tile to place it".
+## The colour alone would fail a colourblind eye and a greyscale screenshot, which
+## is why the marker and the status line are not optional extras.
+## A row is dressed because `armed` or `selected` is true on the entry, so the cue
+## is a function of the same truth the actions use - never a second copy of it.
+##
+## INPUT OWNERSHIP (T-0063)
+## ------------------------
+## * **This panel is the level's only input reader.** `_input()` is the single
+##   entry point, it translates through `MapInput`, and a translated event is
+##   marked handled so no other node in the level acts on it as well. The arena
+##   reads no input at all - `arena.gd` has no `_input`, `_unhandled_input`,
+##   `set_input_as_handled` or `MapInput` reference - so "the arena swallowed the
+##   click" cannot be the reason a click went nowhere.
+## * **The rows are drawn, not clickable.** A row is a `Label` with
+##   `MOUSE_FILTER_IGNORE`, so the GUI hit-tester cannot consume a click over it:
+##   the panel resolves the pointer itself (`_index_at`) and takes the row. Before
+##   T-0063 a row was a `Button` with `MOUSE_FILTER_STOP`, so a click on a row was
+##   handled by the Button's own `pressed` signal (fired on **release**) while a
+##   click on the board was handled by `handle_input()` (on **press**): one event,
+##   two owners, and which one acted depended on what the GUI hit-tester did. A
+##   Button that is destroyed by a re-draw between press and release loses the
+##   click silently - no refusal, no log line - which is the shape of "clicking
+##   does nothing".
+## * **`_unhandled_input` is deliberately not used.** "Unhandled" means "whatever
+##   the GUI declined", so any Control that accepts a click hides the board from
+##   this panel without a word. The panel reads at `_input` instead: it sees every
+##   event first and decides, which is what one owner means in practice.
+##
 ## BINDING ORDER
 ## -------------
 ## A panel instanced into a level scene has its `_ready` run **before** the arena
@@ -103,6 +142,9 @@ const KIND_TAKE_BACK := "take_back"
 ## The wave readout line (T-0059). Its own label, so the always-visible state
 ## line keeps its shape and the readout can be moved without touching it.
 @export var wave_path: NodePath = ^"Margin/Column/Wave"
+## The one-line prompt that answers "did my click register?" (T-0064): what is
+## armed or selected, and what to do next.
+@export var status_path: NodePath = ^"Margin/Column/Status"
 @export var tower_list_path: NodePath = ^"Margin/Column/Towers"
 @export var reason_path: NodePath = ^"Margin/Column/Reason"
 @export var hint_path: NodePath = ^"Margin/Column/Hint"
@@ -146,6 +188,19 @@ const KIND_TAKE_BACK := "take_back"
 @export var unplaced_marker: String = "in hand"
 ## How a row that is the selected tower's arming state is marked.
 @export var armed_marker: String = "armed"
+## Prepended to an armed row's text (T-0064). A marker that is not colour, so the
+## state survives a colourblind eye and a greyscale screenshot.
+@export var armed_prefix: String = "\u25B6 "
+## Prepended to a selected tower's row, and to the action rows that belong to it.
+@export var selected_prefix: String = "\u25C6 "
+## The status line while a tower is armed for placement: the tower, then the one
+## action the player has left to take.
+@export var status_armed_format: String = "%s armed \u2014 click a build tile to place it"
+## The status line while a placed tower is selected: whose actions are on screen.
+@export var status_selected_format: String = "%s T%d selected \u2014 its actions are listed below"
+## The status line when nothing is armed and nothing is selected. Empty on
+## purpose: a prompt that is always there stops being a signal.
+@export var status_idle_text: String = ""
 ## The upgrade action row: next tier, and what it costs.
 @export var upgrade_format: String = "Upgrade to T%d - %d gold"
 ## The upgrade row at the last tier, where the arena's price is -1.
@@ -172,6 +227,29 @@ const KIND_TAKE_BACK := "take_back"
 ## Height of one list row, in pixels. Range 24-48; shorter than the font clips,
 ## much taller and the list stops reading as a list.
 @export var row_min_height: int = 32
+
+@export_group("Tuning — the armed and selected cue (T-0064)")
+## Text colour of an armed row and the border of its band. Warm, because it is the
+## row the player is about to act on. Suggested range: amber to orange, luminance
+## above 0.7 so it reads against the dark sidebar.
+@export var armed_colour: Color = Color(1.0, 0.8, 0.3, 1.0)
+## Fill behind an armed row. Suggested range: the same hue as `armed_colour`,
+## value 0.25-0.45. Darker than the text, or the text stops reading.
+@export var armed_fill: Color = Color(0.42, 0.3, 0.06, 0.92)
+## Text colour of the selected tower's row and of its action rows, and the border
+## of their bands. Cool, so selection never reads as "armed" at a glance.
+@export var selected_colour: Color = Color(0.55, 0.86, 1.0, 1.0)
+## Fill behind the selected tower's rows. Same rule as `armed_fill`.
+@export var selected_fill: Color = Color(0.05, 0.2, 0.3, 0.92)
+## Text colour of a row in neither state.
+@export var idle_row_colour: Color = Color(0.86, 0.88, 0.84, 1.0)
+## Border thickness of a dressed row's band, in pixels. Range 1-4; 0 removes the
+## border, leaving only the fill, the colour and the marker.
+@export var cue_border_width: int = 2
+## Corner radius of a dressed row's band, in pixels. Range 0-6.
+@export var cue_corner_radius: int = 3
+## Horizontal padding inside a dressed row's band, in pixels. Range 0-12.
+@export var cue_padding: int = 6
 
 var _arena: Node = null
 var _router = MapInputScript.new()
@@ -247,7 +325,7 @@ func arena() -> Node:
 func refresh(force: bool = false) -> void:
 	_rebuild_rows()
 	_apply_copy()
-	_apply_focus()
+	_apply_visuals()
 	var signature := _signature()
 	if force or signature != _last_signature:
 		_last_signature = signature
@@ -257,6 +335,7 @@ func refresh(force: bool = false) -> void:
 			"selected": _selected_id,
 			"state": state()["label"],
 			"wave": wave()["label"],
+			"status": status()["label"],
 			"phase": phase_name(),
 			"visible": visible,
 		}))
@@ -358,6 +437,37 @@ func wave() -> Dictionary:
 	return out
 
 
+## The prompt that answers "did my click register?", read live from what is armed
+## and selected:
+##     {armed, selected, tower, label}
+## Idle is an empty label on purpose: a line that always says something is not a
+## signal. The tower is the inventory's own type id, so this line cannot name a
+## tower the rows do not.
+func status() -> Dictionary:
+	var out := {
+		"armed": _armed_id,
+		"selected": _selected_id,
+		"tower": "",
+		"label": status_idle_text,
+	}
+	if not _bound():
+		return out
+	if _armed_id != -1:
+		var instance = _instance(_armed_id)
+		if instance != null:
+			out["tower"] = String(instance.type_id)
+			out["label"] = status_armed_format % [String(instance.type_id)]
+		return out
+	var tower = _selected_tower()
+	if tower != null:
+		var type_id := "tower"
+		if tower.instance != null:
+			type_id = String(tower.instance.type_id)
+		out["tower"] = type_id
+		out["label"] = status_selected_format % [type_id, tower.tier()]
+	return out
+
+
 # --- acting -----------------------------------------------------------------
 
 ## The single action path: a row is taken. What the rows are is decided in
@@ -372,7 +482,7 @@ func activate(index: int) -> bool:
 
 	var entry: Dictionary = _rows[index]
 	_focus = index
-	_apply_focus()
+	_apply_visuals()
 	match String(entry["kind"]):
 		KIND_START_WAVE:
 			return start_wave()
@@ -607,20 +717,38 @@ func handle_input(event: InputEvent) -> Dictionary:
 				out["target"] = "row"
 				out["applied"] = activate(_focus)
 		MapInputScript.Intent.DISMISS:
-			# Dismiss cancels an armed tower and nothing else: it is the way out of
-			# a placement a player started and does not want.
-			_armed_id = -1
-			_show_reason("")
-			refresh()
+			out["applied"] = _dismiss()
 		_:
 			pass
 	return out
 
 
-func _unhandled_input(event: InputEvent) -> void:
-	# The board is drawn by the arena, not by a Control that could take the click,
-	# so a click that no row consumed arrives here.
+## The level's single input entry point (T-0063). The engine calls this before the
+## GUI hit-tester, so nothing in the level can take an event from this panel, and an
+## event this panel acts on is marked handled so nothing acts on it twice.
+##
+## A demo must not call this, `handle_input()` or `activate()`: the whole point of
+## the evidence rule is that a click delivered by `get_viewport().push_input()`
+## reaches the player-visible action. See `tests/input_route_demo.gd`.
+func _input(event: InputEvent) -> void:
+	if int(_router.intent_for(event)["intent"]) == MapInputScript.Intent.NONE:
+		return
+	if not visible:
+		return
+	get_viewport().set_input_as_handled()
 	handle_input(event)
+
+
+## Backs out one step, the way a pad player expects B/Escape to: an armed tower is
+## disarmed first - that is the placement a player started and does not want - and
+## with nothing armed the selected tower's action rows close.
+func _dismiss() -> bool:
+	var had_selection := _armed_id != -1 or _selected_id != -1
+	_armed_id = -1
+	_selected_id = -1
+	_show_reason("")
+	refresh()
+	return had_selection
 
 
 ## A pointer confirm: a point over a row takes that row, a point over the board
@@ -779,40 +907,84 @@ func _start_wave_label() -> String:
 	return start_wave_text
 
 
-## Appends one row: the entry the panel keeps, and the Button the player sees. The
-## Button carries no focus of its own - the panel draws `focus_marker` - so a pad,
-## a keyboard and a mouse all resolve to `activate()`.
+## Appends one row: the entry the panel keeps, and the Control the player sees.
+## Since T-0064 a row is a `PanelContainer` wrapping one `Label`, so the row can
+## carry a filled band and a border; a bare `Label` has no stylebox to draw one
+## with. The row and its label both take no input (`MOUSE_FILTER_IGNORE`), so a
+## click over either is resolved by this panel's own hit-test (`_index_at`) rather
+## than by the GUI - one reader, press and release in one place.
 func _add_entry(list: Node, entry: Dictionary) -> void:
 	entry["index"] = _rows.size()
 	if list != null:
-		var button := Button.new()
-		button.name = "Row%d" % int(entry["index"])
-		button.focus_mode = Control.FOCUS_NONE
-		button.custom_minimum_size = Vector2(0, row_min_height)
-		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		button.mouse_filter = Control.MOUSE_FILTER_STOP
-		button.text = String(entry["label"])
-		button.pressed.connect(_on_row_pressed.bind(int(entry["index"])))
-		list.add_child(button)
-		entry["node"] = button
+		var row := PanelContainer.new()
+		row.name = "Row%d" % int(entry["index"])
+		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.custom_minimum_size = Vector2(0, row_min_height)
+		var text := Label.new()
+		text.name = "Text"
+		text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		text.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		row.add_child(text)
+		list.add_child(row)
+		entry["node"] = row
 	_rows.append(entry)
 
 
-func _apply_focus() -> void:
+## The text node inside a row, or null for a row that has not been drawn. One
+## lookup, so "the row's text" means one thing on every path that touches it.
+func _row_label(row: Control) -> Label:
+	if row == null:
+		return null
+	return row.get_node_or_null("Text") as Label
+
+
+## Draws every row from its entry: the focus marker, the armed or selected marker,
+## and the colour and band that make the state impossible to miss (T-0064). The
+## row's text is rebuilt from `label` on every call, so a marker can never be left
+## behind on a row that is no longer armed.
+func _apply_visuals() -> void:
 	for entry in _rows:
 		if not entry.has("node"):
 			continue
-		var button: Button = entry["node"]
+		var row: Control = entry["node"]
+		var label := _row_label(row)
+		if label == null:
+			continue
 		var text := String(entry["label"])
+		if bool(entry["armed"]):
+			text = armed_prefix + text
+		elif bool(entry["selected"]):
+			text = selected_prefix + text
+		# The focus marker is outermost, so "where my cursor is" and "what this row
+		# is" are two glyphs in a fixed order at the start of the line.
 		if int(entry["index"]) == _focus:
 			text = focus_marker + text
-		button.text = text
+		label.text = text
+		_dress(row, label, entry)
 
 
-func _on_row_pressed(index: int) -> void:
-	# A click that landed on a row is the same call as a confirm.
-	_focus = index
-	activate(index)
+## The cue itself: a filled band with a border, and a text colour, on every row
+## that is armed or belongs to the selected tower. A row in neither state is drawn
+## plain, so "dressed" is a value a demo can read and a player can see.
+func _dress(row: Control, label: Label, entry: Dictionary) -> void:
+	var armed := bool(entry["armed"])
+	var chosen := armed or bool(entry["selected"])
+	if not chosen:
+		label.add_theme_color_override("font_color", idle_row_colour)
+		row.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+		return
+	var tint := armed_colour if armed else selected_colour
+	var fill := armed_fill if armed else selected_fill
+	label.add_theme_color_override("font_color", tint)
+	var box := StyleBoxFlat.new()
+	box.bg_color = fill
+	box.border_color = tint
+	box.set_border_width_all(cue_border_width)
+	box.set_corner_radius_all(cue_corner_radius)
+	box.content_margin_left = cue_padding
+	box.content_margin_right = cue_padding
+	row.add_theme_stylebox_override("panel", box)
 
 
 func _move_focus(delta: int) -> bool:
@@ -822,7 +994,7 @@ func _move_focus(delta: int) -> bool:
 		_focus = 0
 	else:
 		_focus = int(posmod(_focus + delta, _rows.size()))
-	_apply_focus()
+	_apply_visuals()
 	return true
 
 
@@ -976,6 +1148,7 @@ func _apply_copy() -> void:
 		(title as Label).text = title_text
 	_sync_state()
 	_sync_wave()
+	_sync_status()
 	var hint := _node(hint_path)
 	if hint != null:
 		(hint as Label).text = hint_text
@@ -1000,6 +1173,22 @@ func _sync_wave() -> void:
 	var label := _node(wave_path)
 	if label != null:
 		(label as Label).text = String(wave()["label"])
+
+
+## The status line only (T-0064). Drawn in the same colour as the cue it belongs
+## to, so the line and the row cannot disagree about what is armed.
+func _sync_status() -> void:
+	var label := _node(status_path)
+	if label == null:
+		return
+	var report: Dictionary = status()
+	(label as Label).text = String(report["label"])
+	if _armed_id != -1:
+		(label as Label).add_theme_color_override("font_color", armed_colour)
+	elif _selected_id != -1:
+		(label as Label).add_theme_color_override("font_color", selected_colour)
+	else:
+		(label as Label).add_theme_color_override("font_color", idle_row_colour)
 
 
 func _sync_empty_label() -> void:

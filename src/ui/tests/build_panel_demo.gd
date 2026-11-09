@@ -100,7 +100,7 @@ func _boot() -> void:
 	root.add_child(_arena)
 	await process_frame
 
-	_panel = _arena.get_node_or_null("BuildPanel")
+	_panel = _find_panel(_arena)
 	if not check(_panel != null, "the panel ships inside the level scene"):
 		_finish()
 		return
@@ -569,6 +569,25 @@ func _planted_failure_c() -> void:
 
 
 # --- helpers ----------------------------------------------------------------
+
+## The panel the level instanced, found by what it can do rather than by its node
+## name or by being the arena's child. Since T-0062 it hangs under the level's
+## `CanvasLayer`, so the search is over the level's whole subtree - the same search
+## `build_panel_boot_demo.gd` uses, because a demo must not be the only thing that
+## knows where the panel lives.
+func _find_panel(arena) -> Node:
+	return _find_control_with(arena, "bind_arena")
+
+
+func _find_control_with(node, method: String) -> Node:
+	if node is Control and node.has_method(method):
+		return node
+	for child in node.get_children():
+		var found := _find_control_with(child, method)
+		if found != null:
+			return found
+	return null
+
 
 func _selected_placed_id() -> int:
 	var selected: int = _panel.selected_instance()

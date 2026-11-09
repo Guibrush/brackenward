@@ -340,7 +340,7 @@ func _lines(panel) -> Dictionary:
 	var rows: Array = []
 	if list != null:
 		for child in list.get_children():
-			rows.append(String(child.text) if child is Button else "%s:%s" % [child.name, child.text])
+			rows.append(_row_text(child))
 	return {
 		"title": String(node.text) if node != null else "<missing>",
 		"state": String(state.text) if state != null else "<missing>",
@@ -405,6 +405,27 @@ func _global_rect(node) -> Rect2:
 	if node == null or not node is Control:
 		return Rect2()
 	return (node as Control).get_global_rect()
+
+
+## The text of one row, whichever Control the panel draws it with. T-0064 made a
+## row a `PanelContainer` around a `Label` so it could carry a band; a demo that
+## assumed `child.text` would break on a presentation change that is none of its
+## business.
+func _row_text(node: Node) -> String:
+	var label := _find_label(node)
+	if label != null:
+		return String(label.text)
+	return "%s:<no label>" % node.name
+
+
+func _find_label(node: Node) -> Label:
+	if node is Label:
+		return node as Label
+	for child in node.get_children():
+		var found := _find_label(child)
+		if found != null:
+			return found
+	return null
 
 
 ## A rect a player can see: it has area and it lies inside the panel's own rect.

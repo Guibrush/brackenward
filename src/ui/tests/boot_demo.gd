@@ -369,6 +369,10 @@ func _check_autostart() -> void:
 	_autostart_boot = packed.instantiate()
 	_autostart_boot.run_seed = SEED
 	_autostart_boot.autostart = true
+	# Since T-0060 a level only auto-starts when `start_first_wave and autostart`
+	# is the command line's `--autostart`; the boot sets it in `_parse_args`. This
+	# demo bypasses `_parse_args`, so it sets both halves of that rule itself.
+	_autostart_boot.start_first_wave = true
 	_autostart_boot.set_quit_enabled_for_demo(false)
 	root.add_child(_autostart_boot)
 	await process_frame
