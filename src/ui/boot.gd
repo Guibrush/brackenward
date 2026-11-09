@@ -583,6 +583,22 @@ func _on_tower_open_requested(instance_id: int) -> void:
 		_refuse("open the tower window", "the window refused instance %d" % instance_id)
 
 
+## The bar's drag announcement (T-0080): the press that began this drag selected the
+## tower, and that selection opened the tower window over it. A drag is a gesture on
+## the board, so the window is put away before the release can place under it - one
+## line names the instance and whether there was an open window to close, because a
+## window left standing over a live drag is the failure this wiring exists to stop.
+func _on_tower_drag_started(instance_id: int) -> void:
+	var closed := false
+	if _tower_window != null and is_instance_valid(_tower_window) and _tower_window.is_open():
+		closed = bool(_tower_window.close("drag"))
+	print("BOOT_DRAG " + JSON.stringify({
+		"instance": instance_id,
+		"window_closed": closed,
+		"screen": screen_name(),
+	}))
+
+
 ## What the boot decided about the bar, in the bar's own terms: whether it is on
 ## screen, what it is bound to, and the run's counts at that moment.
 func _print_hud(action: String, why: String) -> void:
@@ -655,6 +671,28 @@ func _wire_level_panel() -> void:
 	if _tower_window != null and is_instance_valid(_tower_window):
 		window_arena = bool(_tower_window.bind_arena(arena))
 		_connect(panel, "tower_inspected", _on_tower_open_requested)
+	# The drop's two halves (T-0080). The release is the bar's, the placement is the
+	# panel's, and this is the only place the two are joined: a demo that calls
+	# `drop_tower()` itself proves nothing about the game. Both flags are read back
+	# off the connections rather than assumed from the branch taken, so a guard that
+	# silently skipped one is visible in the line below.
+	var drop_wired := false
+	var drop_receiver := Callable(panel, "drop_tower")
+	if bar.has_signal("tower_dropped") and panel.has_method("drop_tower"):
+		_connect(bar, "tower_dropped", drop_receiver)
+		drop_wired = bar.is_connected("tower_dropped", drop_receiver)
+	else:
+		_refuse("wire the drop", "the bar has no tower_dropped or the panel has no drop_tower")
+	# A drag does not mean "open a window over this tower" (T-0080): the press already
+	# did that, and the player is carrying it onto the board. The announcement closes
+	# whatever the press opened, before the release can place under it.
+	var drag_closes := false
+	var drag_receiver := Callable(self, "_on_tower_drag_started")
+	if bar.has_signal("tower_drag_started"):
+		_connect(bar, "tower_drag_started", drag_receiver)
+		drag_closes = bar.is_connected("tower_drag_started", drag_receiver)
+	else:
+		_refuse("wire the drag", "the bar does not announce tower_drag_started")
 	print("BOOT_WIRED " + JSON.stringify({
 		"panel": String(panel.name),
 		"bar": String(bar.name),
@@ -663,6 +701,8 @@ func _wire_level_panel() -> void:
 		"panel_reserve": int(panel.content_reserve()) if panel.has_method("content_reserve") else 0,
 		"window": _tower_window != null and is_instance_valid(_tower_window),
 		"window_arena": window_arena,
+		"drop": drop_wired,
+		"drag_closes_window": drag_closes,
 		"level": _flow.level_node_id(),
 		"screen": screen_name(),
 	}))

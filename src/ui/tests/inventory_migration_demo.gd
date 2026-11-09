@@ -29,15 +29,18 @@ extends SceneTree
 ##      `tower_dropped` **once** with that id and that point; a release inside the
 ##      bar - with or without passing `drag_threshold_px` - raises nothing and leaves
 ##      the selection standing; a **placed** tower's slot starts no drag; and
-##      `set_wave_locked(true)` suppresses the drag until it is turned off. The bar
-##      only announces the drop; and the click-then-tile path still places afterwards;
-##   6. (T-0079) the panel is the drop's receiving end: the point the bar raised is
-##      handed straight to `drop_tower()`, and the tower stands on the free tile
-##      nearest that point (checked against the arena's own slot list), the bar's slot
-##      is drawn placed with the placed border, gold is unchanged, the panel selects
-##      what it placed, a second drop and a drop released over the bar are both
-##      refused without the arena being asked, and the panel's own take-back returns
-##      the tower so the cases below run as they did;
+##      `set_wave_locked(true)` suppresses the drag until it is turned off. The boot
+##      wires the bar's release to the panel (T-0080), so the drop is refused by the
+##      arena when it lands on bare ground; and the click-then-tile path still places
+##      afterwards;
+##   6. (T-0079) the panel is the drop's receiving end, wired by the boot (T-0080) and
+##      reached by a real release with nothing here calling the receiver: the tower
+##      stands on the free tile nearest the point the bar raised (checked against the
+##      arena's own slot list), the bar's slot is drawn placed with the placed border,
+##      gold is unchanged, the panel selects what it placed, the drag announcement
+##      closes the window the press opened, a second drop and a drop released over the
+##      bar are both refused without the arena being asked, and the panel's own
+##      take-back returns the tower so the cases below run as they did;
 ##   7. the panel's last line sits above the bar, not under it.
 ##
 ## The same file produces the acceptance frame. With `--write-movie` on the command
@@ -53,6 +56,8 @@ extends SceneTree
 ##   PANEL_BAR_STATE {json}       what the panel and the bar each report
 ##   PANEL_BAR_DRAG {json}        the live drag and the ghost, mid-gesture
 ##   PANEL_BAR_DROP {json}        every tower_dropped the bar raised, with its point
+##   PANEL_BAR_REFUSED {json}     the bare-ground release the arena refused, and what
+##                                the panel and the bar show afterwards
 ##   PANEL_BAR_GEOMETRY {json}    the rects the overlap case is decided on
 ##   PANEL_BAR_FRAME {json}       the movie is holding the frame
 ##   PANEL_BAR_SELF_TEST {json}   once, last; carries checks and failures
@@ -420,6 +425,9 @@ func _run() -> void:
 		"ghost_text": ghost_text,
 	}))
 
+	# The arena's refusal count before the release below: with the drop wired (T-0080)
+	# the count rising by one is what proves the release reached the board's own door.
+	var ground_refusals := int(_arena.refused_count())
 	await _drag_release(drop_point, "release the tower on the board")
 	check_eq_int(_drops.size(), 1, "the release raised tower_dropped exactly once")
 	if _drops.size() == 1:
@@ -433,12 +441,32 @@ func _run() -> void:
 			"instance": int(_drops[0]["id"]),
 			"point": [dropped_at.x, dropped_at.y],
 			"release": [drop_point.x, drop_point.y],
+			"window_open": _window_open(_window()),
 		}))
 	check(not _bar.drag_active(), "the release ended the drag")
 	check(_bar.ghost_rect().size.x <= 0.0, "the ghost is hidden after the release: %s" % [_bar.ghost_rect()])
-	# The bar's half only: nothing is placed until T-0079 wires the receiver.
-	check(not _arena_has_tower(picked_id),
-		"the bar announced the drop and placed nothing itself: %d" % picked_id)
+	# Wired by the boot (T-0080), this release does reach the arena - and the arena
+	# refuses it: the point is bare ground, 335.9 px from the nearest tile. The tower
+	# therefore stays in hand, nothing stands, and the panel shows the arena's own
+	# sentence rather than the bar-owned one, which is how "it got there" is proved.
+	check(not _arena_has_tower(picked_id), "bare ground placed no tower: %d" % picked_id)
+	check(_bar.slot_state("towers", 0) == "in_hand",
+		"the tower is still in hand after the bare-ground refusal: '%s'" % _bar.slot_state("towers", 0))
+	check_eq_int(int(_arena.refused_count()), ground_refusals + 1,
+		"the bare-ground release reached the arena's door: refused_count +1")
+	check(String(_panel.reason()) == String(_arena.last_refusal()),
+		"the panel shows the arena's refusal for bare ground: '%s' vs '%s'"
+		% [String(_panel.reason()), String(_arena.last_refusal())])
+	check(String(_panel.reason()) != String(_panel.drop_off_board_text),
+		"the refusal is not the panel's bar-owned sentence: '%s'" % String(_panel.reason()))
+	print("PANEL_BAR_REFUSED " + JSON.stringify({
+		"case": "bare ground",
+		"held": _bar.slot_state("towers", 0),
+		"placed": _arena_has_tower(picked_id),
+		"reason": String(_panel.reason()),
+		"arena_reason": String(_arena.last_refusal()),
+		"arena_refusals": int(_arena.refused_count()),
+	}))
 
 	# --- 4c. the panel is the drop's receiving end (T-0079) -----------------
 	# The release above landed at (44, 387.5): 335.9 px from the nearest tile this
@@ -461,9 +489,29 @@ func _run() -> void:
 	check(not _bar.get_global_rect().has_point(release),
 		"the release point is off the bar: %s in %s" % [release, _bar.get_global_rect()])
 	var drops_before := _drops.size()
+	# What the arena should answer, built from the arena's own slot list **before**
+	# the release: the placement happens inside `_drag_release` now (T-0080), so a
+	# list read afterwards would already have the tower standing on the tile.
+	var expected := _nearest_free_slot(_world_point(release))
 	await _drag_press(bar_slot_point,
 		"left press on the tower in hand, for the drop")
+	# The press selected the tower, and selecting it opened the window over it - a
+	# click's meaning, asserted here so the close below has something to close.
+	var press_window = _window()
+	check(_window_open(press_window), "the drop's press opened the tower window")
 	await _drag_move(release, "drag the tower onto the board at (%.0f, %.0f)" % [release.x, release.y])
+	# T-0080: the drag announcement is what puts that window away, before the release
+	# can place under it. This is the visible half of the wiring.
+	check(not _window_open(press_window),
+		"the drag announcement closed the window the press opened: window_open=%s" % _window_open(press_window))
+	print("PANEL_BAR_DRAG " + JSON.stringify({
+		"case": "drop drag",
+		"instance": int(_bar.drag_instance()),
+		"point": [_bar.drag_point().x, _bar.drag_point().y],
+		"ghost": _rect_json(_bar.ghost_rect()),
+		"window_open": _window_open(press_window),
+		"starts": _starts.size(),
+	}))
 	await _drag_release(release, "release the tower over the board")
 	check_eq_int(_drops.size(), drops_before + 1, "the release raised one drop for the receiver")
 	await _close_window("close the window the drop's press opened")
@@ -475,12 +523,13 @@ func _run() -> void:
 		check_eq_int(released_id, picked_id, "the drop names the tower the drag carried")
 		check(released_point.distance_to(release) <= 1.0,
 			"the drop's point is the release point: %s vs %s" % [released_point, release])
-		# What the arena should answer, built from the arena's own slot list before
-		# the drop happens, so the expectation is not read off the panel under test.
-		var expected := _nearest_free_slot(_world_point(released_point))
+		# The expectation was built above, before the release placed anything.
 		check(not expected.is_empty(),
 			"the release point is within a free tile's reach: %s" % [released_point])
-		var placed_by_drop: bool = _panel.drop_tower(released_id, released_point)
+		# The boot connected the bar's release to the panel's receiver (T-0080), so
+		# nothing here calls it: the placement below happened during `_drag_release`.
+		# "Placed" is the board's answer, never a return value this demo obtained.
+		var placed_by_drop: bool = _arena_has_tower(released_id)
 		check(placed_by_drop,
 			"the panel placed the tower the bar dropped: %d at %s" % [released_id, released_point])
 		# The inventory signal rebuilds the bar's slot row inside `place_tower()`; let
