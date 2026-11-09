@@ -18,8 +18,7 @@ extends Control
 ##   reusable component (`src/ui/choice_modal.gd`) and knows nothing about towers:
 ##   this file builds the groups from `RunFlow.opening_offers()`, which is the
 ##   opening rule, and is the right place for it.
-## * **The inventory bar (T-0067).** One bar per run, mounted by this file in the
-##   `Hud` CanvasLayer above the screens and bound to the run's session, so the map
+## * **The inventory bar (T-0067).** One bar per run, mounted by this file in the##   `Hud` CanvasLayer above the screens and bound to the run's session, so the map
 ##   screen and every level read the same object and the same inventory - there is
 ##   nothing to copy between screens because there is only one bar (its own
 ##   contract). It is **hidden while the opening choice is up**: a run that has
@@ -29,6 +28,15 @@ extends Control
 ##   `--autostart`) - and freed with the run in `_release_run()`. A boot that
 ##   cannot mount it refuses the run rather than opening one with no inventory
 ##   view.
+## * **The level's panel and the bar are wired here, once per level (T-0068).**
+##   `_wire_level_panel()` hands the panel the bar's `claim_point` as a pointer
+##   guard (a click on the bar is not a board click), tells the panel to keep its
+##   column clear of the bar's measured height (the bar drew over the panel's hint
+##   line), and connects the two directions of the selection: a pick in the bar
+##   selects it in the panel, and a tower selected on the board marks the bar. The
+##   boot owns it because it is the only object that can see both - the bar is in
+##   the HUD layer, the panel is inside the level - and neither has to know where
+##   the other lives.
 ## * **One run, one session object.** A `RunFlow` owns the map, the run state and
 ##   the inventory for exactly one run, and the map screen binds to exactly one
 ##   session (both contracts live in those files). So the boot creates both on
@@ -79,6 +87,9 @@ extends Control
 ##   BOOT_OPENING_AUTO {json}       once per autostart run: the picks it made
 ##   BOOT_HUD {json}        once per inventory-bar mount, show and hide, with what
 ##                          the bar is bound to and whether it is on screen
+##   BOOT_WIRED {json}      once per level: the build panel wired to the bar - the
+##                          pointer guard, the reserve above the bar, and both
+##                          directions of the selection (T-0068)
 ##   BOOT_RESTART {json}    once per run replaced because the session goes on
 ##   BOOT_LEVEL {json}      once per level opened: the mode in force (`autostart`
 ##                          or `player`) and whether wave 1 started
@@ -495,6 +506,66 @@ func _inventory_counts() -> Dictionary:
 	return {"towers": inventory.tower_count(), "upgrades": inventory.upgrade_count()}
 
 
+# --- panel <-> bar (T-0068) -------------------------------------------------
+
+## Wires the level's build panel to the run's inventory bar: the pointer guard, the
+## reserve that keeps the panel clear of the bar, and one selection in two views.
+## Called on every `level_opened`, because a run opens more than one level and each
+## level instances its own panel.
+##
+## Every step is guarded on the method existing: a level without a build panel (or
+## a bar from an older scene) is refused with a printed reason rather than crashing
+## the run, and a boot that wires half of it is visible in the log.
+func _wire_level_panel() -> void:
+	if _inventory_bar == null or not is_instance_valid(_inventory_bar):
+		return
+	if _flow == null:
+		return
+	var arena = _flow.current_level()
+	if arena == null:
+		return
+	var panel = _find_panel(arena)
+	if panel == null:
+		_refuse("wire the build panel", "the level has no build panel to wire to the inventory bar")
+		return
+	var bar = _inventory_bar
+	var guard_added := false
+	if panel.has_method("add_pointer_guard"):
+		guard_added = bool(panel.add_pointer_guard(Callable(bar, "claim_point")))
+	# The bar's own rect says how tall it is; the panel then leaves room for it, so
+	# the bar's height has one owner and this file adds no constant of its own.
+	var bar_height := int(bar.get_global_rect().size.y)
+	if panel.has_method("reserve_bottom") and bar_height > 0:
+		panel.reserve_bottom(bar_height)
+	# Both directions. `select_instance` does not re-raise `tower_selected` and
+	# `mark_selected` raises nothing, so the two views cannot echo each other.
+	if panel.has_method("select_instance"):
+		_connect(bar, "tower_selected", Callable(panel, "select_instance"))
+	_connect(panel, "tower_selected", Callable(bar, "mark_selected"))
+	print("BOOT_WIRED " + JSON.stringify({
+		"panel": String(panel.name),
+		"bar": String(bar.name),
+		"guard": guard_added,
+		"reserve": bar_height,
+		"panel_reserve": int(panel.content_reserve()) if panel.has_method("content_reserve") else 0,
+		"level": _flow.level_node_id(),
+		"screen": screen_name(),
+	}))
+
+
+## The build panel under `node`, found by what it can do (`bind_arena`) rather than
+## by its node name: the level scene is free to move it, and this file must not be
+## the second thing that knows where it lives.
+func _find_panel(node: Node) -> Node:
+	if node is Control and node.has_method("bind_arena"):
+		return node
+	for child in node.get_children():
+		var found := _find_panel(child)
+		if found != null:
+			return found
+	return null
+
+
 # --- the menu's actions -----------------------------------------------------
 
 ## The whole table from a menu action to its behaviour. Adding an option is one
@@ -768,6 +839,9 @@ func _on_level_opened(node_id: int, level_index: int, elite: bool) -> void:
 	var started := false
 	if auto_start:
 		started = _start_first_wave()
+	# The level instanced its own build panel a frame before this signal; wiring it
+	# here is what makes the bar and the panel one inventory view (T-0068).
+	_wire_level_panel()
 	print("BOOT_LEVEL " + JSON.stringify({
 		"node": node_id,
 		"level_index": level_index,

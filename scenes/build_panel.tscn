@@ -41,7 +41,7 @@ text = "Build"
 
 [node name="State" type="Label" parent="Margin/Column"]
 layout_mode = 2
-text = "HP 0/0    Gold 0"
+text = "HP 0/0    build phase"
 
 [node name="Wave" type="Label" parent="Margin/Column"]
 layout_mode = 2
@@ -53,7 +53,7 @@ autowrap_mode = 3
 text = ""
 
 
-[node name="Towers" type="VBoxContainer" parent="Margin/Column"]
+[node name="Actions" type="VBoxContainer" parent="Margin/Column"]
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 4
