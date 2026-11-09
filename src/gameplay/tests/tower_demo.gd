@@ -45,11 +45,6 @@ extends SceneTree
 
 const ARENA_SCENE := "res://scenes/main.tscn"
 
-## Long enough that the arena's own spawn timer never fires while the demo runs.
-## The demo owns its enemies (`spawn_walker`), so a spawner tick cannot change the
-## field underneath a check. One hour of game time; no step reaches it.
-const SPAWN_INTERVAL_SECONDS := 3600.0
-
 ## Game time per tower step. Longer than every placeholder cooldown (0.8 s at
 ## tier 1), so one step is exactly one firing opportunity even if the tier tables
 ## are retuned inside the placeholder range.
@@ -114,9 +109,6 @@ func _boot() -> void:
 		fail(ARENA_SCENE + " did not instantiate")
 		_finish()
 		return
-	# Set before `add_child`, so the value is in force when the arena builds its
-	# spawn timer: the demo owns its enemies instead of racing the spawner.
-	_arena.set("spawn_interval_seconds", SPAWN_INTERVAL_SECONDS)
 	root.add_child(_arena)
 
 	await process_frame

@@ -35,10 +35,6 @@ extends SceneTree
 
 const ARENA_SCENE := "res://scenes/main.tscn"
 
-## Long enough that the arena's own spawn timer never fires during the demo. The
-## demo owns the field; a spawner tick cannot change it underneath a check.
-const SPAWN_INTERVAL_SECONDS := 3600.0
-
 ## Game time per director tick. 1 s against a 2.2 s interval means every unit of a
 ## wave is observed on the tick after it spawns, so the kill loop cannot run ahead
 ## of the spawner.
@@ -86,9 +82,6 @@ func _boot() -> void:
 		fail(ARENA_SCENE + " did not instantiate")
 		_finish()
 		return
-	# Before `add_child`, so the value is in force when the arena builds its spawn
-	# timer.
-	_arena.set("spawn_interval_seconds", SPAWN_INTERVAL_SECONDS)
 	root.add_child(_arena)
 
 	await process_frame

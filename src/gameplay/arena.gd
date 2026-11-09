@@ -36,6 +36,14 @@ extends Node2D
 ## readout - it reports what the director and the phase already say and computes
 ## no number of its own.
 ##
+## T-0072: waves are the **only** source of enemies. A leftover spawner from the
+## first prototype put one walker on the lane from `_ready` and another every few
+## seconds on a timer, so every level had enemies walking to the HQ before anyone
+## pressed Start Wave. That spawner, its timer, its handler and its
+## `spawn_interval_seconds` export are gone: `spawn_walker()` remains only as a
+## harness entry point, and `spawn_from_entry()` (the wave director's callback) is
+## the one path that produces enemies during play.
+##
 ## T-0045 makes the arena **one level of a run**. The `RunState` and `Inventory`
 ## it is handed (or creates, and says so) are the only owners of HQ health, gold
 ## and the towers the player holds; this scene is the view of them for one level:
@@ -96,9 +104,6 @@ extends Node2D
 @export var enemy_scene: PackedScene
 
 @export_group("Wave")
-## Seconds between spawns. Placeholder pacing for T-0025; real wave pacing is
-## design/systems work.
-@export var spawn_interval_seconds: float = 3.0
 ## HP removed from the HQ per enemy that reaches it.
 @export var damage_per_leak: int = 1
 
@@ -184,7 +189,6 @@ signal level_cleared(level_index: int, elite: bool)
 signal phase_changed(phase_name: String)
 
 var _hq: Hq
-var _spawn_timer: Timer
 var _watchdog_timer: Timer
 var _run_timer: Timer
 var _lane_line: Line2D
@@ -277,7 +281,6 @@ func _ready() -> void:
 	_start_timers()
 	print("ARENA_START " + JSON.stringify({
 		"lane_points": lane_points.size(),
-		"spawn_interval_seconds": spawn_interval_seconds,
 		"damage_per_leak": damage_per_leak,
 		"stall_grace_seconds": stall_grace_seconds,
 		"run_seconds": run_seconds,
@@ -298,13 +301,10 @@ func _ready() -> void:
 		"display": DisplayServer.get_name(),
 	}))
 
-	# One enemy immediately: a short run then observes a full walk plus at least
-	# one clean despawn, instead of starting idle for one spawn interval. A level
-	# that opened on an ended run spawns nothing - there is no level to play.
-	if not _run_is_over():
-		spawn_walker()
-	# A scene that asks for it names the wave: `start_level()` prepares the level
-	# and starts nothing (T-0070), so the request is `start_wave(0)` here.
+	# A level opens empty and stays empty until a wave is started (T-0072). The
+	# build phase is where the player plans; nothing walks the lane in it. An
+	# `autostart_waves` scene names its first wave explicitly, because
+	# `start_level()` prepares the level and starts nothing (T-0070).
 	if autostart_waves:
 		start_wave(0)
 
@@ -347,7 +347,6 @@ func _build_lane_visual() -> void:
 
 
 func _start_timers() -> void:
-	_spawn_timer = _make_timer(spawn_interval_seconds, false, _on_spawn_timer_timeout)
 	_watchdog_timer = _make_timer(watchdog_interval_seconds, false, _on_watchdog_timeout)
 	if run_seconds > 0.0:
 		_run_timer = _make_timer(run_seconds, true, _on_run_timer_timeout)
@@ -363,8 +362,9 @@ func _make_timer(seconds: float, one_shot: bool, handler: Callable) -> Timer:
 	return timer
 
 
-## Instantiates the scene's enemy and puts it on the lane. Public so a harness
-## can drive spawns explicitly, and so `adopt_walker` is the one place a walker
+## Instantiates the scene's enemy and puts it on the lane. A harness entry point
+## only (T-0072): the arena never calls this itself, because waves are the only
+## source of enemies during play. `adopt_walker` stays the one place a walker
 ## joins the field.
 func spawn_walker() -> LaneWalker:
 	if enemy_scene == null:
@@ -405,16 +405,10 @@ func walkers() -> Array[LaneWalker]:
 	return live
 
 
-func _on_spawn_timer_timeout() -> void:
-	if _run_is_over():
-		return
-	spawn_walker()
-
-
 ## Instantiates the scene's enemy with one wave line's stats applied. `stats()`
 ## is keyed by `LaneWalker`'s export names, so one scene stands for every enemy
 ## kind until per-kind art exists - and this is the director's only way onto the
-## lane, so wave enemies are wired exactly like the legacy ones.
+## lane (T-0072), so a wave enemy is wired exactly like a harness-spawned one.
 func spawn_from_entry(entry: WaveEntry) -> LaneWalker:
 	if entry == null:
 		push_error("ARENA_ERROR a wave line is null; nothing can spawn")
@@ -908,12 +902,11 @@ func _on_level_completed() -> void:
 
 ## The run ended, wherever the decision was made: `RunState.damage_hq()` reaching
 ## zero (defeat) today, `win_run()` from the run session when the boss node is
-## completed. The arena reacts and invents nothing: it stops spawning, so no
-## further enemy is charged to a decided run, and refuses to start another level
+## completed. The arena reacts and invents nothing: it stops spawning - the
+## director is no longer ticked (`_physics_process`) and `start_wave` refuses - so
+## no further enemy is charged to a decided run, and refuses to start another level
 ## (`start_level`).
 func _on_run_ended(victory: bool, reason: String) -> void:
-	if _spawn_timer != null:
-		_spawn_timer.stop()
 	print("ARENA_RUN_END " + JSON.stringify({
 		"victory": victory,
 		"reason": reason,
