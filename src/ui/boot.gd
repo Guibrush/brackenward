@@ -169,6 +169,12 @@ const ItemCatalogueScript := preload("res://src/gameplay/item_catalogue.gd")
 ## the run's session (T-0067). Required for a run: it is the game's inventory view
 ## on both the map screen and in a level.
 @export var inventory_bar_scene: PackedScene
+## The floating tower window (T-0074), one instance per run, mounted in the HUD
+## layer **after** the bar so it draws over it, and bound to the same session.
+## Required for a run for the same reason the bar is: a tower the player can pick
+## in the bar but never open is a tower whose tier, carrying and three actions are
+## unreachable, and equipping an in-hand upgrade would have no door at all.
+@export var tower_window_scene: PackedScene
 
 @export_group("Layout — node paths")
 ## Where the level and the run session are mounted. Behind the screens, so a
@@ -218,6 +224,10 @@ var _opening_modal = null
 ## The run's inventory bar, mounted in the HUD layer and bound to the run session,
 ## or null between runs. One per run, freed with it.
 var _inventory_bar = null
+## The run's tower window, mounted in the HUD layer above the bar and bound to the
+## same run session, or null between runs. One per run, freed with it (T-0074); it
+## is the only window that shows a tower's tier, what it carries and its actions.
+var _tower_window = null
 ## The run session for the current run, or null between runs.
 var _flow = null
 var _screen: int = Screen.NONE
@@ -375,6 +385,12 @@ func _start_run(entry_id: String) -> bool:
 	if not _mount_inventory_bar():
 		_show_menu("the inventory bar could not be mounted")
 		return false
+	# The window goes with the bar, before the choice is on top: a mount failure
+	# must leave the player on the menu, not on a run whose towers cannot be opened
+	# (T-0074).
+	if not _mount_tower_window():
+		_show_menu("the tower window could not be mounted")
+		return false
 
 	# The choice goes up before the run counts as started: a run with nothing
 	# granted is only usable once the modal is on top of the map (T-0065). A
@@ -453,6 +469,38 @@ func _mount_inventory_bar() -> bool:
 	return true
 
 
+## The run's tower window: mounted after the bar so it draws over it, and bound to
+## the same session. Its two doors (the bar's `tower_selected` and the build
+## panel's `tower_inspected`) are wired in `_wire_level_panel()` and
+## `_mount_tower_window()` - see the notes there.
+func _mount_tower_window() -> bool:
+	if _flow == null:
+		_refuse("mount the tower window", "no run has started")
+		return false
+	var hud := _hud_layer()
+	if hud == null:
+		_refuse("mount the tower window", "the HUD layer '%s' is missing" % hud_layer_path)
+		return false
+	var window = tower_window_scene.instantiate()
+	if window == null:
+		_refuse("mount the tower window", "the tower window scene did not instantiate")
+		return false
+	window.name = "TowerWindow"
+	# After the bar on purpose: a later sibling is drawn over an earlier one and its
+	# `_input` runs first, which is what makes an open window leave the bar, the
+	# build panel and the map underneath it inert without any of them knowing.
+	hud.add_child(window)
+	if not window.bind_session(_flow):
+		# The window printed its own reason; this copy names what the boot asked for.
+		_refuse("mount the tower window", "the window refused the run session")
+		window.name = "TowerWindow@refused"
+		window.queue_free()
+		return false
+	_tower_window = window
+	_print_hud("mount_window", "the run began")
+	return true
+
+
 ## Shows the bar once the opening picks have been applied - the same call from a
 ## player's confirm and from the autostart pick, so the two paths cannot diverge.
 ## A no-op when no bar is mounted (an autostart run that never reached here) and a
@@ -481,6 +529,22 @@ func _free_inventory_bar() -> void:
 	bar.queue_free()
 
 
+## Releases the run's tower window: unbound before it is freed so the session's
+## signals stop feeding a window that is going away, and renamed first for the
+## reason `_release_run()` gives (a restart mounts the next run's window in the
+## same frame). T-0074.
+func _free_tower_window() -> void:
+	if _tower_window == null:
+		return
+	var window = _tower_window
+	_tower_window = null
+	if not is_instance_valid(window):
+		return
+	window.unbind()
+	window.name = "TowerWindow@released"
+	window.queue_free()
+
+
 ## What the boot decided about the bar, in the bar's own terms: whether it is on
 ## screen, what it is bound to, and the run's counts at that moment.
 func _print_hud(action: String, why: String) -> void:
@@ -490,6 +554,10 @@ func _print_hud(action: String, why: String) -> void:
 		"why": why,
 		"visible": _inventory_bar != null and is_instance_valid(_inventory_bar) and _inventory_bar.visible,
 		"bound": _flow != null and _inventory_bar != null and is_instance_valid(_inventory_bar),
+		"window": _tower_window != null and is_instance_valid(_tower_window),
+		"window_open": (
+			_tower_window != null and is_instance_valid(_tower_window) and _tower_window.is_open()
+		),
 		"towers": counts["towers"],
 		"upgrades": counts["upgrades"],
 		"opening_pending": _flow.opening_pending() if _flow != null else false,
