@@ -10,11 +10,10 @@ extends Control
 ##   of an upgrade, which tile a tower stands on - belongs to the arena, which is
 ##   also where the refusal sentence is written.
 ## * **This panel does not list the inventory (T-0068).** The bar owns the
-##   inventory view; here a row is Start Wave or one of the two actions a placed
-##   tower offers (`upgrade`, `take_back`), and nothing else. A second list of one
+##   inventory view; here the only row is Start Wave (T-0076). A second list of one
 ##   inventory is a second place to go stale - the rule this file applies to every
-##   number it draws. The rows are rebuilt from the arena on every draw, so a tier
-##   and an equipped upgrade are never a copy of the truth.
+##   number it draws. The rows are rebuilt from the arena on every draw, so the
+##   Start Wave row's own state is never a copy of the truth.
 ## * **Arming is selecting an in-hand tower.** Selecting a tower that is already
 ##   on a tile selects it for the actions instead; there is no second mode.
 ## * **One selection, two views.** A pick in the bar arrives here through
@@ -32,9 +31,11 @@ extends Control
 ##   boot opens the tower window on it. Placing raises `tower_placed` and only
 ##   selects, so the window never appears over the board the player is still
 ##   building on; a selection arriving from the bar is the bar's own signal.
-## * **Always visible:** HQ current/max and the phase, in one line that is re-read
-##   from the run on every signal rather than cached. Gold left this line in
-##   T-0068 with the inventory: it is the bar's number now.
+## * **Always visible:** the HQ's current and max health, in one line that is
+##   re-read from the run on every signal rather than cached. Gold left this line in
+##   T-0068 with the inventory: it is the bar's number now. The phase left it in
+##   T-0076, because the wave readout below already ends with the phase - one number,
+##   one owner, one place to read it.
 ## * **The wave readout is the arena's numbers, formatted here** (T-0059): wave of
 ##   the level's total, the phase, and how many enemies the running wave still
 ##   owes the lane. `arena.wave_status()` is the one source; the panel adds no
@@ -51,6 +52,26 @@ extends Control
 ##   left click is a `CONFIRM` carrying its pointer: a point over a row picks the
 ##   row, a point over the board places or selects. Mouse, keyboard and pad are
 ##   therefore the same code path with a different device.
+##
+## THE BLOCK IN THE CORNER (T-0076)
+## --------------------------------
+## The panel is a compact block in the top-left corner, not a full-height sidebar:
+## the human found the sidebar disruptive because it sat over the board for the
+## whole level. The block carries the HQ's health, the wave readout and Start Wave,
+## plus the armed/selected status line and the refusal sentence - the answers to a
+## click, which would be orphaned without a home here.
+## * **What left, and where it went.** A placed tower's `upgrade` and `take_back`
+##   rows were removed from this panel: the floating tower window
+##   (`tower_window.gd`, T-0069/T-0074) offers both, and `tower_inspected` - raised
+##   here for a click on a placed tower - is wired by the boot to `open_for()`, so
+##   the board is still a door to them. Every action that used to live here has a
+##   home there, which is why none had to be kept.
+## * **The bar's reserve is recorded, not applied.** The block never reaches the
+##   bottom of the screen, so `reserve_bottom()` no longer shrinks anything; the
+##   boot still measures the bar, and `content_reserve()` still reports it.
+## * **The root is still full-rect and `MOUSE_FILTER_IGNORE`**, and still the
+##   level's only input reader: a click that misses the block is a board click, and
+##   that is exactly what `_index_at()` returning -1 means.
 ##
 ## THE ARMED AND SELECTED STATE IS VISIBLE (T-0064)
 ## ------------------------------------------------
@@ -209,8 +230,8 @@ const KIND_TAKE_BACK := "take_back"
 ## The one-line prompt that answers "did my click register?" (T-0064): what is
 ## armed or selected, and what to do next.
 @export var status_path: NodePath = ^"Margin/Column/Status"
-## The list the action rows are built into (Start Wave, and a placed tower's own
-## actions). It no longer holds towers (T-0068); the bar does.
+## The list the action rows are built into - Start Wave, and nothing else since
+## T-0076. It never held towers (T-0068); the bar does.
 @export var action_list_path: NodePath = ^"Margin/Column/Actions"
 @export var reason_path: NodePath = ^"Margin/Column/Reason"
 @export var hint_path: NodePath = ^"Margin/Column/Hint"
@@ -221,34 +242,31 @@ const KIND_TAKE_BACK := "take_back"
 @export var arena_path: NodePath = ^""
 
 @export_group("Layout — clearing the inventory bar")
-## The container whose bottom margin keeps this panel's last line clear of the
-## inventory bar drawn over the level (T-0068). Exported for the same reason every
-## other path here is: the scene can be rearranged without touching behaviour.
-@export var margin_path: NodePath = ^"Margin"
-## Space kept free at the bottom of the panel's column, in pixels. The bar's own
-## height owns this number, so the boot measures the bar and calls
-## `reserve_bottom()`; the value here is the fallback for a panel shown without a
-## bar (the `main` scene on its own). Suggested range: the bar's height plus 4-24.
-@export var content_bottom_reserve: int = 148
-## The gap between the panel's last line and the reserved strip, in pixels. Range
-## 4-24: closer and the lines read as one block, further and the panel looks broken.
+## The block's own margin container. Since T-0076 the block floats in the top-left
+## corner and never reaches the bar, so this container's bottom margin stays 0; the
+## path is kept because the scene is free to move the block and a caller may want to
+## read it.
+@export var margin_path: NodePath = ^"Block/Margin"
+## What the boot asked the block to keep clear at the bottom, in pixels. Recorded
+## and **not applied** since T-0076: a reserve under a corner block would only make
+## the block taller, and the block is above the bar by construction. `content_reserve()`
+## still answers with it, which is what `BOOT_WIRED` reports.
+@export var content_bottom_reserve: int = 0
+## The gap the recorded reserve adds between the block and the bar, in pixels. Range
+## 4-24. Only meaningful through `reserve_bottom()` now; the block itself never draws it.
 @export var bar_gap: int = 12
 
 @export_group("Copy")
 @export var title_text: String = "Build"
-## The always-visible line's shape: HQ current, HQ max, phase. Gold is not here
-## (T-0068): the bar shows it, and one number with two owners is what this file
-## exists to avoid.
-@export var state_format: String = "HP %d/%d    %s phase"
+## The always-visible line's shape: HQ current and HQ max. Gold is not here (T-0068)
+## and the phase is not here either (T-0076) - the wave readout ends with the phase,
+## and one number with two owners is what this file exists to avoid.
+@export var state_format: String = "HQ %d/%d"
 ## The wave readout's first part: the wave in play (or the one about to start)
 ## out of the level's total.
 @export var wave_progress_format: String = "Wave %d/%d"
 ## The wave readout's phase part, so the phase reads the same way in both lines.
 @export var wave_phase_format: String = "%s phase"
-## The readout while nothing has run yet: the wave the player is about to start.
-@export var wave_pending_text: String = "wave %d not started"
-## The readout after a wave clears: which one did.
-@export var wave_cleared_text: String = "wave %d cleared"
 ## The readout while a wave runs: enemies still queued or still on the lane.
 @export var wave_remaining_format: String = "%d enemies left"
 ## The readout once every wave of the level has cleared.
@@ -270,19 +288,15 @@ const KIND_TAKE_BACK := "take_back"
 ## The status line while a tower is armed for placement: the tower, then the one
 ## action the player has left to take.
 @export var status_armed_format: String = "%s armed \u2014 click a build tile to place it"
-## The status line while a placed tower is selected: whose actions are on screen.
-@export var status_selected_format: String = "%s T%d selected \u2014 its actions are listed below"
+## The status line while a placed tower is selected: which tower, and that the
+## window is where its actions are (T-0076 - the actions are no longer rows here).
+@export var status_selected_format: String = "%s T%d selected \u2014 its window holds its actions"
 ## The status line when nothing is armed and nothing is selected. Empty on
 ## purpose: a prompt that is always there stops being a signal.
 @export var status_idle_text: String = ""
-## The upgrade action row: next tier, and what it costs.
-@export var upgrade_format: String = "Upgrade to T%d - %d gold"
-## The upgrade row at the last tier, where the arena's price is -1.
-@export var max_tier_text: String = "Upgrade - already at the last tier"
-@export var take_back_text: String = "Take back to the inventory"
 @export var hint_text: String = (
-	"Start Wave begins the next wave, then: D-pad or Up/Down picks, A or Enter confirms, "
-	+ "click a tower in the bar to arm it, click a tile to place, click a placed tower for its actions"
+	"Click a tower in the bar, then a tile, to place it. "
+	+ "Click a placed tower to open it."
 )
 ## Shown instead of any number when no arena is bound.
 @export var no_arena_text: String = "no level to build in"
@@ -453,6 +467,11 @@ func is_point_claimed(point: Vector2) -> bool:
 ## becomes that height plus `bar_gap` (T-0068). The boot calls this with the bar's
 ## own rect, so the bar's height has one owner and no constant here goes stale when
 ## the bar grows a row.
+## Records how much room the inventory bar needs, and applies nothing (T-0076).
+## The block floats in the top-left corner and never reaches the bar, so a reserve
+## under it would only make it taller. The number is still recorded because the boot
+## asked for it and reports it (`content_reserve()`), and because a future layout
+## that does reach the bottom would find it here rather than re-measuring.
 func reserve_bottom(height_px: int) -> void:
 	content_bottom_reserve = maxi(height_px, 0) + maxi(bar_gap, 0)
 	_apply_metrics()
@@ -547,11 +566,13 @@ func reason() -> String:
 	return _reason
 
 
-## The always-visible numbers, read live from the arena, the run and the phase:
+## The always-visible numbers, read live from the arena and the run:
 ##     {hq, hq_max, phase, label}
 ## Nothing is cached: a cached copy is a second owner of a number that already has
 ## one. Gold used to be here and left with the inventory list (T-0068) - the bar
 ## owns it now, and a number this panel does not draw is not a number it reports.
+## `phase` stays in the dictionary because `BUILD_PANEL_SHOWN` reports it; it is not
+## in `label` any more (T-0076, see `state_format`).
 func state() -> Dictionary:
 	var out := {
 		"hq": 0,
@@ -566,7 +587,7 @@ func state() -> Dictionary:
 	if run != null:
 		out["hq"] = run.hq_health()
 		out["hq_max"] = run.hq_max_health()
-	out["label"] = state_format % [int(out["hq"]), int(out["hq_max"]), out["phase"]]
+	out["label"] = state_format % [int(out["hq"]), int(out["hq_max"])]
 	return out
 
 
@@ -598,14 +619,13 @@ func wave() -> Dictionary:
 	else:
 		parts.append(wave_progress_format % [int(out["wave"]), int(out["waves"])])
 		parts.append(wave_phase_format % String(out["phase"]))
+		# Only what the player cannot see elsewhere (T-0076): the build-phase's "not
+		# started yet" was a third clause on a line that already said "build phase",
+		# and the block in the corner has room for the readout, not for a paragraph.
 		if bool(out["running"]):
 			parts.append(wave_remaining_format % int(out["remaining"]))
 		elif int(out["cleared"]) >= int(out["waves"]):
 			parts.append(wave_finished_text)
-		elif int(out["cleared"]) <= 0:
-			parts.append(wave_pending_text % int(out["wave"]))
-		else:
-			parts.append(wave_cleared_text % int(out["cleared"]))
 	out["label"] = field_separator.join(parts)
 	return out
 
@@ -1026,8 +1046,10 @@ func _rebuild_rows() -> void:
 
 	var list := _node(action_list_path)
 
-	# Start Wave first: it is the one action a level always offers, and the row a
-	# player reaching for the phase's next step should not have to scroll to.
+	# Start Wave is the whole list (T-0076). A placed tower's upgrade and take-back
+	# used to be rows here; they are the tower window's rows now (T-0069/T-0074),
+	# reached from the bar or from a click on the tower on the board, so drawing them
+	# here would be a second door to a rule that already has one.
 	_add_entry(list, {
 		"kind": KIND_START_WAVE,
 		"id": 0,
@@ -1041,40 +1063,6 @@ func _rebuild_rows() -> void:
 		"cost": 0,
 		"label": _start_wave_label(),
 	})
-
-	# The actions a placed tower offers, appended after the list so the Start Wave
-	# row never moves when a selection changes the length of the list.
-	var tower = _selected_tower()
-	if tower != null:
-		var cost: int = tower.upgrade_cost()
-		var upgrade: Dictionary = {
-			"kind": KIND_UPGRADE,
-			"id": _selected_id,
-			"tier": tower.tier(),
-			"cost": cost,
-			"placed": true,
-			"armed": false,
-			"selected": true,
-			"tile": String(_slot_of(tower).get("name", "")),
-			"type_id": String(tower.instance.type_id) if tower.instance != null else "",
-			"upgrades": tower.instance.upgrade_type_ids() if tower.instance != null else [],
-			"label": max_tier_text if cost < 0 else upgrade_format % [tower.tier() + 1, cost],
-		}
-		_add_entry(list, upgrade)
-		var take_back: Dictionary = {
-			"kind": KIND_TAKE_BACK,
-			"id": _selected_id,
-			"tier": tower.tier(),
-			"cost": 0,
-			"placed": true,
-			"armed": false,
-			"selected": true,
-			"tile": String(_slot_of(tower).get("name", "")),
-			"type_id": String(tower.instance.type_id) if tower.instance != null else "",
-			"upgrades": tower.instance.upgrade_type_ids() if tower.instance != null else [],
-			"label": take_back_text,
-		}
-		_add_entry(list, take_back)
 
 	if _rows.is_empty():
 		_focus = -1
@@ -1351,14 +1339,14 @@ func _apply_copy() -> void:
 	_sync_empty_label()
 
 
-## Applies the reserve to the layout container (T-0068). A `MarginContainer` theme
-## constant, not viewport arithmetic: this panel does none of its own sizing
-## (T-0062) - it only asks its container for less room.
+## The block's bottom margin: 0 since T-0076. The block is a corner overlay, so a
+## margin reserved for the bar would push its own last line up inside a taller box
+## for no reason. `content_bottom_reserve` still records what the boot asked for.
 func _apply_metrics() -> void:
 	var margin := _node(margin_path) as MarginContainer
 	if margin == null:
 		return
-	margin.add_theme_constant_override("margin_bottom", maxi(content_bottom_reserve, 0))
+	margin.add_theme_constant_override("margin_bottom", 0)
 
 
 ## The state line only. Called on every signal that moves a number, because gold
