@@ -30,9 +30,15 @@ extends SceneTree
 ##      bar - with or without passing `drag_threshold_px` - raises nothing and leaves
 ##      the selection standing; a **placed** tower's slot starts no drag; and
 ##      `set_wave_locked(true)` suppresses the drag until it is turned off. The bar
-##      only announces the drop (T-0079 owns the receiver), and the click-then-tile
-##      path still places afterwards;
-##   6. the panel's last line sits above the bar, not under it.
+##      only announces the drop; and the click-then-tile path still places afterwards;
+##   6. (T-0079) the panel is the drop's receiving end: the point the bar raised is
+##      handed straight to `drop_tower()`, and the tower stands on the free tile
+##      nearest that point (checked against the arena's own slot list), the bar's slot
+##      is drawn placed with the placed border, gold is unchanged, the panel selects
+##      what it placed, a second drop and a drop released over the bar are both
+##      refused without the arena being asked, and the panel's own take-back returns
+##      the tower so the cases below run as they did;
+##   7. the panel's last line sits above the bar, not under it.
 ##
 ## The same file produces the acceptance frame. With `--write-movie` on the command
 ## line it holds the final state for `MOVIE_HOLD_FRAMES`, so the last PNG the movie
@@ -68,6 +74,13 @@ const VIEWPORT := Vector2i(1152, 648)
 
 const SETTLE_FRAMES := 2
 const MOVIE_HOLD_FRAMES := 12
+
+## Where the receiver case (T-0079) lets the tower go, relative to the tile the level
+## calls `TowerSlot`: 6 px right and 5 px down from its centre. Off the centre so
+## "the nearest free tile" is an answer the arena has to compute - a release on the
+## centre would place on the tile whether or not it snapped at all - and inside the
+## tile's 24 px snap radius by a wide margin.
+const DROP_OFFSET := Vector2(6, 5)
 
 ## How many pushes the map walk to a level may take, counted **after** the opening
 ## choice is resolved. A map that needs more than this to open a level is not the
@@ -426,6 +439,117 @@ func _run() -> void:
 	# The bar's half only: nothing is placed until T-0079 wires the receiver.
 	check(not _arena_has_tower(picked_id),
 		"the bar announced the drop and placed nothing itself: %d" % picked_id)
+
+	# --- 4c. the panel is the drop's receiving end (T-0079) -----------------
+	# The release above landed at (44, 387.5): 335.9 px from the nearest tile this
+	# level has (TowerSlot2 at (300, 170)), against a 24 px snap radius, so the arena
+	# answers that point as bare ground - a real drop, but not one over a build tile.
+	# The receiver is therefore proved with a second real drag, released on the board,
+	# and the point handed over is the one **that** release raised, recorded from the
+	# signal exactly like the first. Nothing here calls `_select()` or `activate()`.
+	_case("the panel receives the bar's drop and places on the nearest tile (T-0079)")
+	await _close_window("close the window the T-0078 drag press opened")
+	# The bar's own slot as it is drawn *now*: placing a tower rebuilds that slot, and
+	# a rect read from a node the container has not laid out yet is not a point a
+	# player can click - the second refusal below read one and aimed nowhere.
+	var bar_slot_point: Vector2 = _bar.slot_rect("towers", 0).get_center()
+	var gold_before_drop := int(_arena.gold())
+	var free_before_drop := int(_arena.free_slot_count())
+	# Off the tile's centre on purpose: "nearest tile" is only a claim a test can
+	# check when the release point is not already the answer.
+	var release: Vector2 = _canvas_point(slot["position"]) + DROP_OFFSET
+	check(not _bar.get_global_rect().has_point(release),
+		"the release point is off the bar: %s in %s" % [release, _bar.get_global_rect()])
+	var drops_before := _drops.size()
+	await _drag_press(bar_slot_point,
+		"left press on the tower in hand, for the drop")
+	await _drag_move(release, "drag the tower onto the board at (%.0f, %.0f)" % [release.x, release.y])
+	await _drag_release(release, "release the tower over the board")
+	check_eq_int(_drops.size(), drops_before + 1, "the release raised one drop for the receiver")
+	await _close_window("close the window the drop's press opened")
+	if _drops.size() == drops_before + 1:
+		# The payload the bar raised, not a reconstruction of it.
+		var dropped_entry: Dictionary = _drops[drops_before]
+		var released_point: Vector2 = dropped_entry["point"]
+		var released_id := int(dropped_entry["id"])
+		check_eq_int(released_id, picked_id, "the drop names the tower the drag carried")
+		check(released_point.distance_to(release) <= 1.0,
+			"the drop's point is the release point: %s vs %s" % [released_point, release])
+		# What the arena should answer, built from the arena's own slot list before
+		# the drop happens, so the expectation is not read off the panel under test.
+		var expected := _nearest_free_slot(_world_point(released_point))
+		check(not expected.is_empty(),
+			"the release point is within a free tile's reach: %s" % [released_point])
+		var placed_by_drop: bool = _panel.drop_tower(released_id, released_point)
+		check(placed_by_drop,
+			"the panel placed the tower the bar dropped: %d at %s" % [released_id, released_point])
+		# The inventory signal rebuilds the bar's slot row inside `place_tower()`; let
+		# the container lay the new node out before any rect is read from it.
+		await _settle()
+		_state_evidence("dropped")
+
+		# 1. the tile the arena assigned is the nearest free one to the release.
+		var standing := _slot_holding(released_id)
+		check(String(standing.get("name", "<no tile>")) == String(expected.get("name", "<no tile>")),
+			"the tower stands on the nearest free tile to the release: '%s' vs '%s'"
+			% [String(standing.get("name", "<no tile>")), String(expected.get("name", "<no tile>"))])
+		check(_arena_has_tower(released_id), "the board holds the dropped tower: %d" % released_id)
+		print("PANEL_BAR_DROP " + JSON.stringify({
+			"case": "receiving end",
+			"instance": released_id,
+			"point": [released_point.x, released_point.y],
+			"release": [release.x, release.y],
+			"expected_slot": String(expected.get("name", "<no tile>")),
+			"slot": String(standing.get("name", "<no tile>")),
+			"placed": placed_by_drop,
+			"reason": String(_panel.reason()),
+		}))
+		# 2. the slot the player drags is drawn as placed, with the placed border.
+		check(_bar.slot_state("towers", 0) == "placed",
+			"the bar's slot reports the tower placed: '%s'" % _bar.slot_state("towers", 0))
+		check(_bar.slot_border("towers", 0).is_equal_approx(_bar.placed_border_colour),
+			"the slot is drawn with the placed border colour: %s vs %s"
+			% [_bar.slot_border("towers", 0), _bar.placed_border_colour])
+		# 3. free, and the panel's selection is the tower it placed.
+		check_eq_int(int(_arena.gold()), gold_before_drop, "the drop took no gold")
+		check_eq_int(int(_arena.free_slot_count()), free_before_drop - 1,
+			"the drop filled exactly one tile")
+		check_eq_int(int(_panel.selected_instance()), released_id,
+			"the panel selected the tower the drop placed")
+		# 4. a second drop of the same tower is refused and places nothing.
+		var refusals_before_second := int(_arena.refused_count())
+		var free_before_second := int(_arena.free_slot_count())
+		check(not _panel.drop_tower(released_id, released_point),
+			"a second drop of the same tower is refused")
+		check(String(_panel.reason()) == String(_panel.drop_already_placed_text),
+			"the second drop is refused as already placed: '%s'" % String(_panel.reason()))
+		check_eq_int(int(_arena.refused_count()), refusals_before_second,
+			"the second drop was refused by the panel, not by the arena")
+		check_eq_int(int(_arena.free_slot_count()), free_before_second,
+			"the second drop placed nothing")
+		# 5. a point inside the bar is refused before the arena is asked. The point is
+		# the slot's centre captured before the drop: the rebuilt slot is the node the
+		# player now sees, but its rect is only valid after layout.
+		var in_bar: Vector2 = bar_slot_point
+		check(_bar.claim_point(in_bar), "the point this case drops on is the bar's: %s" % [in_bar])
+		var refusals_before_bar := int(_arena.refused_count())
+		check(not _panel.drop_tower(released_id, in_bar), "a drop released on the bar is refused")
+		check(String(_panel.reason()) == String(_panel.drop_off_board_text),
+			"the bar-owned drop is refused as off the board: '%s'" % String(_panel.reason()))
+		check_eq_int(int(_arena.refused_count()), refusals_before_bar,
+			"the bar-owned drop never reached the arena: refused_count unchanged")
+		check_eq_int(int(_arena.free_slot_count()), free_before_second,
+			"that refusal placed nothing")
+		# 6. taken back through the panel, so the cases below start where they did:
+		# one tower, in hand, nothing on the board.
+		check(_panel.take_back_selected(), "the panel takes the dropped tower back")
+		await _settle()
+		check(_bar.slot_state("towers", 0) == "in_hand",
+			"the slot holds the tower in hand again: '%s'" % _bar.slot_state("towers", 0))
+		check(not _arena_has_tower(released_id),
+			"the board no longer holds the tower after the take-back: %d" % released_id)
+		check_eq_int(int(_arena.gold()), gold_before_drop, "the take-back took no gold either")
+		_state_evidence("taken back after the drop")
 
 	_case("a press and release inside the bar is a click, not a drop")
 	await _close_window("close the window the drag press opened")
@@ -968,6 +1092,40 @@ func _free_slot() -> Dictionary:
 		if bool(slot["free"]):
 			return slot
 	return {}
+
+
+## The free build tile nearest `world`, read from the arena's own slot list and each
+## tile's own `snap_radius_px` - the expectation is built beside the panel, from the
+## level's data, and never borrowed from the panel under test. `{}` when no free tile
+## is within reach of the point.
+func _nearest_free_slot(world: Vector2) -> Dictionary:
+	var best: Dictionary = {}
+	var best_distance := INF
+	for slot in _arena.build_slots():
+		if not bool(slot["free"]):
+			continue
+		var distance: float = (slot["position"] as Vector2).distance_to(world)
+		if distance > float(slot["snap_radius_px"]) or distance >= best_distance:
+			continue
+		best = slot
+		best_distance = distance
+	return best
+
+
+## The build tile the arena reports for `instance_id`, from its own slot list; `{}`
+## while that tower is in hand.
+func _slot_holding(instance_id: int) -> Dictionary:
+	for slot in _arena.build_slots():
+		if int(slot.get("instance_id", 0)) == instance_id:
+			return slot
+	return {}
+
+
+## A viewport point as the arena's world point, through the arena's own transform:
+## the demo's inverse of `_canvas_point()`, so the expectation and the click speak the
+## same coordinates.
+func _world_point(point: Vector2) -> Vector2:
+	return (_arena as CanvasItem).get_global_transform_with_canvas().affine_inverse() * point
 
 
 ## A world point on the board as a viewport point, read from the arena's own

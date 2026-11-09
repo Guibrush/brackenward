@@ -47,6 +47,15 @@ extends Control
 ##   the player reads when the answer is no. The row stays visible and takeable
 ##   during a wave on purpose: a locked action that cannot be asked why is
 ##   indistinguishable from a broken one (`map_input.gd` makes the same choice).
+## * **A drop is a click that travelled (T-0079).** The bar raises
+##   `tower_dropped(instance_id, screen_point)` from a real release; `drop_tower()`
+##   is this panel's receiver for it, and it is a **door, not a second rule**: it
+##   refuses what a release over the bar is (not a board click) and what a tower
+##   that is already standing is, then converts the point with this file's own
+##   `_pointer_world()` and calls the same `place_at()` a click calls. Placement
+##   cost, the wave lock, the refusal sentence and `tower_placed` stay where they
+##   were. It does not open the tower window (T-0074): letting go of a tower is not
+##   asking to inspect one.
 ## * **Input comes through one door,** `handle_input()`, which asks `MapInput` for
 ##   the intent. Nothing here reads a key, an action or a button directly, and a
 ##   left click is a `CONFIRM` carrying its pointer: a point over a row picks the
@@ -311,6 +320,16 @@ const KIND_TAKE_BACK := "take_back"
 @export var nothing_armed_text: String = "nothing is armed: pick a tower in hand first"
 ## A click on bare ground with nothing armed and no tower under it.
 @export var no_tower_there_text: String = "no tower there: pick a tower in hand to arm placement"
+## The refusal for a tower let go over an overlay - the inventory bar - rather than
+## over the board (T-0079). The arena is never asked: a release the bar owns is not
+## a board click, and "no free build tile" would be the wrong sentence for it.
+@export var drop_off_board_text: String = "let go over the board, not over the bar"
+## The refusal for a drop of an instance the inventory does not hold (T-0079). `%d`
+## is the id the bar named.
+@export var drop_unknown_format: String = "no tower %d in the inventory to drop"
+## The refusal for a drop of a tower that is already standing on a tile (T-0079):
+## one tower, one tile, and the drop is not a way to move it.
+@export var drop_already_placed_text: String = "that tower is already on the board"
 ## Prepended to the focused row so a keyboard or pad player can see where they are.
 @export var focus_marker: String = "> "
 ## Between fields of a row's text: "Arrow - T2 - placed - TowerSlot".
@@ -779,6 +798,50 @@ func select_instance(instance_id: int) -> bool:
 		refresh()
 		return had_selection
 	return _select(instance_id, false)
+
+
+## The receiver of the inventory bar's `tower_dropped` (T-0079): the tower
+## `instance_id` carried by a drag, let go at `screen_point` - the **viewport** point
+## the bar's signal carries - stands on the build tile nearest that point.
+##
+## This is a door, not a second rule. The point is converted with this panel's own
+## `_pointer_world()`, never with a transform of its own, so a drop and a click can
+## never disagree about where the player let go; and the placement itself is
+## `place_at()`, which is where the tile, the price, the wave lock, the arena's
+## refusal sentence and `tower_placed` already live. A drop therefore costs what a
+## click costs (nothing) and is locked when a click is locked.
+##
+## Refused, with the panel's own sentence and without asking the arena, when there
+## is no arena; when the point belongs to an overlay - a release over the bar was
+## not a release over the board, and the arena would answer it as bare ground; when
+## the instance is unknown; and when it is already standing on a tile.
+##
+## No window is opened (T-0074): a drop finishes a gesture on the board, and the
+## tower window over the tile just filled is not what the player asked for.
+## Returns whether a tower was placed.
+func drop_tower(instance_id: int, screen_point: Vector2) -> bool:
+	if not _bound():
+		_refuse_action("drop", no_arena_text)
+		return false
+	# Before the instance lookup on purpose: what makes this refusal right is the
+	# point, not the tower, and the player needs to hear "not over the bar".
+	if is_point_claimed(screen_point):
+		_refuse_action("drop", drop_off_board_text)
+		return false
+	var instance = _instance(instance_id)
+	if instance == null:
+		_refuse_action("drop", drop_unknown_format % instance_id)
+		return false
+	if bool(instance.placed):
+		_refuse_action("drop", drop_already_placed_text)
+		return false
+	# The drag's press already selected this tower (`tower_selected` from the bar),
+	# so this is the fallback for a caller that dropped without selecting - a second
+	# selection path would be a second owner of the selection. It does not announce:
+	# the drop raises `tower_placed` and `tower_selected` itself.
+	if _armed_id != instance_id:
+		_select(instance_id, false)
+	return place_at(_pointer_world(screen_point))
 
 
 ## Places the armed tower on the build tile nearest `world_position`. Placement is
