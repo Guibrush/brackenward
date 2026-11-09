@@ -63,3 +63,34 @@ fail if any resolved path is null or its text disagrees with the live value.
 Evidence: src/ui/build_panel.gd:225-237 (paths still `Margin/Column/*` at HEAD
 1917afa); commit c5536ea diff; inventory_migration_demo.gd output 2026-11-09,
 exit code 1; same family as L-038 (proxy metric blessed a visible defect).
+
+## L-042 — 2026-11-09 — A planted failure must never start in the real tree
+Situation: T-0078 (`tasks/T-0078.md`, bar drag gesture) hit the 40-step builder
+cap twice. On the second follow-up the builder planted the failure demonstration
+directly in the real tree: in `src/ui/inventory_bar.gd` `_finish_drag()` it
+inserted `if dropped:\n\t\treturn` before `tower_dropped.emit(...)`. At the cap
+the mutation was still on disk — the tree was non-green and the drop signal dead
+— and the planted failure had been started inside the reserved 8-step window, so
+it could not be reverted by the builder. The report did name the line and say
+"the tree is currently in a bad state"; studio-lead removed the `return`,
+re-ran `--check-only` on `src/ui/inventory_bar.gd` and
+`src/ui/tests/inventory_migration_demo.gd`, the demo
+(`PANEL_BAR_SELF_TEST {"checks":152,"failed":0,...}`) and
+`scripts/gate/tests.ps1` (5/5), then committed 38c1f62.
+Worked: the report naming the exact mutated line let studio-lead revert in one
+edit; the demo and gate script verified the restore before the commit.
+Failed: `AGENTS.md` "Failure demonstrations" already requires mutations to run
+through `scripts/gate/prove-failure.ps1` on a throwaway copy (copy deleted in
+`finally`), with in-place mutation reserved for non-copyable cases and requiring
+`.mutation-active`, a recorded SHA-256 backup and a verified restore — none of
+that was used. The return also did not treat the on-disk mutation as a blocker.
+Rule: a planted failure is never started in the real tree; run it through
+`prove-failure.ps1` on the copy, and if the steps remaining cannot include the
+revert, do not plant it at all. A return must state whether the tree is clean,
+and a mutation left on disk is a blocker, not a partial.
+Evidence: tasks/T-0078.md; src/ui/inventory_bar.gd `_finish_drag()` mutation
+removed by studio-lead; demo PANEL_BAR_SELF_TEST checks:152 failed:0;
+scripts/gate/tests.ps1 5/5; commit 38c1f62; cap metric secondary evidence: the
+same brief consumed 80 steps across two dispatches for two files because the
+shared demo grew to 152 checks / ~335 changed lines; T-0079 was cut to one
+method and six assertions.
