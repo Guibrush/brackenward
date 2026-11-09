@@ -222,19 +222,26 @@ const KIND_TAKE_BACK := "take_back"
 @export_group("Layout — node paths")
 ## Exported rather than hardcoded, so the scene can be rearranged without touching
 ## behaviour.
-@export var title_path: NodePath = ^"Margin/Column/Title"
-@export var state_path: NodePath = ^"Margin/Column/State"
+##
+## **Every path here names the tree the scene actually has** (T-0077). T-0076 moved
+## the column under `Block/Margin` and updated `margin_path` alone; the seven copy
+## paths kept saying `Margin/Column/*`, `_node()` returned null for each, and the
+## block drew the scene's static "HQ 0/0" while `state()` read the live number
+## (L-041). A restructure therefore updates this list, and a demo asserts the
+## player-visible Label rather than the dictionary this file can print.
+@export var title_path: NodePath = ^"Block/Margin/Column/Title"
+@export var state_path: NodePath = ^"Block/Margin/Column/State"
 ## The wave readout line (T-0059). Its own label, so the always-visible state
 ## line keeps its shape and the readout can be moved without touching it.
-@export var wave_path: NodePath = ^"Margin/Column/Wave"
+@export var wave_path: NodePath = ^"Block/Margin/Column/Wave"
 ## The one-line prompt that answers "did my click register?" (T-0064): what is
 ## armed or selected, and what to do next.
-@export var status_path: NodePath = ^"Margin/Column/Status"
+@export var status_path: NodePath = ^"Block/Margin/Column/Status"
 ## The list the action rows are built into - Start Wave, and nothing else since
 ## T-0076. It never held towers (T-0068); the bar does.
-@export var action_list_path: NodePath = ^"Margin/Column/Actions"
-@export var reason_path: NodePath = ^"Margin/Column/Reason"
-@export var hint_path: NodePath = ^"Margin/Column/Hint"
+@export var action_list_path: NodePath = ^"Block/Margin/Column/Actions"
+@export var reason_path: NodePath = ^"Block/Margin/Column/Reason"
+@export var hint_path: NodePath = ^"Block/Margin/Column/Hint"
 
 @export_group("Binding")
 ## The arena this panel belongs to, resolved once in `_ready`. Empty means the

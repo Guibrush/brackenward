@@ -114,12 +114,36 @@ func _run() -> void:
 		check(ALLOWED_KINDS.has(String(kind)), "the panel's rows are only actions: '%s' in %s" % [String(kind), kinds])
 	check(kinds.has("start_wave"), "the panel still offers Start Wave: %s" % [kinds])
 
+	# The label the player reads, resolved through the path this file ships, against
+	# the number the panel reports (T-0077, applying L-041). Reading `state()` alone
+	# is what let the block render `HQ 0/0` for a release: the dictionary was live
+	# and the Label under it was never written.
+	var live_state: Dictionary = _panel.state()
+	var live_wave: Dictionary = _panel.wave()
 	var state_on_screen := _label_text(_panel.state_path)
+	check(state_on_screen == String(live_state["label"]),
+		"the panel's state label shows the live HQ value: '%s' != '%s'"
+		% [state_on_screen, String(live_state["label"])])
 	check(not state_on_screen.to_lower().contains("gold"),
 		"the panel's state line carries no gold: '%s'" % state_on_screen)
-	check(state_on_screen.to_lower().contains("hp"),
-		"the panel's state line still carries HP: '%s'" % state_on_screen)
-	check(_label_text(_panel.wave_path) != "", "the panel still draws the wave readout")
+	# "HQ", not the pre-T-0076 "HP": this assertion was stale and is corrected to
+	# what ships rather than the other way round.
+	check(state_on_screen.to_lower().contains("hq"),
+		"the panel's state line still carries HQ: '%s'" % state_on_screen)
+
+	var wave_on_screen := _label_text(_panel.wave_path)
+	check(wave_on_screen == String(live_wave["label"]),
+		"the panel's wave label shows the live readout: '%s' != '%s'"
+		% [wave_on_screen, String(live_wave["label"])])
+	check(wave_on_screen != "", "the panel still draws the wave readout")
+
+	check(_label_text(_panel.status_path) != "<missing>",
+		"the panel's status label exists at its shipped path: %s" % [String(_panel.status_path)])
+
+	# All seven exported copy paths resolve to the node the scene actually has. The
+	# restructure that broke the block updated one of eight paths and nothing noticed
+	# (L-041), so this is the assertion that fails when it happens again.
+	_check_copy_paths()
 
 	var bar_state: Dictionary = _bar.state()
 	check(int(bar_state["tower_count"]) >= 1, "the bar shows the towers: %d" % int(bar_state["tower_count"]))
@@ -136,6 +160,42 @@ func _run() -> void:
 		return
 	var picked: Dictionary = (_bar.state()["towers"] as Array)[0]
 	var picked_id := int(picked["id"])
+
+	# --- 1b. a number that changes reaches the label ------------------------
+	# The block must follow the run, not a copy of it (T-0077). The demo damages the
+	# HQ through the run - the same door a leak uses - and reads the Label back with
+	# no call to `refresh()` anywhere in between: the panel's own signal handler is
+	# the only thing that can have written it.
+	_case("a live number the demo changes reaches the label with no refresh call")
+	var run_state = _flow.run_state()
+	var hq_before := int(run_state.hq_health())
+	var hq_max := int(run_state.hq_max_health())
+	if check(hq_before > 1, "the run has HQ left to damage: %d/%d" % [hq_before, hq_max]):
+		var applied := int(run_state.damage_hq(1, "inventory_migration_demo"))
+		await process_frame
+		check_eq_int(applied, 1, "the run took one point of damage")
+		check_eq_int(int(run_state.hq_health()), hq_before - 1, "the run's HQ is one lower")
+		var damaged := _label_text(_panel.state_path)
+		_state_evidence("HQ damaged")
+		check(damaged == String(_panel.state()["label"]),
+			"the state label followed the damage without a refresh call: '%s' != '%s'"
+			% [damaged, String(_panel.state()["label"])])
+		check(damaged.contains("%d/%d" % [hq_before - 1, hq_max]),
+			"the visible line carries the wounded number: '%s'" % damaged)
+
+		# Healed back, because the frame below is the level as it is played (HQ 10/10
+		# in the acceptance frame) and because the label must follow a rise as well as
+		# a fall.
+		var restored_points := int(run_state.heal_hq(1))
+		await process_frame
+		check_eq_int(restored_points, 1, "the run restored the point")
+		var restored := _label_text(_panel.state_path)
+		_state_evidence("HQ healed")
+		check(restored == String(_panel.state()["label"]),
+			"the state label followed the heal without a refresh call: '%s' != '%s'"
+			% [restored, String(_panel.state()["label"])])
+		check(restored.contains("%d/%d" % [hq_before, hq_max]),
+			"the visible line carries the restored number: '%s'" % restored)
 
 	# --- 2. bar -> panel ----------------------------------------------------
 	_case("a real click on a tower in the bar selects it in the panel")
@@ -252,11 +312,16 @@ func _run() -> void:
 	# --- the frame the human judges ----------------------------------------
 	if _is_movie():
 		_case("the frame is held for the movie writer")
+		# The two lines read back off the Labels through the shipped paths, so the
+		# frame's evidence and the frame itself are the same artifact (T-0077, L-041).
 		print("PANEL_BAR_FRAME " + JSON.stringify({
 			"viewport": [root.size.x, root.size.y],
 			"bar": _rect_json(bar_rect),
 			"hint": _rect_json(hint_rect),
 			"screen": _boot.screen_name(),
+			"state": _label_text(_panel.state_path),
+			"wave": _label_text(_panel.wave_path),
+			"status": _label_text(_panel.status_path),
 			"hold_frames": MOVIE_HOLD_FRAMES,
 		}))
 		await _hold(MOVIE_HOLD_FRAMES)
@@ -489,11 +554,13 @@ func _hold(frames: int) -> void:
 		await process_frame
 
 
+## True when the run is writing a movie. `Engine.get_write_movie_path()` is the only
+## reliable source: Godot strips its own arguments from `OS.get_cmdline_args()`
+## (4.7.2 hands the script back only `--script res://...`), so the argument scan
+## this used never matched and the hold below never ran (T-0077).
 func _is_movie() -> bool:
-	for arg in OS.get_cmdline_args():
-		if String(arg).begins_with("--write-movie"):
-			return true
-	return false
+	var path := String(Engine.get_write_movie_path())
+	return path != "" and path.to_lower() != "disabled"
 
 
 # --- reading what the player sees ------------------------------------------
@@ -520,6 +587,32 @@ func _label_text(path: NodePath) -> String:
 	if node == null or not node is Label:
 		return "<missing>"
 	return String((node as Label).text)
+
+
+## Every exported copy path, read off the panel's own exports, resolves to the node
+## class it is drawn with. A scene restructure that updates seven of eight paths
+## used to fail on the human's screen and nowhere else; here it fails the demo
+## (L-041). Read from the exports on purpose: a demo carrying its own copy of the
+## paths would agree with a stale panel.
+func _check_copy_paths() -> void:
+	var labels := {
+		"title_path": _panel.title_path,
+		"state_path": _panel.state_path,
+		"wave_path": _panel.wave_path,
+		"status_path": _panel.status_path,
+		"reason_path": _panel.reason_path,
+		"hint_path": _panel.hint_path,
+	}
+	for key in labels:
+		var path: NodePath = labels[key]
+		var node = _panel.get_node_or_null(path)
+		check(node is Label, "the exported %s resolves to a Label: '%s' -> %s"
+			% [String(key), String(path), node])
+	var list_path: NodePath = _panel.action_list_path
+	var list = _panel.get_node_or_null(list_path)
+	check(list is VBoxContainer,
+		"the exported action_list_path resolves to the row list: '%s' -> %s"
+		% [String(list_path), list])
 
 
 func _geometry() -> Dictionary:
