@@ -29,10 +29,6 @@ const ARENA_SCENE := "res://scenes/main.tscn"
 const RunStateScript := preload("res://src/systems/run_state.gd")
 const InventoryScript := preload("res://src/systems/inventory.gd")
 
-## Long enough that the arena's own spawn timer never fires during the demo. The
-## demo owns the field; a spawner tick cannot change it underneath a check.
-const SPAWN_INTERVAL_SECONDS := 3600.0
-
 ## Health and gold the run starts with; both are `RunState` placeholders, passed
 ## explicitly so the demo states the numbers it asserts instead of inheriting them.
 const RUN_HQ_MAX := 10
@@ -393,7 +389,6 @@ func _open_level() -> Node:
 	var arena = packed.instantiate()
 	if not check(arena != null, "the arena scene instantiates"):
 		return null
-	arena.set("spawn_interval_seconds", SPAWN_INTERVAL_SECONDS)
 	if not check(arena.bind_run(_run, _inventory), "the arena accepts the run and inventory"):
 		return null
 	# T-0048: a cleared level is handed back through `level_cleared`, and the run
