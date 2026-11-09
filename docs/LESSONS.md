@@ -9,54 +9,9 @@ Entries L-001 … L-008 (2026-11-02 → 2026-11-03) live in
 `docs/lessons/archive-2026-11-04.md`; entries L-015 … L-031 (2026-11-05) live
 in `docs/lessons/archive-2026-11-05.md`; entries L-032 - L-035 (2026-11-05)
 live in `docs/lessons/archive-2026-11-06.md`; entries L-036 - L-037
-(2026-11-06) live in `docs/lessons/archive-2026-11-07.md`. Their rules remain
+(2026-11-06) live in `docs/lessons/archive-2026-11-07.md`; entries L-038 - L-039
+(2026-11-06) live in `docs/lessons/archive-2026-11-09.md`. Their rules remain
 in force.
-
-## L-038 — 2026-11-06 — A passing proxy metric is not appearance evidence
-Situation: after the flat-crown rejection, a metric was invented for the fix:
-the first opaque rows must show separated merlon runs, not one flat bar. Three
-hand-authored merlons passed it exactly (runs `[4,4,4]` over four rows, 52 px
-changed, none below the crown), the asset gate went green, and the sprite
-shipped. The human rejected it again: the top is a flat quad with no far wall,
-so the merlons read as three free-standing blocks — the metric counted
-separated runs, not "looks like a battlement". The sprite was reverted.
-Worked: the human's second rejection, which caught what the metric could not.
-Failed: treating a derived statistic as the definition of the fix, and gating
-appearance on it without showing the result to the human first.
-Rule: a metric invented for a visual defect must be validated against a case
-the human has already rejected (here: the flat crown should have been shown
-failing the merlon check) before it can gate anything, and the human's eye on
-the actual image remains the acceptance test for appearance — show the
-candidate to the human for approval before shipping; a green gate is never
-that approval.
-Evidence: `tasks/T-0032.md` DoD item 1 (the profile that caught the first
-regen but blessed the second); L-037 for the converse; reverted sprite in
-`art/manifest.json` `tower-arrow-idle-south`.
-
-## L-039 — 2026-11-06 - A mark on a 3/4-projected face must follow that face's projection
-Situation: T-0034 tried to fix the roofed tower's flat body by post-passing
-masonry detail onto the existing sprite: horizontal course joints and short
-vertical seams in locked palette tones, silhouette untouched, 73 px changed.
-Every measured check passed (0 boundary pixels changed, 8 tones, 0
-off-palette, mask and fill identical), and the human still rejected both
-passes: the straight horizontal course lines read as ruled lines laid over
-the sprite, not as masonry courses, because the tower's faces are in 3/4
-perspective - and on the shaded right face the same straight lines were
-applied to a second plane with a different direction.
-Worked: nothing; the rejection was purely visual and mechanical checks could
-not have caught it.
-Failed: treating an appearance-only edit as verified by per-pixel invariants
-(palette, boundary, layout); those checks measure what did not change, not
-whether the change is drawn correctly on a projected surface.
-Rule: on a 3/4 or isometric sprite, any mark intended to follow a surface
-must follow that surface's projection - courses converge or step per face,
-and a mark carried around a corner changes direction with the plane; a
-straight horizontal rule is only correct on a face drawn head-on. Per-pixel
-checks cannot catch this class of defect, so a face-detail edit needs the
-human's eye on the image before it ships (per L-038; second case today).
-Evidence: tasks/T-0034.md (status: rejected); human rejection of both
-passes: "It added straight lines to the faces of the tower that are in
-perspective. It is wrong."; art/manifest.json tower-arrow-idle-south entry.
 
 ## L-040 — 2026-11-07 — A performance gate must record the machine's display conditions
 Situation: G2.3 passed for weeks at 651 fps / 2.66 ms p99, then went red
@@ -81,3 +36,30 @@ Evidence: scripts/gate/perf.ps1:89,147,180 (no refresh rate anywhere); git log
 --oneline -- scripts/perf scripts/gate/perf.ps1 = 08b9bed, nothing later;
 Win32_VideoController 2026-11-07: RTX 2070 SUPER, current/max refresh 59; Parsec
 Virtual Display Adapter present.
+
+## L-041 — 2026-11-09 — A log line reading the model is not evidence about the visible node
+Situation: T-0076 restructured `scenes/build_panel.tscn` so the column moved
+from `Margin/Column/*` to `Block/Margin/Column/*` and updated `margin_path` but
+not the seven exported copy paths in `src/ui/build_panel.gd:225-237`
+(Title, State, Wave, Actions, Status, Reason, Hint). `_node()` returned null and
+the block rendered only the scene's static text (`HQ 0/0`, `Wave 0/0`). Commit
+c5536ea shipped it anyway; HEAD is 1917afa. Review passed because the demo/log
+line `BUILD_PANEL_SHOWN` prints `state()` and `wave()` — live reads from the run
+and arena — so the printed evidence was correct (`HQ 10/10`, `Wave 1/6`) while
+the player-visible Label stayed wrong.
+Worked: `src/ui/tests/inventory_migration_demo.gd` reads the label through the
+same broken `state_path`, so running it today reports
+`PANEL_BAR_SELF_TEST ... "failed":1, "failures":["the panel's state line still
+carries HP: '<missing>'"]` with exit code 1 — the existing test caught what the
+shipped log line hid.
+Failed: treating a passing log line that reads the model/dictionary as evidence
+about the artifact the player sees; the scene restructure updated one exported
+NodePath and left seven stale with no assertion that any resolved node is
+non-null.
+Rule: a UI demo must assert the node the player actually sees — the Label.text
+resolved through the shipped path — not the model the screen reports; a scene
+restructure must update every exported NodePath, and at least one assertion must
+fail if any resolved path is null or its text disagrees with the live value.
+Evidence: src/ui/build_panel.gd:225-237 (paths still `Margin/Column/*` at HEAD
+1917afa); commit c5536ea diff; inventory_migration_demo.gd output 2026-11-09,
+exit code 1; same family as L-038 (proxy metric blessed a visible defect).
