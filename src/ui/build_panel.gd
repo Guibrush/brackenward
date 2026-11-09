@@ -9,19 +9,27 @@ extends Control
 ##   copies nothing back. Every rule it applies - the build-phase lock, the price
 ##   of an upgrade, which tile a tower stands on - belongs to the arena, which is
 ##   also where the refusal sentence is written.
-## * **One list, one kind of row.** A row is either an owned tower, or one of the
-##   two actions a placed tower offers (`upgrade`, `take_back`). The list is
-##   rebuilt from the inventory on every draw, so the placed marker, the tier and
-##   the equipped upgrades are never a second copy of the truth.
+## * **This panel does not list the inventory (T-0068).** The bar owns the
+##   inventory view; here a row is Start Wave or one of the two actions a placed
+##   tower offers (`upgrade`, `take_back`), and nothing else. A second list of one
+##   inventory is a second place to go stale - the rule this file applies to every
+##   number it draws. The rows are rebuilt from the arena on every draw, so a tier
+##   and an equipped upgrade are never a copy of the truth.
 ## * **Arming is selecting an in-hand tower.** Selecting a tower that is already
 ##   on a tile selects it for the actions instead; there is no second mode.
+## * **One selection, two views.** A pick in the bar arrives here through
+##   `select_instance()` - the same call a row makes, without the re-broadcast - and
+##   a selection made here is raised as `tower_selected`, which the bar applies
+##   through `mark_selected()`. Neither path raises the other's signal, so the two
+##   views cannot echo each other into a loop.
 ## * **A refusal shows the arena's own words.** The panel asks the arena, and when
 ##   the answer is no it displays `arena.last_refusal()` verbatim rather than
 ##   inventing a second sentence for the same rule. The one exception is a refusal
 ##   the arena never hears - placing with nothing armed - because that is this
 ##   panel's own refusal, and it says so.
-## * **Always visible:** gold, HQ current/max, and the phase, in one line that is
-##   re-read from the run on every signal rather than cached.
+## * **Always visible:** HQ current/max and the phase, in one line that is re-read
+##   from the run on every signal rather than cached. Gold left this line in
+##   T-0068 with the inventory: it is the bar's number now.
 ## * **The wave readout is the arena's numbers, formatted here** (T-0059): wave of
 ##   the level's total, the phase, and how many enemies the running wave still
 ##   owes the lane. `arena.wave_status()` is the one source; the panel adds no
@@ -78,6 +86,20 @@ extends Control
 ##   this panel without a word. The panel reads at `_input` instead: it sees every
 ##   event first and decides, which is what one owner means in practice.
 ##
+## THE BAR OWNS ITS OWN POINTS (T-0068)
+## ------------------------------------
+## The inventory bar is drawn over the lower part of the level, so a click there
+## must not also be a board click. The bar marks its own clicks handled, and today
+## the engine reaches it first (it is the later sibling in `scenes/boot.tscn`), but
+## "which `_input` runs first" is a property of the scene tree, not of this
+## contract. So the panel carries its own answer: `add_pointer_guard()` takes a
+## predicate the bar supplies (`claim_point()`), and a pointer a guard owns is not
+## answered and not marked handled - the overlay that owns it still receives it.
+## The guard is consulted twice on purpose: in `_input()` before the event is
+## claimed, and again in `_confirm_pointer()` at the action door, so a caller that
+## drives `handle_input()` directly (a demo, or a future screen) cannot reach the
+## board through a bar-owned point either.
+##
 ## BINDING ORDER
 ## -------------
 ## A panel instanced into a level scene has its `_ready` run **before** the arena
@@ -122,6 +144,11 @@ signal tower_placed(instance_id: int, tile: String, tier: int, gold: int)
 signal tower_upgraded(instance_id: int, tier: int, cost: int, gold: int)
 ## A tower was taken back: the tile is free and the instance is in the inventory.
 signal tower_taken_back(instance_id: int, tier: int, gold: int)
+## The panel's selection changed (T-0068): a tower was selected or armed here, or
+## the selection was cleared (`-1`). The bar applies it through `mark_selected()`,
+## so one selection is shown in two places. A selection that arrived *from* the bar
+## does not raise this, which is what keeps the two views from echoing.
+signal tower_selected(instance_id: int)
 ## The player started the level's next wave (T-0059): `wave` is the one now
 ## running, `waves` the level's total. Emitted after the arena printed its own
 ## `WAVE_START`/`ARENA_PHASE`, so a listener cannot report a wave the log has not.
@@ -130,7 +157,6 @@ signal wave_started(wave: int, waves: int)
 signal action_refused(action: String, reason: String)
 
 const KIND_START_WAVE := "start_wave"
-const KIND_TOWER := "tower"
 const KIND_UPGRADE := "upgrade"
 const KIND_TAKE_BACK := "take_back"
 
@@ -145,7 +171,9 @@ const KIND_TAKE_BACK := "take_back"
 ## The one-line prompt that answers "did my click register?" (T-0064): what is
 ## armed or selected, and what to do next.
 @export var status_path: NodePath = ^"Margin/Column/Status"
-@export var tower_list_path: NodePath = ^"Margin/Column/Towers"
+## The list the action rows are built into (Start Wave, and a placed tower's own
+## actions). It no longer holds towers (T-0068); the bar does.
+@export var action_list_path: NodePath = ^"Margin/Column/Actions"
 @export var reason_path: NodePath = ^"Margin/Column/Reason"
 @export var hint_path: NodePath = ^"Margin/Column/Hint"
 
@@ -154,10 +182,26 @@ const KIND_TAKE_BACK := "take_back"
 ## panel waits for `bind_arena()`.
 @export var arena_path: NodePath = ^""
 
+@export_group("Layout — clearing the inventory bar")
+## The container whose bottom margin keeps this panel's last line clear of the
+## inventory bar drawn over the level (T-0068). Exported for the same reason every
+## other path here is: the scene can be rearranged without touching behaviour.
+@export var margin_path: NodePath = ^"Margin"
+## Space kept free at the bottom of the panel's column, in pixels. The bar's own
+## height owns this number, so the boot measures the bar and calls
+## `reserve_bottom()`; the value here is the fallback for a panel shown without a
+## bar (the `main` scene on its own). Suggested range: the bar's height plus 4-24.
+@export var content_bottom_reserve: int = 148
+## The gap between the panel's last line and the reserved strip, in pixels. Range
+## 4-24: closer and the lines read as one block, further and the panel looks broken.
+@export var bar_gap: int = 12
+
 @export_group("Copy")
 @export var title_text: String = "Build"
-## The always-visible line's shape: four values - HQ current, HQ max, gold, phase.
-@export var state_format: String = "HP %d/%d    Gold %d    %s phase"
+## The always-visible line's shape: HQ current, HQ max, phase. Gold is not here
+## (T-0068): the bar shows it, and one number with two owners is what this file
+## exists to avoid.
+@export var state_format: String = "HP %d/%d    %s phase"
 ## The wave readout's first part: the wave in play (or the one about to start)
 ## out of the level's total.
 @export var wave_progress_format: String = "Wave %d/%d"
@@ -180,18 +224,10 @@ const KIND_TAKE_BACK := "take_back"
 @export var start_wave_text: String = "Start Wave"
 @export var start_wave_locked_text: String = "Start Wave - locked during a wave"
 @export var start_wave_none_text: String = "Start Wave - no waves left"
-## How a tower's tier is written next to its type.
-@export var tier_format: String = "T%d"
-## How the row of a tower on the board is marked.
-@export var placed_marker: String = "placed"
-## How the row of a tower still in the inventory is marked.
-@export var unplaced_marker: String = "in hand"
-## How a row that is the selected tower's arming state is marked.
-@export var armed_marker: String = "armed"
 ## Prepended to an armed row's text (T-0064). A marker that is not colour, so the
 ## state survives a colourblind eye and a greyscale screenshot.
 @export var armed_prefix: String = "\u25B6 "
-## Prepended to a selected tower's row, and to the action rows that belong to it.
+## Prepended to a selected tower's action rows.
 @export var selected_prefix: String = "\u25C6 "
 ## The status line while a tower is armed for placement: the tower, then the one
 ## action the player has left to take.
@@ -208,10 +244,8 @@ const KIND_TAKE_BACK := "take_back"
 @export var take_back_text: String = "Take back to the inventory"
 @export var hint_text: String = (
 	"Start Wave begins the next wave, then: D-pad or Up/Down picks, A or Enter confirms, "
-	+ "click a tower row to arm it, click a tile to place, click a placed tower for its actions"
+	+ "click a tower in the bar to arm it, click a tile to place, click a placed tower for its actions"
 )
-## Shown in the list when the inventory holds nothing.
-@export var no_towers_text: String = "you own no towers"
 ## Shown instead of any number when no arena is bound.
 @export var no_arena_text: String = "no level to build in"
 ## The panel's own refusal, for a placement it never asked the arena about.
@@ -254,6 +288,10 @@ const KIND_TAKE_BACK := "take_back"
 var _arena: Node = null
 var _router = MapInputScript.new()
 
+## Predicates that say "this viewport point is mine, not the board's" (T-0068). The
+## inventory bar registers one, so a click on the bar is not answered here as well.
+var _pointer_guards: Array[Callable] = []
+
 ## One entry per drawn row:
 ##     index, kind, id, type_id, tier, upgrades, placed, armed, selected, tile,
 ##     cost, label, node (Button)
@@ -281,6 +319,7 @@ func _ready() -> void:
 		if target != null:
 			bind_arena(target)
 	_apply_copy()
+	_apply_metrics()
 	# The arena is a parent: its `_ready` has not run yet, so there is no run and
 	# no inventory to read. Draw after it has seeded itself.
 	call_deferred("_deferred_draw")
@@ -314,6 +353,53 @@ func bind_arena(arena: Node) -> bool:
 
 func arena() -> Node:
 	return _arena
+
+
+# --- pointer ownership ------------------------------------------------------
+
+## Registers a predicate that claims viewport points this panel must not answer.
+## The inventory bar hands over `claim_point` (T-0068), so a click on the bar is the
+## bar's and never the board's, whichever of the two the engine reaches first. More
+## than one guard is allowed; the first to claim a point wins. An invalid callable
+## (a view that is being freed) is refused rather than stored.
+func add_pointer_guard(guard: Callable) -> bool:
+	if not guard.is_valid() or _pointer_guards.has(guard):
+		return false
+	_pointer_guards.append(guard)
+	return true
+
+
+## Removes a guard, so a view that is going away stops being asked.
+func remove_pointer_guard(guard: Callable) -> void:
+	_pointer_guards.erase(guard)
+
+
+## Whether an overlay owns `point`. A guard whose object has been freed is skipped
+## rather than called: a panel must not throw because the bar it was wired to is
+## gone.
+func is_point_claimed(point: Vector2) -> bool:
+	for guard in _pointer_guards:
+		if not guard.is_valid():
+			continue
+		if bool(guard.call(point)):
+			return true
+	return false
+
+
+# --- clearing the bar -------------------------------------------------------
+
+## Keeps the panel's column clear of an overlay `height_px` tall: the bottom margin
+## becomes that height plus `bar_gap` (T-0068). The boot calls this with the bar's
+## own rect, so the bar's height has one owner and no constant here goes stale when
+## the bar grows a row.
+func reserve_bottom(height_px: int) -> void:
+	content_bottom_reserve = maxi(height_px, 0) + maxi(bar_gap, 0)
+	_apply_metrics()
+
+
+## The strip kept free at the bottom, in pixels - what a frame or a demo reads back.
+func content_reserve() -> int:
+	return content_bottom_reserve
 
 
 # --- drawing ----------------------------------------------------------------
@@ -374,12 +460,12 @@ func reason() -> String:
 
 
 ## The always-visible numbers, read live from the arena, the run and the phase:
-##     {gold, hq, hq_max, phase, label}
+##     {hq, hq_max, phase, label}
 ## Nothing is cached: a cached copy is a second owner of a number that already has
-## one.
+## one. Gold used to be here and left with the inventory list (T-0068) - the bar
+## owns it now, and a number this panel does not draw is not a number it reports.
 func state() -> Dictionary:
 	var out := {
-		"gold": 0,
 		"hq": 0,
 		"hq_max": 0,
 		"phase": "",
@@ -387,13 +473,12 @@ func state() -> Dictionary:
 	}
 	if not _bound():
 		return out
-	out["gold"] = _arena.gold()
 	out["phase"] = phase_name()
 	var run = _arena.run_state() if _arena.has_method("run_state") else null
 	if run != null:
 		out["hq"] = run.hq_health()
 		out["hq_max"] = run.hq_max_health()
-	out["label"] = state_format % [int(out["hq"]), int(out["hq_max"]), int(out["gold"]), out["phase"]]
+	out["label"] = state_format % [int(out["hq"]), int(out["hq_max"]), out["phase"]]
 	return out
 
 
@@ -486,8 +571,6 @@ func activate(index: int) -> bool:
 	match String(entry["kind"]):
 		KIND_START_WAVE:
 			return start_wave()
-		KIND_TOWER:
-			return _select(int(entry["id"]))
 		KIND_UPGRADE:
 			return upgrade_selected()
 		KIND_TAKE_BACK:
@@ -534,7 +617,11 @@ func start_wave() -> bool:
 
 ## Arms an in-hand tower, or selects a placed one. Selecting is the same call
 ## either way, because arming *is* selecting a tower that is not on a tile.
-func _select(instance_id: int) -> bool:
+##
+## `announce` is false for a selection another view already knows about
+## (T-0068): the bar raises `tower_selected` and this call applies it, so
+## re-raising it here would send the bar its own pick back.
+func _select(instance_id: int, announce: bool = true) -> bool:
 	var instance = _instance(instance_id)
 	if instance == null:
 		_show_reason("no tower %d in the inventory" % instance_id)
@@ -549,11 +636,28 @@ func _select(instance_id: int) -> bool:
 		"upgrades": instance.upgrade_type_ids(),
 		"placed": bool(instance.placed),
 		"armed": _armed_id,
+		"from_bar": not announce,
 	}))
 	refresh()
 	if _armed_id != -1:
 		tower_armed.emit(_armed_id)
+	if announce:
+		tower_selected.emit(_selected_id)
 	return true
+
+
+## Selects or arms a tower on behalf of another view - the inventory bar (T-0068).
+## The same call a click makes, minus the re-broadcast: the bar already knows, and
+## echoing `tower_selected` back at it is how two views would loop. A negative id
+## clears the selection, which is what the bar sends when its own is dropped.
+func select_instance(instance_id: int) -> bool:
+	if instance_id < 0:
+		var had_selection := _armed_id != -1 or _selected_id != -1
+		_armed_id = -1
+		_selected_id = -1
+		refresh()
+		return had_selection
+	return _select(instance_id, false)
 
 
 ## Places the armed tower on the build tile nearest `world_position`. Placement is
@@ -598,6 +702,8 @@ func place_at(world_position: Vector2) -> bool:
 	}))
 	refresh()
 	tower_placed.emit(instance_id, String(slot.get("name", "")), tower.tier(), _arena.gold())
+	# The new tower is the selection now, and the bar draws one selection (T-0068).
+	tower_selected.emit(_selected_id)
 	return true
 
 
@@ -727,13 +833,22 @@ func handle_input(event: InputEvent) -> Dictionary:
 ## GUI hit-tester, so nothing in the level can take an event from this panel, and an
 ## event this panel acts on is marked handled so nothing acts on it twice.
 ##
+## The one exception is a point an overlay owns (T-0068): the inventory bar claims
+## its own, and this panel then answers nothing **and marks nothing handled**, so
+## the bar still receives the click. Order between the two `_input` calls is a
+## property of the scene tree; this branch is what makes one click one owner
+## whatever that order is.
+##
 ## A demo must not call this, `handle_input()` or `activate()`: the whole point of
 ## the evidence rule is that a click delivered by `get_viewport().push_input()`
 ## reaches the player-visible action. See `tests/input_route_demo.gd`.
 func _input(event: InputEvent) -> void:
-	if int(_router.intent_for(event)["intent"]) == MapInputScript.Intent.NONE:
+	var result: Dictionary = _router.intent_for(event)
+	if int(result["intent"]) == MapInputScript.Intent.NONE:
 		return
 	if not visible:
+		return
+	if result.has("pointer") and is_point_claimed(result["pointer"]):
 		return
 	get_viewport().set_input_as_handled()
 	handle_input(event)
@@ -748,12 +863,25 @@ func _dismiss() -> bool:
 	_selected_id = -1
 	_show_reason("")
 	refresh()
+	if had_selection:
+		# One selection, two views: the bar drops its marker with this panel's
+		# (T-0068). -1 is "nothing is selected".
+		tower_selected.emit(-1)
 	return had_selection
 
 
-## A pointer confirm: a point over a row takes that row, a point over the board
-## places the armed tower, or selects the tower standing there.
+## A pointer confirm: a point an overlay owns is not answered, a point over a row
+## takes that row, a point over the board places the armed tower, or selects the
+## tower standing there.
 func _confirm_pointer(point: Vector2, out: Dictionary) -> bool:
+	# Before the row lookup on purpose: the bar is drawn *over* the panel, so a
+	# point it claims belongs to it even when a row happens to be underneath. And
+	# this is the action door, so a caller that drives `handle_input()` directly
+	# cannot reach the board through a bar-owned point either (T-0068).
+	if is_point_claimed(point):
+		out["target"] = "guard"
+		out["claimed"] = true
+		return false
 	var index := _index_at(point)
 	if index != -1:
 		out["index"] = index
@@ -779,10 +907,7 @@ func _rebuild_rows() -> void:
 		_apply_copy()
 		return
 
-	var list := _node(tower_list_path)
-	var slots := _slot_index()
-	var inventory = _arena.inventory()
-	var towers: Array = inventory.towers() if inventory != null else []
+	var list := _node(action_list_path)
 
 	# Start Wave first: it is the one action a level always offers, and the row a
 	# player reaching for the phase's next step should not have to scroll to.
@@ -800,12 +925,8 @@ func _rebuild_rows() -> void:
 		"label": _start_wave_label(),
 	})
 
-	for instance in towers:
-		var entry := _tower_entry(instance, slots)
-		_add_entry(list, entry)
-
-	# The actions a placed tower offers, appended after the list so the tower rows
-	# never move when a selection changes the length of the list.
+	# The actions a placed tower offers, appended after the list so the Start Wave
+	# row never moves when a selection changes the length of the list.
 	var tower = _selected_tower()
 	if tower != null:
 		var cost: int = tower.upgrade_cost()
@@ -844,52 +965,6 @@ func _rebuild_rows() -> void:
 		_focus = _index_of_key(previous_key)
 		if _focus < 0:
 			_focus = 0
-
-
-func _tower_entry(instance: RefCounted, slots: Dictionary) -> Dictionary:
-	var instance_id := int(instance.id)
-	var placed := bool(instance.placed)
-	var tile := ""
-	if placed and slots.has(instance_id):
-		tile = String(slots[instance_id]["name"])
-	var entry := {
-		"kind": KIND_TOWER,
-		"id": instance_id,
-		"type_id": String(instance.type_id),
-		"tier": int(instance.tier),
-		"upgrades": instance.upgrade_type_ids(),
-		"placed": placed,
-		"armed": instance_id == _armed_id,
-		"selected": instance_id == _selected_id,
-		"tile": tile,
-		"cost": 0,
-	}
-	entry["label"] = _tower_text(entry)
-	return entry
-
-
-## "Pike · T2 · placed · TowerSlot · piercer, keen": type, tier, where it is, and
-## every upgrade it carries. The upgrades are the inventory's own type ids, so a
-## tower with an equipped item reads differently from one without.
-func _tower_text(entry: Dictionary) -> String:
-	var parts: Array[String] = []
-	parts.append(String(entry["type_id"]))
-	parts.append(tier_format % int(entry["tier"]))
-	if bool(entry["placed"]):
-		parts.append(placed_marker)
-		if String(entry["tile"]) != "":
-			parts.append(String(entry["tile"]))
-	else:
-		parts.append(unplaced_marker)
-	var upgrades: Array = entry["upgrades"]
-	if not upgrades.is_empty():
-		var names: Array[String] = []
-		for id in upgrades:
-			names.append(String(id))
-		parts.append(", ".join(names))
-	if bool(entry["armed"]):
-		parts.append(armed_marker)
-	return field_separator.join(parts)
 
 
 ## The Start Wave row's text, by the state of the level: ready, locked by a
@@ -1015,7 +1090,7 @@ func _index_at(point: Vector2) -> int:
 
 
 func _clear_list() -> void:
-	var list := _node(tower_list_path)
+	var list := _node(action_list_path)
 	if list == null:
 		return
 	for child in list.get_children():
@@ -1097,20 +1172,6 @@ func _slot_of(tower) -> Dictionary:
 	return {}
 
 
-## Inventory instance id -> its tile, for the rows of placed towers. Built from the
-## arena's own tile list, so the panel cannot claim a tower stands somewhere the
-## arena does not put it.
-func _slot_index() -> Dictionary:
-	var out: Dictionary = {}
-	if not _bound():
-		return out
-	for slot in _arena.build_slots():
-		var id := int(slot.get("instance_id", 0))
-		if id != 0:
-			out[id] = slot
-	return out
-
-
 ## The nearest build tile whose occupancy matches `want_free`, within that tile's
 ## own `snap_radius_px`, or an empty dictionary. The radius is the tile's, not a
 ## constant here: how close a click has to be is level-design tuning, and it
@@ -1158,6 +1219,16 @@ func _apply_copy() -> void:
 	_sync_empty_label()
 
 
+## Applies the reserve to the layout container (T-0068). A `MarginContainer` theme
+## constant, not viewport arithmetic: this panel does none of its own sizing
+## (T-0062) - it only asks its container for less room.
+func _apply_metrics() -> void:
+	var margin := _node(margin_path) as MarginContainer
+	if margin == null:
+		return
+	margin.add_theme_constant_override("margin_bottom", maxi(content_bottom_reserve, 0))
+
+
 ## The state line only. Called on every signal that moves a number, because gold
 ## and the phase change far more often than the row list does.
 func _sync_state() -> void:
@@ -1175,8 +1246,7 @@ func _sync_wave() -> void:
 		(label as Label).text = String(wave()["label"])
 
 
-## The status line only (T-0064). Drawn in the same colour as the cue it belongs
-## to, so the line and the row cannot disagree about what is armed.
+## The status line only (T-0064). Drawn in the same colour as the cue it belongs## to, so the line and the row cannot disagree about what is armed.
 func _sync_status() -> void:
 	var label := _node(status_path)
 	if label == null:
@@ -1192,7 +1262,7 @@ func _sync_status() -> void:
 
 
 func _sync_empty_label() -> void:
-	var list := _node(tower_list_path)
+	var list := _node(action_list_path)
 	if list == null:
 		return
 	var existing := list.get_node_or_null("Empty")
@@ -1200,7 +1270,9 @@ func _sync_empty_label() -> void:
 		if existing == null:
 			var empty := Label.new()
 			empty.name = "Empty"
-			empty.text = no_towers_text if _bound() else no_arena_text
+			# The only way the list is empty now is that no arena is bound: Start
+			# Wave is a row of every bound level (T-0068).
+			empty.text = no_arena_text
 			list.add_child(empty)
 		return
 	if existing != null:
