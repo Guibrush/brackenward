@@ -21,26 +21,29 @@ extends Control
 ##   a selection made here is raised as `tower_selected`, which the bar applies
 ##   through `mark_selected()`. Neither path raises the other's signal, so the two
 ##   views cannot echo each other into a loop.
-## * **A refusal shows the arena's own words.** The panel asks the arena, and when
-##   the answer is no it displays `arena.last_refusal()` verbatim rather than
-##   inventing a second sentence for the same rule. The one exception is a refusal
-##   the arena never hears - placing with nothing armed - because that is this
-##   panel's own refusal, and it says so.
+## * **A refusal is the arena's own words, kept, not drawn** (T-0081). The panel asks
+##   the arena, and when the answer is no it records `arena.last_refusal()` verbatim
+##   rather than inventing a second sentence for the same rule, prints it in
+##   `BUILD_PANEL_REFUSED` and answers `reason()`. The one exception is a refusal the
+##   arena never hears - placing with nothing armed - because that is this panel's
+##   own refusal, and it says so. Nothing on screen repeats the sentence: the block
+##   is three lines and the log is where the why lives.
 ## * **A placed tower has a window, and placing one does not open it (T-0074).**
 ##   Selecting a tower that is already on a tile raises `tower_inspected`, and the
 ##   boot opens the tower window on it. Placing raises `tower_placed` and only
 ##   selects, so the window never appears over the board the player is still
 ##   building on; a selection arriving from the bar is the bar's own signal.
-## * **Always visible:** the HQ's current and max health, in one line that is
+## * **Always visible:** the HQ's current and max health, the wave readout, and the
+##   Start Wave row - three elements and nothing else since T-0081. The state line is
 ##   re-read from the run on every signal rather than cached. Gold left this line in
 ##   T-0068 with the inventory: it is the bar's number now. The phase left it in
-##   T-0076, because the wave readout below already ends with the phase - one number,
-##   one owner, one place to read it.
-## * **The wave readout is the arena's numbers, formatted here** (T-0059): wave of
-##   the level's total, the phase, and how many enemies the running wave still
-##   owes the lane. `arena.wave_status()` is the one source; the panel adds no
-##   count of its own, so "3 enemies left" and the director's own clear condition
-##   can never disagree.
+##   T-0076; it left the wave readout too in T-0081, because the block answers "how
+##   much is left of the run" and the phase is answered by the board.
+## * **The wave readout is `Wave n/m`, full stop** (T-0081). `arena.wave_status()` is
+##   still the one source and the dictionary still carries `phase`, `running`,
+##   `remaining` and `cleared` - the log line and the demos read them - but the label
+##   the player sees is the progress alone. A wave line that also said the phase and
+##   the enemies left was three numbers in a corner that has room for one.
 ## * **Start Wave is a row, not a second mode** (T-0059): it sits first in the
 ##   list, is taken like every other row, and asks `arena.start_next_wave()`. The
 ##   arena decides - build phase only, waves left only - and its sentence is what
@@ -62,19 +65,23 @@ extends Control
 ##   row, a point over the board places or selects. Mouse, keyboard and pad are
 ##   therefore the same code path with a different device.
 ##
-## THE BLOCK IN THE CORNER (T-0076)
-## --------------------------------
+## THE BLOCK IN THE CORNER (T-0076, cut to three elements in T-0081)
+## ------------------------------------------------------------------
 ## The panel is a compact block in the top-left corner, not a full-height sidebar:
 ## the human found the sidebar disruptive because it sat over the board for the
-## whole level. The block carries the HQ's health, the wave readout and Start Wave,
-## plus the armed/selected status line and the refusal sentence - the answers to a
-## click, which would be orphaned without a home here.
+## whole level. **The block is three elements** (T-0081): the HQ's health
+## (`HQ %d/%d`), the wave readout (`Wave %d/%d`) and one Start Wave row. The title,
+## the armed/selected status line, the refusal sentence and the hint line were all
+## removed: the human read a four-line paragraph above the board and asked for the
+## numbers back. Nothing else may be drawn inside `Block/Margin/Column`.
 ## * **What left, and where it went.** A placed tower's `upgrade` and `take_back`
 ##   rows were removed from this panel: the floating tower window
 ##   (`tower_window.gd`, T-0069/T-0074) offers both, and `tower_inspected` - raised
 ##   here for a click on a placed tower - is wired by the boot to `open_for()`, so
 ##   the board is still a door to them. Every action that used to live here has a
-##   home there, which is why none had to be kept.
+##   home there, which is why none had to be kept. The refusal sentence and the
+##   status line went to the log (`BUILD_PANEL_REFUSED`, `BUILD_PANEL_SHOWN`) and to
+##   `reason()` / `status()`; see T-0081.
 ## * **The bar's reserve is recorded, not applied.** The block never reaches the
 ##   bottom of the screen, so `reserve_bottom()` no longer shrinks anything; the
 ##   boot still measures the bar, and `content_reserve()` still reports it.
@@ -91,12 +98,18 @@ extends Control
 ##   * the row's **band** - a filled `StyleBoxFlat` with a border, which no other
 ##     row has;
 ##   * the row's **text colour** - warm for armed, cool for selected;
-##   * a **leading marker** on the row, and a **status line** (`status_path`) that
-##     says what happens next: "arrow armed - click a build tile to place it".
+##   * a **leading marker** on the row: "▶ arrow".
 ## The colour alone would fail a colourblind eye and a greyscale screenshot, which
-## is why the marker and the status line are not optional extras.
+## is why the marker is not an optional extra. The status line this section used to
+## list went in T-0081 with the rest of the paragraph; the row itself still says
+## what it is.
 ## A row is dressed because `armed` or `selected` is true on the entry, so the cue
 ## is a function of the same truth the actions use - never a second copy of it.
+## **An unavailable row is dimmed, not relabelled** (T-0081): Start Wave says
+## `Start Wave` in every state, and when the wave is running or the level is
+## exhausted the row is drawn in `unavailable_row_colour` with no band and no
+## border. It stays clickable on purpose, so a player who asks still gets the
+## arena's sentence in the log and in `reason()`.
 ##
 ## INPUT OWNERSHIP (T-0063)
 ## ------------------------
@@ -238,19 +251,16 @@ const KIND_TAKE_BACK := "take_back"
 ## block drew the scene's static "HQ 0/0" while `state()` read the live number
 ## (L-041). A restructure therefore updates this list, and a demo asserts the
 ## player-visible Label rather than the dictionary this file can print.
-@export var title_path: NodePath = ^"Block/Margin/Column/Title"
+## Since T-0081 the column is exactly `State`, `Wave`, `Actions`: the title, status,
+## reason and hint paths are gone with the nodes they named, so a stale path cannot
+## outlive a removed node again.
 @export var state_path: NodePath = ^"Block/Margin/Column/State"
 ## The wave readout line (T-0059). Its own label, so the always-visible state
 ## line keeps its shape and the readout can be moved without touching it.
 @export var wave_path: NodePath = ^"Block/Margin/Column/Wave"
-## The one-line prompt that answers "did my click register?" (T-0064): what is
-## armed or selected, and what to do next.
-@export var status_path: NodePath = ^"Block/Margin/Column/Status"
 ## The list the action rows are built into - Start Wave, and nothing else since
 ## T-0076. It never held towers (T-0068); the bar does.
 @export var action_list_path: NodePath = ^"Block/Margin/Column/Actions"
-@export var reason_path: NodePath = ^"Block/Margin/Column/Reason"
-@export var hint_path: NodePath = ^"Block/Margin/Column/Hint"
 
 @export_group("Binding")
 ## The arena this panel belongs to, resolved once in `_ready`. Empty means the
@@ -273,47 +283,24 @@ const KIND_TAKE_BACK := "take_back"
 @export var bar_gap: int = 12
 
 @export_group("Copy")
-@export var title_text: String = "Build"
 ## The always-visible line's shape: HQ current and HQ max. Gold is not here (T-0068)
-## and the phase is not here either (T-0076) - the wave readout ends with the phase,
-## and one number with two owners is what this file exists to avoid.
+## and the phase is not here either (T-0076) - one number, one owner.
 @export var state_format: String = "HQ %d/%d"
-## The wave readout's first part: the wave in play (or the one about to start)
-## out of the level's total.
+## The whole of the wave readout (T-0081): the wave in play (or the one about to
+## start) out of the level's total, and nothing else. `wave()` still reports the
+## phase, the enemies left and the clear count - the log line and the demos read
+## them - but this line is the only thing the block says about the wave.
 @export var wave_progress_format: String = "Wave %d/%d"
-## The wave readout's phase part, so the phase reads the same way in both lines.
-@export var wave_phase_format: String = "%s phase"
-## The readout while a wave runs: enemies still queued or still on the lane.
-@export var wave_remaining_format: String = "%d enemies left"
-## The readout once every wave of the level has cleared.
-@export var wave_finished_text: String = "every wave cleared"
-## The readout for a level whose plan is empty - a wiring or data fault, shown
-## rather than hidden behind "Wave 0/0".
-@export var wave_none_text: String = "the level has no waves"
-## The Start Wave row, in each of the three states it can be in. The locked and
-## exhausted texts are what the player sees *before* they ask, and the arena's
-## own sentence is what they see when they do.
+## The Start Wave row's text, in every state (T-0081). It used to say "locked
+## during a wave" and "no waves left"; the human asked for one label, so an
+## unavailable row is dimmed instead of relabelled and the arena's own refusal
+## sentence carries the why in the log.
 @export var start_wave_text: String = "Start Wave"
-@export var start_wave_locked_text: String = "Start Wave - locked during a wave"
-@export var start_wave_none_text: String = "Start Wave - no waves left"
 ## Prepended to an armed row's text (T-0064). A marker that is not colour, so the
 ## state survives a colourblind eye and a greyscale screenshot.
 @export var armed_prefix: String = "\u25B6 "
 ## Prepended to a selected tower's action rows.
 @export var selected_prefix: String = "\u25C6 "
-## The status line while a tower is armed for placement: the tower, then the one
-## action the player has left to take.
-@export var status_armed_format: String = "%s armed \u2014 click a build tile to place it"
-## The status line while a placed tower is selected: which tower, and that the
-## window is where its actions are (T-0076 - the actions are no longer rows here).
-@export var status_selected_format: String = "%s T%d selected \u2014 its window holds its actions"
-## The status line when nothing is armed and nothing is selected. Empty on
-## purpose: a prompt that is always there stops being a signal.
-@export var status_idle_text: String = ""
-@export var hint_text: String = (
-	"Click a tower in the bar, then a tile, to place it. "
-	+ "Click a placed tower to open it."
-)
 ## Shown instead of any number when no arena is bound.
 @export var no_arena_text: String = "no level to build in"
 ## The panel's own refusal, for a placement it never asked the arena about.
@@ -332,8 +319,6 @@ const KIND_TAKE_BACK := "take_back"
 @export var drop_already_placed_text: String = "that tower is already on the board"
 ## Prepended to the focused row so a keyboard or pad player can see where they are.
 @export var focus_marker: String = "> "
-## Between fields of a row's text: "Arrow - T2 - placed - TowerSlot".
-@export var field_separator: String = " · "
 
 @export_group("Tuning — PLACEHOLDER (T-0057)")
 ## Height of one list row, in pixels. Range 24-48; shorter than the font clips,
@@ -365,6 +350,13 @@ const KIND_TAKE_BACK := "take_back"
 @export var selected_fill: Color = Color(0.05, 0.2, 0.3, 0.92)
 ## Text colour of a row in neither state.
 @export var idle_row_colour: Color = Color(0.86, 0.88, 0.84, 1.0)
+## Text colour of a row that cannot be taken in the state the level is in - the
+## Start Wave row during a wave, or once every wave has cleared (T-0081). Dim on
+## purpose: the row still says `Start Wave` and is still clickable, so the only
+## honest cue is "this does not do anything right now". Suggested range: the same
+## hue as `idle_row_colour`, luminance 0.35-0.6 - brighter and it reads as live,
+## darker and it reads as broken.
+@export var unavailable_row_colour: Color = Color(0.45, 0.47, 0.45, 1.0)
 ## Border thickness of a dressed row's band, in pixels. Range 1-4; 0 removes the
 ## border, leaving only the fill, the colour and the marker.
 @export var cue_border_width: int = 2
@@ -381,8 +373,8 @@ var _router = MapInputScript.new()
 var _pointer_guards: Array[Callable] = []
 
 ## One entry per drawn row:
-##     index, kind, id, type_id, tier, upgrades, placed, armed, selected, tile,
-##     cost, label, node (Button)
+##     index, kind, id, type_id, tier, upgrades, placed, armed, selected, available,
+##     tile, cost, label, node (Button)
 var _rows: Array = []
 var _focus: int = -1
 
@@ -527,7 +519,6 @@ func refresh(force: bool = false) -> void:
 			"selected": _selected_id,
 			"state": state()["label"],
 			"wave": wave()["label"],
-			"status": status()["label"],
 			"phase": phase_name(),
 			"visible": visible,
 		}))
@@ -621,6 +612,9 @@ func state() -> Dictionary:
 ##     {waves, wave, cleared, phase, running, remaining, left, label}
 ## Same rule as `state()`: nothing cached, because a cached wave count is a
 ## second owner of a number the director already keeps.
+## **The label is the progress alone** (T-0081). `phase`, `running`, `remaining`
+## and `cleared` stay in the dictionary because the log line, `status()` and the
+## demos read them - but none of them is drawn in the block.
 func wave() -> Dictionary:
 	var out := {
 		"waves": 0,
@@ -638,36 +632,23 @@ func wave() -> Dictionary:
 	for key in ["waves", "wave", "cleared", "phase", "running", "remaining", "left"]:
 		if status.has(key):
 			out[key] = status[key]
-
-	var parts: Array[String] = []
-	if int(out["waves"]) <= 0:
-		parts.append(wave_none_text)
-	else:
-		parts.append(wave_progress_format % [int(out["wave"]), int(out["waves"])])
-		parts.append(wave_phase_format % String(out["phase"]))
-		# Only what the player cannot see elsewhere (T-0076): the build-phase's "not
-		# started yet" was a third clause on a line that already said "build phase",
-		# and the block in the corner has room for the readout, not for a paragraph.
-		if bool(out["running"]):
-			parts.append(wave_remaining_format % int(out["remaining"]))
-		elif int(out["cleared"]) >= int(out["waves"]):
-			parts.append(wave_finished_text)
-	out["label"] = field_separator.join(parts)
+	out["label"] = wave_progress_format % [int(out["wave"]), int(out["waves"])]
 	return out
 
 
-## The prompt that answers "did my click register?", read live from what is armed
-## and selected:
+## What is armed or selected, read live from the two ids:
 ##     {armed, selected, tower, label}
-## Idle is an empty label on purpose: a line that always says something is not a
-## signal. The tower is the inventory's own type id, so this line cannot name a
-## tower the rows do not.
+## **Nothing is drawn from this any more** (T-0081): the status line left the block
+## with the rest of the paragraph, so `label` is empty on purpose and the state is
+## the two ids plus the tower's type id - which is what the log line and a demo
+## read. A sentence here would be a promise of something on screen that is not
+## there.
 func status() -> Dictionary:
 	var out := {
 		"armed": _armed_id,
 		"selected": _selected_id,
 		"tower": "",
-		"label": status_idle_text,
+		"label": "",
 	}
 	if not _bound():
 		return out
@@ -675,7 +656,6 @@ func status() -> Dictionary:
 		var instance = _instance(_armed_id)
 		if instance != null:
 			out["tower"] = String(instance.type_id)
-			out["label"] = status_armed_format % [String(instance.type_id)]
 		return out
 	var tower = _selected_tower()
 	if tower != null:
@@ -683,7 +663,6 @@ func status() -> Dictionary:
 		if tower.instance != null:
 			type_id = String(tower.instance.type_id)
 		out["tower"] = type_id
-		out["label"] = status_selected_format % [type_id, tower.tier()]
 	return out
 
 
@@ -1129,9 +1108,10 @@ func _rebuild_rows() -> void:
 		"placed": false,
 		"armed": false,
 		"selected": false,
+		"available": _start_wave_available(),
 		"tile": "",
 		"cost": 0,
-		"label": _start_wave_label(),
+		"label": start_wave_text,
 	})
 
 	if _rows.is_empty():
@@ -1147,19 +1127,17 @@ func _rebuild_rows() -> void:
 	# Start Wave is exactly why a redraw must not put the focus there.
 
 
-## The Start Wave row's text, by the state of the level: ready, locked by a
-## running wave, or exhausted. The row is drawn in all three states on purpose -
-## the two locked ones are the ones a player asks why about, and the answer is the
-## arena's refusal sentence.
-func _start_wave_label() -> String:
+## Whether Start Wave can be taken right now: the wave is not running and the level
+## has waves left. This is the **cue**, not a lock (T-0081): an unavailable row is
+## dimmed and still clickable, so a player who asks why gets the arena's sentence in
+## the log and in `reason()` rather than a dead row and silence.
+func _start_wave_available() -> bool:
 	var status: Dictionary = wave()
 	if int(status["waves"]) <= 0:
-		return start_wave_none_text
+		return false
 	if bool(status["running"]):
-		return start_wave_locked_text
-	if int(status["cleared"]) >= int(status["waves"]):
-		return start_wave_none_text
-	return start_wave_text
+		return false
+	return int(status["cleared"]) < int(status["waves"])
 
 
 ## Appends one row: the entry the panel keeps, and the Control the player sees.
@@ -1226,7 +1204,13 @@ func _dress(row: Control, label: Label, entry: Dictionary) -> void:
 	var armed := bool(entry["armed"])
 	var chosen := armed or bool(entry["selected"])
 	if not chosen:
-		label.add_theme_color_override("font_color", idle_row_colour)
+		# Available or not is a colour, never a word (T-0081). An unavailable row
+		# keeps its label and its click, and loses the band and the bright text, so
+		# "you cannot take this yet" is one glance rather than one more sentence.
+		var colour := idle_row_colour
+		if entry.has("available") and not bool(entry["available"]):
+			colour = unavailable_row_colour
+		label.add_theme_color_override("font_color", colour)
 		row.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 		return
 	var tint := armed_colour if armed else selected_colour
@@ -1393,19 +1377,13 @@ func _pointer_world(point: Vector2) -> Vector2:
 
 # --- internals: presentation ------------------------------------------------
 
+## The three things the block draws (T-0081): the state line, the wave line, and the
+## list's empty label. Everything else that used to be written here - the title, the
+## status line, the hint and the refusal sentence - is gone from the scene, so there
+## is nothing left to write into it.
 func _apply_copy() -> void:
-	var title := _node(title_path)
-	if title != null:
-		(title as Label).text = title_text
 	_sync_state()
 	_sync_wave()
-	_sync_status()
-	var hint := _node(hint_path)
-	if hint != null:
-		(hint as Label).text = hint_text
-	var reason_label := _node(reason_path)
-	if reason_label != null:
-		(reason_label as Label).text = _reason
 	_sync_empty_label()
 
 
@@ -1436,21 +1414,6 @@ func _sync_wave() -> void:
 		(label as Label).text = String(wave()["label"])
 
 
-## The status line only (T-0064). Drawn in the same colour as the cue it belongs## to, so the line and the row cannot disagree about what is armed.
-func _sync_status() -> void:
-	var label := _node(status_path)
-	if label == null:
-		return
-	var report: Dictionary = status()
-	(label as Label).text = String(report["label"])
-	if _armed_id != -1:
-		(label as Label).add_theme_color_override("font_color", armed_colour)
-	elif _selected_id != -1:
-		(label as Label).add_theme_color_override("font_color", selected_colour)
-	else:
-		(label as Label).add_theme_color_override("font_color", idle_row_colour)
-
-
 func _sync_empty_label() -> void:
 	var list := _node(action_list_path)
 	if list == null:
@@ -1470,11 +1433,12 @@ func _sync_empty_label() -> void:
 		existing.queue_free()
 
 
+## Records the last sentence the panel was told, or "" when the last action stood.
+## **State only since T-0081**: the block has no label to write it into, so this is
+## what `reason()` answers and what `BUILD_PANEL_REFUSED` printed - the why lives in
+## the log now, not under the numbers.
 func _show_reason(text: String) -> void:
 	_reason = text
-	var label := _node(reason_path)
-	if label != null:
-		(label as Label).text = text
 
 
 func _refuse_action(action: String, why: String) -> void:
@@ -1530,9 +1494,9 @@ func _connect_session() -> void:
 
 func _on_run_numbers(_a: int = 0, _b: int = 0) -> void:
 	_sync_state()
-	# A kill pays gold and a leak damages the HQ, so both arrive here - which is
-	# what keeps "enemies left" moving while a wave runs, without the panel
-	# polling anything.
+	# A kill pays gold and a leak damages the HQ, so both arrive here. The wave line
+	# no longer carries the enemies left (T-0081), but the wave number still moves on
+	# a clear, so the same signal keeps both lines true.
 	_sync_wave()
 
 
@@ -1552,7 +1516,7 @@ func _on_phase_changed(name: String) -> void:
 		"wave": wave()["label"],
 		"armed": _armed_id,
 	}))
-	# The Start Wave row's text is a function of the phase, so the list is rebuilt
-	# as well as the two lines: a row that still says "locked" after the build
-	# phase is back is worse than no row.
+	# The Start Wave row's availability is a function of the phase, so the list is
+	# rebuilt as well as the two lines: a row that is still dimmed after the build
+	# phase is back is worse than no row (T-0081).
 	refresh()

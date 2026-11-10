@@ -99,6 +99,15 @@ const MAX_WALK_PRESSES := 4
 ## the panel growing a row back.
 const ALLOWED_KINDS: Array[String] = ["start_wave", "upgrade", "take_back"]
 
+## What the block must say (T-0081), duplicated here on purpose for the same reason:
+## a demo that reads its expectations off the panel under test agrees with the panel
+## it is supposed to catch. The first level of `SEED` opens on `HQ 10/10`, wave 1 of
+## 6, and nothing has started a wave here.
+const EXPECTED_COLUMN: Array[String] = ["State", "Wave", "Actions"]
+const EXPECTED_STATE_TEXT := "HQ 10/10"
+const EXPECTED_WAVE_TEXT := "Wave 1/6"
+const EXPECTED_START_WAVE_TEXT := "Start Wave"
+
 var _boot = null
 var _panel = null
 var _bar = null
@@ -176,13 +185,46 @@ func _run() -> void:
 		% [wave_on_screen, String(live_wave["label"])])
 	check(wave_on_screen != "", "the panel still draws the wave readout")
 
-	check(_label_text(_panel.status_path) != "<missing>",
-		"the panel's status label exists at its shipped path: %s" % [String(_panel.status_path)])
-
-	# All seven exported copy paths resolve to the node the scene actually has. The
+	# All three exported copy paths resolve to the node the scene actually has. The
 	# restructure that broke the block updated one of eight paths and nothing noticed
 	# (L-041), so this is the assertion that fails when it happens again.
 	_check_copy_paths()
+
+	# --- 1a. the block is three elements (T-0081) ---------------------------
+	# The human asked for the numbers back: the HQ, the wave and Start Wave, and no
+	# title, phase, enemies-left, status line, refusal sentence or hint. These are
+	# read off the nodes the player sees, not off the panel's dictionaries (L-041).
+	_case("the block is exactly three elements: HQ, wave, Start Wave")
+	var column_children := _column_children()
+	check(column_children.size() == 3,
+		"the block's column has exactly three children: %s" % [column_children])
+	check(column_children == EXPECTED_COLUMN,
+		"the column is State, Wave, Actions and nothing else: %s" % [column_children])
+	check(state_on_screen == EXPECTED_STATE_TEXT,
+		"the state line is exactly '%s': '%s'" % [EXPECTED_STATE_TEXT, state_on_screen])
+	check(wave_on_screen == EXPECTED_WAVE_TEXT,
+		"the wave line is exactly '%s': '%s'" % [EXPECTED_WAVE_TEXT, wave_on_screen])
+	check(not wave_on_screen.to_lower().contains("phase"),
+		"the wave line carries no phase: '%s'" % wave_on_screen)
+	check(not wave_on_screen.to_lower().contains("enemies"),
+		"the wave line carries no enemies-left count: '%s'" % wave_on_screen)
+	check(not wave_on_screen.to_lower().contains("cleared"),
+		"the wave line carries no 'every wave cleared': '%s'" % wave_on_screen)
+	check(_row_count_drawn() == 1,
+		"the action list holds one row: %d" % _row_count_drawn())
+	var start_wave_drawn := _row_text(0)
+	check(start_wave_drawn == EXPECTED_START_WAVE_TEXT,
+		"the Start Wave row's label is exactly '%s': '%s'"
+		% [EXPECTED_START_WAVE_TEXT, start_wave_drawn])
+	check(bool(_panel.row(0).get("available", false)),
+		"Start Wave is available in the build phase: %s" % [_panel.row(0)])
+	print("PANEL_BAR_BLOCK " + JSON.stringify({
+		"column": column_children,
+		"state": state_on_screen,
+		"wave": wave_on_screen,
+		"rows": _row_count_drawn(),
+		"start_wave": start_wave_drawn,
+	}))
 
 	var bar_state: Dictionary = _bar.state()
 	check(int(bar_state["tower_count"]) >= 1, "the bar shows the towers: %d" % int(bar_state["tower_count"]))
@@ -684,14 +726,14 @@ func _run() -> void:
 	_case("the panel's content stops above the bar")
 	var geometry := _geometry()
 	print("PANEL_BAR_GEOMETRY " + JSON.stringify(geometry))
-	var hint_rect: Rect2 = geometry["hint"]
+	var actions_rect: Rect2 = geometry["actions"]
 	var bar_rect: Rect2 = geometry["bar"]
 	var column_rect: Rect2 = geometry["column"]
 	check(bar_rect.size.y > 0.0, "the bar has a height to clear: %s" % [bar_rect])
-	check(hint_rect.end.y <= bar_rect.position.y,
-		"the panel's hint line ends above the bar's top edge: hint %.1f <= bar %.1f"
-		% [hint_rect.end.y, bar_rect.position.y])
-	check(not hint_rect.intersects(bar_rect), "the hint line's rect does not intersect the bar's")
+	check(actions_rect.end.y <= bar_rect.position.y,
+		"the block's last element ends above the bar's top edge: actions %.1f <= bar %.1f"
+		% [actions_rect.end.y, bar_rect.position.y])
+	check(not actions_rect.intersects(bar_rect), "the action list's rect does not intersect the bar's")
 	check(column_rect.end.y <= bar_rect.position.y,
 		"the panel's whole column stops above the bar: column %.1f <= bar %.1f"
 		% [column_rect.end.y, bar_rect.position.y])
@@ -707,11 +749,10 @@ func _run() -> void:
 		print("PANEL_BAR_FRAME " + JSON.stringify({
 			"viewport": [root.size.x, root.size.y],
 			"bar": _rect_json(bar_rect),
-			"hint": _rect_json(hint_rect),
+			"actions": _rect_json(actions_rect),
 			"screen": _boot.screen_name(),
 			"state": _label_text(_panel.state_path),
 			"wave": _label_text(_panel.wave_path),
-			"status": _label_text(_panel.status_path),
 			"hold_frames": MOVIE_HOLD_FRAMES,
 		}))
 		await _hold(MOVIE_HOLD_FRAMES)
@@ -1098,12 +1139,8 @@ func _label_text(path: NodePath) -> String:
 ## paths would agree with a stale panel.
 func _check_copy_paths() -> void:
 	var labels := {
-		"title_path": _panel.title_path,
 		"state_path": _panel.state_path,
 		"wave_path": _panel.wave_path,
-		"status_path": _panel.status_path,
-		"reason_path": _panel.reason_path,
-		"hint_path": _panel.hint_path,
 	}
 	for key in labels:
 		var path: NodePath = labels[key]
@@ -1117,17 +1154,50 @@ func _check_copy_paths() -> void:
 		% [String(list_path), list])
 
 
+## The names of the block's column children, in scene order. The T-0081 contract is
+## "three elements and nothing else", so this is the assertion that catches a fourth
+## node whether it was added to the scene or left behind by a restructure.
+func _column_children() -> Array[String]:
+	var out: Array[String] = []
+	var margin = _panel.get_node_or_null(_panel.margin_path)
+	var column = margin.get_node_or_null("Column") if margin != null else null
+	if column == null:
+		return out
+	for child in column.get_children():
+		out.append(String(child.name))
+	return out
+
+
+## How many rows the action list draws. One, after T-0081: Start Wave.
+func _row_count_drawn() -> int:
+	var list = _panel.get_node_or_null(_panel.action_list_path)
+	return list.get_child_count() if list != null else -1
+
+
+## The text of row `index` as drawn: the Label inside the row the panel built, not
+## the dictionary the panel reports (L-041).
+func _row_text(index: int) -> String:
+	var list = _panel.get_node_or_null(_panel.action_list_path)
+	if list == null:
+		return ""
+	var row = list.get_node_or_null("Row%d" % index)
+	if row == null:
+		return ""
+	var label = row.get_node_or_null("Text")
+	return String((label as Label).text) if label is Label else ""
+
+
 func _geometry() -> Dictionary:
 	var margin = _panel.get_node_or_null(_panel.margin_path)
 	var column = null
-	var hint = _panel.get_node_or_null(_panel.hint_path)
+	var actions = _panel.get_node_or_null(_panel.action_list_path)
 	if margin != null:
 		column = margin.get_node_or_null("Column")
 	return {
 		"bar": _bar.get_global_rect(),
 		"panel": _panel.get_global_rect(),
 		"column": (column as Control).get_global_rect() if column is Control else Rect2(),
-		"hint": (hint as Control).get_global_rect() if hint is Control else Rect2(),
+		"actions": (actions as Control).get_global_rect() if actions is Control else Rect2(),
 		"reserve": int(_panel.content_reserve()),
 	}
 
@@ -1198,7 +1268,6 @@ func _state_evidence(label: String) -> void:
 			"kinds": _kinds(),
 			"state": _label_text(_panel.state_path),
 			"wave": _label_text(_panel.wave_path),
-			"status": _label_text(_panel.status_path),
 			"selected": int(_panel.selected_instance()),
 			"armed": int(_panel.armed_instance()),
 			"reason": String(_panel.reason()),
