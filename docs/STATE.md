@@ -25,7 +25,7 @@ Last updated: 2026-11-10
   Start Wave control, HQ leaks, defeat and completion.
 - **UI**: main menu, map screen, corner block with exactly HQ / wave number / Start Wave,
   square inventory bar with paging and gold, drag-and-drop placement from the bar,
-  tower window with equip and tier-up.
+  anchored non-modal tower popover with equip, tier-up and take-back.
 - **Gates**: 13 scripts green, 5 suite cases (~5800 checks), smoke 4/4 at 300 s, perf 687 fps
   (last measurement; see L-040 for the display provenance).
 
@@ -34,7 +34,6 @@ Last updated: 2026-11-10
 | Item | State |
 | --- | --- |
 | Upgrade slot label wraps mid-word | square slot is narrow; clip or shorten |
-| Anchored, non-modal tower window | window exists but opens centred/full; must anchor near the icon and close on outside interaction |
 | Map-screen drag is inert | the bar is drawn on the map; a drag there shows the ghost and raises a drop with no level to receive it |
 | `armed_feedback_demo` is red | already red at HEAD before T-0081: unresolved opening-choice modal and tower rows removed in T-0068; update or retire it |
 | Controller placing mode | not built; drag-and-drop is mouse-only, pad keeps click-then-tile |
@@ -47,13 +46,12 @@ Last updated: 2026-11-10
 
 ## Next action
 
-1. Anchor the tower window near its slot and make it non-modal (it must not open centred).
-2. Controller placing mode, bindings in data.
-3. Art integration, then content, then audio, then the five testers.
+1. Controller placing mode, bindings in data.
+2. Art integration, then content, then audio, then the five testers.
 
 ## Metrics
 
 | Metric | Value | Note |
 | --- | --- | --- |
-| Builder cap-hit rate | 3 of 5 dispatches on 2026-11-10 (60%) | T-0077 and T-0080 fit; T-0078 capped twice and T-0079 once. Single-method briefs still cap when the shared demo grows. |
+| Builder cap-hit rate | 5 of 9 dispatches on 2026-11-10 (56%) | T-0077, T-0080 and T-0082 fit; T-0078 capped twice, T-0079, T-0081 and T-0083 once each. Shared demos are what consume the steps. |
 | Usable delivery under a cap hit | 100% | T-0078's second cap left a planted mutation on disk; L-042 now forbids that and requires copy-only demonstrations. |
