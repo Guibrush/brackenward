@@ -45,6 +45,22 @@ extends Control
 ##   cannot be thrown away): the window is a view and an action list, and `DISMISS`
 ##   or a click outside the panel closes it. While it is open it consumes every
 ##   mapped intent (`_input`), so the bar and the build panel behind it are inert.
+## * **It is a popover, not a centred sheet** (T-0083). The scene has no dimming
+##   backdrop and no `Center` container: the panel is placed beside the click that
+##   opened it - above and to the right, `anchor_gap` away - clamped inside the
+##   viewport with `viewport_margin` to spare, and flipped below when the clamped
+##   panel would cover that click. Placement happens after one layout frame, so the
+##   panel's own measured size is what the arithmetic uses. A pointer confirm
+##   outside `panel_rect()` closes the window (`why = "clicked outside"`), consumes
+##   the event and does nothing else; a pointer confirm that arrives before the
+##   panel has been placed - including the click that opened the window - is
+##   ignored, because `_input` order can deliver that click here after the bar or
+##   the build panel raised the door that opened it.
+## * **Pad caveat.** The anchor is the click that opened the window: the point the
+##   session just delivered. A pad open delivers no click, so the anchor falls back
+##   to the last pointer position this window saw, which is stale for a pad player
+##   (and `(0, 0)` in a headless run). Anchoring on the focused slot or tile is the
+##   controller task's; this file does not guess a pad position.
 ## * Input has one door, `handle_input()`, which asks `MapInput` for the intent:
 ##   keyboard, mouse and gamepad reach the same three actions.
 ##
@@ -56,6 +72,7 @@ extends Control
 ##   TOWER_WINDOW_REFUSED {json}   every refused action, with the owner's reason
 ##   TOWER_WINDOW_CLOSED {json}    once per close, with why
 ##   TOWER_WINDOW_SHOWN {json}     once per draw whose content changed
+##   TOWER_WINDOW_PLACED {json}    once per open, with the anchor and the panel's rect
 
 signal closed(why: String)
 ## An action was applied: `action` is "equip" | "tier" | "take_back", `tier` the
@@ -71,16 +88,30 @@ const KIND_TIER := "tier"
 const KIND_TAKE_BACK := "take_back"
 
 @export_group("Layout — node paths")
-@export var title_path: NodePath = ^"Center/Panel/Margin/Column/Title"
-@export var identity_path: NodePath = ^"Center/Panel/Margin/Column/Identity"
-@export var tier_path: NodePath = ^"Center/Panel/Margin/Column/Tier"
-@export var equipped_path: NodePath = ^"Center/Panel/Margin/Column/Equipped"
-@export var rows_path: NodePath = ^"Center/Panel/Margin/Column/Rows"
-@export var status_path: NodePath = ^"Center/Panel/Margin/Column/Status"
-@export var reason_path: NodePath = ^"Center/Panel/Margin/Column/Reason"
-@export var hint_path: NodePath = ^"Center/Panel/Margin/Column/Hint"
+@export var title_path: NodePath = ^"Panel/Margin/Column/Title"
+@export var identity_path: NodePath = ^"Panel/Margin/Column/Identity"
+@export var tier_path: NodePath = ^"Panel/Margin/Column/Tier"
+@export var equipped_path: NodePath = ^"Panel/Margin/Column/Equipped"
+@export var rows_path: NodePath = ^"Panel/Margin/Column/Rows"
+@export var status_path: NodePath = ^"Panel/Margin/Column/Status"
+@export var reason_path: NodePath = ^"Panel/Margin/Column/Reason"
+@export var hint_path: NodePath = ^"Panel/Margin/Column/Hint"
 ## The panel itself, so a click outside it can be told from one inside it.
-@export var panel_path: NodePath = ^"Center/Panel"
+@export var panel_path: NodePath = ^"Panel"
+
+@export_group("Layout — anchor (T-0083)")
+## The panel's narrowest width, in pixels: a popover column, not a sheet. Range
+## 280-360.
+@export var panel_min_width: int = 320
+## The panel's hard ceiling, in pixels. A wider panel stops reading as a popover.
+## Range 320-420; the design ceiling is 360.
+@export var panel_max_width: int = 360
+## Distance kept between the click that opened the window and the panel's edges.
+## Range 8-32.
+@export var anchor_gap: int = 18
+## Distance kept between the panel and the viewport's edges when it is clamped.
+## Range 0-24.
+@export var viewport_margin: int = 8
 
 @export_group("Copy")
 ## The window's title: the tower's type id.
@@ -130,6 +161,22 @@ var _router = MapInputScript.new()
 
 var _open: bool = false
 var _open_id: int = -1
+## Where the window was opened: the click that opened it (T-0083), and the process
+## frame that click landed on. The frame is what lets `handle_input()` ignore the
+## pointer confirm that opened the window instead of reading it as a click outside.
+var _anchor: Vector2 = Vector2.ZERO
+var _open_frame: int = -1
+## True once the panel has been placed for the current open. Before that there is
+## no rect a click could be outside of.
+var _panel_placed: bool = false
+## Process ticks left before the panel is placed: 1 is set on open and counts down
+## in `_process`, so the placement uses a laid-out panel (see `_place_panel()`).
+var _place_countdown: int = -1
+## The last pointer this window saw, recorded from `_input()` even while it is
+## closed. The click that opens the window is delivered here before the bar or the
+## build panel raises the door that opens it, and `Viewport.get_mouse_position()`
+## answers from the display server - which is `(0, 0)` in a headless run.
+var _last_pointer: Vector2 = Vector2.INF
 ## One entry per focusable row, in drawing order:
 ##     index, kind, id, type_id, label, node
 var _rows: Array = []
@@ -175,6 +222,7 @@ func unbind() -> void:
 	_disconnect_session()
 	_open = false
 	_open_id = -1
+	_panel_placed = false
 	_flow = null
 	_arena = null
 	_rows.clear()
@@ -210,8 +258,12 @@ func open_for(instance_id: int) -> bool:
 	_open_id = instance_id
 	_focus = 0
 	_reason = ""
+	_anchor = _click_point()
+	_open_frame = Engine.get_process_frames()
+	_panel_placed = false
 	show()
 	refresh(true)
+	_place_countdown = 1
 	print("TOWER_WINDOW_OPEN " + JSON.stringify({
 		"instance": instance_id,
 		"type_id": String(tower.type_id),
@@ -223,6 +275,8 @@ func open_for(instance_id: int) -> bool:
 		"phase": _phase_name(),
 		"gold": _gold(),
 		"rows": _rows.size(),
+		"anchor": [_anchor.x, _anchor.y],
+		"frame": _open_frame,
 	}))
 	return true
 
@@ -232,6 +286,8 @@ func close(why: String = "") -> bool:
 		return false
 	_open = false
 	hide()
+	_panel_placed = false
+	_place_countdown = -1
 	var instance_id := _open_id
 	_open_id = -1
 	_rows.clear()
@@ -249,6 +305,13 @@ func is_open() -> bool:
 
 func opened_instance() -> int:
 	return _open_id
+
+
+## The viewport point the window was opened at: the click that opened it (T-0083).
+## The anchor is a record of that click, not a live read of the pointer, so it stays
+## the same point until the next open.
+func anchor_point() -> Vector2:
+	return _anchor
 
 
 ## True while the level in play is in its wave phase. The arena owns the phase;
@@ -383,11 +446,21 @@ func handle_input(event: InputEvent) -> Dictionary:
 		MapInputScript.Intent.CONFIRM:
 			var index := _focus
 			if result.has("pointer"):
-				if not _panel_contains(result["pointer"]):
-					out["target"] = "outside"
-					out["applied"] = close("a click outside the window")
+				var pointer: Vector2 = result["pointer"]
+				# The click that opened the window is delivered here too, after the
+				# door that opened it: `_input` order is the tree's, not the click's.
+				# Reading it as a click outside would shut the window in the frame it
+				# appeared, so the opening frame - and the frame before the panel has
+				# been placed at all - answers nothing.
+				if not _panel_placed or Engine.get_process_frames() <= _open_frame:
+					out["target"] = "opening"
+					out["ignored"] = "the click that opened the window"
 					return out
-				index = _index_at(result["pointer"])
+				if not _panel_contains(pointer):
+					out["target"] = "outside"
+					out["applied"] = close("clicked outside")
+					return out
+				index = _index_at(pointer)
 			out["index"] = index
 			out["target"] = "row"
 			out["applied"] = activate(index)
@@ -423,7 +496,14 @@ func activate(index: int) -> bool:
 ## mapped intent is consumed here, before the bar's or the build panel's `_input`
 ## can see it. That is what makes the screens behind it inert, and it is why the
 ## close path has to be this window's own.
+##
+## The pointer is recorded before the open check on purpose: the click that opens
+## the window is delivered here first, while the window is still shut, and that
+## event is the anchor (T-0083). Consuming it is the open window's business only.
 func _input(event: InputEvent) -> void:
+	var pointer := _pointer_of(event)
+	if pointer != Vector2.INF:
+		_last_pointer = pointer
 	if not is_open():
 		return
 	var result: Dictionary = _router.intent_for(event)
@@ -853,6 +933,96 @@ func _index_of_key(key: String) -> int:
 		if "%s:%d" % [String((entry as Dictionary)["kind"]), int((entry as Dictionary)["id"])] == key:
 			return int((entry as Dictionary)["index"])
 	return -1
+
+
+# --- internals: placement (T-0083) ------------------------------------------
+
+## One process tick of grace before the panel is placed, then the placement itself.
+## A container's measured size is only final once it has been laid out, and placing
+## a popover on a stale rect is how half of it ends up off-screen. The countdown is
+## a field rather than an `await` so a window freed mid-open cannot leave a
+## coroutine resuming on a dead node.
+func _process(_delta: float) -> void:
+	if not _open or _place_countdown < 0:
+		return
+	if _place_countdown > 0:
+		_place_countdown -= 1
+		return
+	_place_panel()
+	_place_countdown = -1
+
+
+## Places the panel beside the anchor: above and to the right of the click, inside
+## the viewport with `viewport_margin` to spare, and below it when the clamped
+## position would cover the click. The root is a full-rect Control parented to the
+## HUD layer, so the panel's local position is its viewport position.
+func _place_panel() -> void:
+	var node := _node(panel_path)
+	if not (node is Control):
+		return
+	var panel := node as Control
+	# Width first: the labels wrap, so their height is only right at the width the
+	# panel keeps. The content's own minimum is the floor, the popover's ceiling the
+	# cap, and `panel_min_width` the column the design asks for.
+	var measured: Vector2 = panel.get_combined_minimum_size()
+	var width := clampf(
+		maxf(float(measured.x), float(panel_min_width)),
+		float(panel_min_width),
+		float(panel_max_width)
+	)
+	var size := Vector2(width, maxf(float(measured.y), 1.0))
+	var view := get_viewport().get_visible_rect().size
+	var gap := float(anchor_gap)
+	var below := _anchor + Vector2(gap, gap)
+	var position := _clamped(_anchor + Vector2(gap, -size.y - gap), size, view)
+	var rect := Rect2(position, size)
+	var flipped := false
+	if rect.has_point(_anchor):
+		# Above the click would cover it: sit under it instead, clamped the same
+		# way. A viewport too small for either keeps the below position; covering
+		# the click is then the least wrong answer rather than an unplaced panel.
+		position = _clamped(below, size, view)
+		rect = Rect2(position, size)
+		flipped = true
+	panel.size = size
+	panel.position = position
+	_panel_placed = true
+	print("TOWER_WINDOW_PLACED " + JSON.stringify({
+		"instance": _open_id,
+		"anchor": [_anchor.x, _anchor.y],
+		"panel": [rect.position.x, rect.position.y, rect.size.x, rect.size.y],
+		"viewport": [view.x, view.y],
+		"below": flipped,
+		"measured": [measured.x, measured.y],
+	}))
+
+
+## `position` clamped so a `size` rect stays `viewport_margin` inside `view`.
+func _clamped(position: Vector2, size: Vector2, view: Vector2) -> Vector2:
+	var margin := float(viewport_margin)
+	var max_x := maxf(margin, view.x - size.x - margin)
+	var max_y := maxf(margin, view.y - size.y - margin)
+	return Vector2(clampf(position.x, margin, max_x), clampf(position.y, margin, max_y))
+
+
+## The viewport point that opened the window. The click this window saw is the
+## answer: it is the event the door that opened the window was raised by, whereas
+## `Viewport.get_mouse_position()` asks the display server, which answers `(0, 0)`
+## in a headless run and nothing useful for a pad open (see the pad caveat above).
+func _click_point() -> Vector2:
+	if _last_pointer != Vector2.INF:
+		return _last_pointer
+	return get_viewport().get_mouse_position()
+
+
+## The pointer position an event carries, or `Vector2.INF` for events that carry
+## none. The click that opens a window is a press, so both shapes matter.
+func _pointer_of(event: InputEvent) -> Vector2:
+	if event is InputEventMouseButton:
+		return (event as InputEventMouseButton).position
+	if event is InputEventMouseMotion:
+		return (event as InputEventMouseMotion).position
+	return Vector2.INF
 
 
 # --- internals: nodes and session -------------------------------------------

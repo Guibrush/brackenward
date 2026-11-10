@@ -126,6 +126,9 @@ var _starts: Array = []
 var _signals_connected: bool = false
 ## Where the demo last put the mouse, so a motion event carries a real `relative`.
 var _pointer: Vector2 = Vector2.ZERO
+## Every `closed(why)` the tower window raised, in order (T-0083). The outside-click
+## case asserts the reason the window itself gave, not a disappearance.
+var _window_closes: Array[String] = []
 
 
 func _initialize() -> void:
@@ -152,6 +155,9 @@ func _run() -> void:
 	if not await _walk_to_level():
 		_finish()
 		return
+	var watched_window = _window()
+	if watched_window != null and not watched_window.closed.is_connected(_on_window_closed):
+		watched_window.closed.connect(_on_window_closed)
 
 	# --- 1. one inventory, in one place ------------------------------------
 	_case("the panel lists no towers and no gold; the bar shows both")
@@ -280,25 +286,94 @@ func _run() -> void:
 
 	# --- 2. bar -> panel ----------------------------------------------------
 	_case("a real click on a tower in the bar selects it in the panel")
-	await _click(tower_rect.get_center(), "left click on bar slot %d (%s)" % [picked_id, String(picked["type_id"])])
+	var bar_click: Vector2 = tower_rect.get_center()
+	await _click(bar_click, "left click on bar slot %d (%s)" % [picked_id, String(picked["type_id"])])
 	_state_evidence("bar click")
 	check_eq_int(int(_bar.selected_instance()), picked_id, "the bar marks the tower selected")
 	check_eq_int(int(_panel.selected_instance()), picked_id, "the panel shows the same tower selected")
 	check(String(_panel.reason()) == "", "the click on the bar invented no refusal in the panel: '%s'" % String(_panel.reason()))
 
 	# T-0074: the bar's selection is also the window's door, so this click opens
-	# the tower window. It is asserted (that is the new behaviour) and then closed
-	# with the key a player uses, and the selection behind it is checked intact -
-	# closing a view must not be a deselection.
+	# the tower window. T-0083 makes it a popover: anchored at that click, small,
+	# with no dim backdrop. It is asserted, then closed with the key a player uses,
+	# and the selection behind it is checked intact - closing a view is not a
+	# deselection.
 	var window = _window()
 	if check(window != null, "the run mounted a tower window"):
 		check(window.is_open(), "the click on the bar opened the tower window (T-0074)")
 		check_eq_int(int(window.opened_instance()), picked_id, "the window opened on the tower the bar selected")
+		_check_window_paths(window)
+		var panel_rect: Rect2 = window.panel_rect()
+		var viewport := Rect2(Vector2.ZERO, Vector2(root.size))
+		var anchor: Vector2 = window.anchor_point()
+		check(anchor.distance_to(bar_click) <= 2.0,
+			"the window's anchor is the click that opened it: %s vs %s" % [anchor, bar_click])
+		check(panel_rect.size.x > 0.0 and panel_rect.size.x <= 360.0,
+			"the popover is at most 360 px wide: %s" % [panel_rect])
+		check(panel_rect.size.x < viewport.size.x and panel_rect.size.y < viewport.size.y,
+			"the popover is smaller than the viewport in both axes: %s in %s" % [panel_rect, viewport])
+		check(viewport.encloses(panel_rect),
+			"the popover is wholly inside the viewport: %s in %s" % [panel_rect, viewport])
+		var centre := panel_rect.get_center()
+		check(centre.distance_to(anchor) <= 320.0,
+			"the popover sits near the click, not at the screen centre: %.1f px" % centre.distance_to(anchor))
+		check(centre.distance_to(anchor) < centre.distance_to(viewport.get_center()),
+			"the popover is nearer the click than the viewport centre: %.1f vs %.1f"
+			% [centre.distance_to(anchor), centre.distance_to(viewport.get_center())])
+		check(window.get_node_or_null("Backdrop") == null,
+			"the dim backdrop is gone: a popover does not darken the level")
+		print("PANEL_BAR_WINDOW " + JSON.stringify({
+			"case": "anchored",
+			"anchor": [anchor.x, anchor.y],
+			"panel": _rect_json(panel_rect),
+			"viewport": _rect_json(viewport),
+			"distance": snappedf(centre.distance_to(anchor), 0.01),
+		}))
 	await _press(KEY_ESCAPE, "game_dismiss (Escape): close the tower window")
 	_state_evidence("tower window closed")
 	check(not _window_open(window), "Escape closed the tower window")
+	check(_window_closes.is_empty() or _window_closes.back() == "dismiss",
+		"Escape closed the window through its own dismiss path: %s" % [_window_closes])
 	check_eq_int(int(_bar.selected_instance()), picked_id, "closing the window left the bar's selection alone")
 	check_eq_int(int(_panel.selected_instance()), picked_id, "closing the window left the panel's selection alone")
+
+	# A click outside the popover closes it and is consumed (T-0083): the click that
+	# dismisses a window is not also a board click. The point is chosen off the panel
+	# and not read from the window under test.
+	_case("a click outside the anchored window closes it and is consumed")
+	await _click(bar_click, "left click on the bar slot: reopen the window")
+	var outside_window = _window()
+	if check(_window_open(outside_window), "the bar click reopened the window"):
+		var outside_rect: Rect2 = outside_window.panel_rect()
+		var outside := Vector2(VIEWPORT.x - 80.0, 96.0)
+		check(not outside_rect.has_point(outside),
+			"the outside point is outside the popover: %s in %s" % [outside, outside_rect])
+		var free_outside: int = _arena.free_slot_count()
+		var refused_outside: int = _arena.refused_count()
+		var closes_before: int = _window_closes.size()
+		await _click(outside, "left click on the board, outside the window")
+		check(not _window_open(outside_window), "the click outside closed the window")
+		check(_window_closes.size() == closes_before + 1 and _window_closes.back() == "clicked outside",
+			"the window reports it was clicked outside: %s" % [_window_closes])
+		check_eq_int(int(_arena.free_slot_count()), free_outside,
+			"the dismissing click placed nothing")
+		check_eq_int(int(_arena.refused_count()), refused_outside,
+			"the dismissing click never reached the arena")
+		check_eq_int(int(_panel.selected_instance()), picked_id,
+			"the dismissing click left the panel's selection alone")
+		check_eq_int(int(_bar.selected_instance()), picked_id,
+			"the dismissing click left the bar's selection alone")
+		print("PANEL_BAR_WINDOW " + JSON.stringify({
+			"case": "clicked outside",
+			"point": [outside.x, outside.y],
+			"closed": String(_window_closes.back()),
+			"free": int(_arena.free_slot_count()),
+			"refused": int(_arena.refused_count()),
+		}))
+	# Reopen and close with Escape, so the key path still works after a click-away.
+	await _click(bar_click, "left click on the bar slot: reopen once more")
+	await _press(KEY_ESCAPE, "game_dismiss (Escape): close the reopened window")
+	check(not _window_open(_window()), "Escape still closes the reopened window")
 
 	# --- 3. the board did not hear it --------------------------------------
 	_case("the click on the bar did not reach the board")
@@ -744,12 +819,20 @@ func _run() -> void:
 	# --- the frame the human judges ----------------------------------------
 	if _is_movie():
 		_case("the frame is held for the movie writer")
-		# The two lines read back off the Labels through the shipped paths, so the
+		# Reopen the window on the placed tower so the acceptance frame shows the
+		# popover anchored at its bar slot (T-0083), not a closed window.
+		await _click(_bar.slot_rect("towers", 0).get_center(),
+			"left click on the placed tower's bar slot for the frame")
+		var frame_window = _window()
+		check(_window_open(frame_window), "the tower window is open for the acceptance frame")
+		# The lines read back off the Labels through the shipped paths, so the
 		# frame's evidence and the frame itself are the same artifact (T-0077, L-041).
 		print("PANEL_BAR_FRAME " + JSON.stringify({
 			"viewport": [root.size.x, root.size.y],
 			"bar": _rect_json(bar_rect),
 			"actions": _rect_json(actions_rect),
+			"window": _rect_json(frame_window.panel_rect()) if frame_window != null else [],
+			"anchor": [frame_window.anchor_point().x, frame_window.anchor_point().y] if frame_window != null else [],
 			"screen": _boot.screen_name(),
 			"state": _label_text(_panel.state_path),
 			"wave": _label_text(_panel.wave_path),
@@ -1074,6 +1157,39 @@ func _close_window(what: String) -> void:
 		return
 	await _press(KEY_ESCAPE, "game_dismiss (Escape): %s" % what)
 	check(not _window_open(window), "%s: Escape closed it" % what)
+
+
+## Every exported node path on the tower window, read off the window's own exports,
+## resolves to the class the node is drawn with (T-0083). The T-0083 scene move took
+## the panel out of a `Center` container and invalidated all nine paths at once; this
+## is the assertion that fails if any of them is left behind (L-041).
+func _check_window_paths(window) -> void:
+	var labels := {
+		"title_path": window.title_path,
+		"identity_path": window.identity_path,
+		"tier_path": window.tier_path,
+		"equipped_path": window.equipped_path,
+		"status_path": window.status_path,
+		"reason_path": window.reason_path,
+		"hint_path": window.hint_path,
+	}
+	for key in labels:
+		var path: NodePath = labels[key]
+		var node = window.get_node_or_null(path)
+		check(node is Label, "the window's %s resolves to a Label: '%s' -> %s"
+			% [String(key), String(path), node])
+	var rows = window.get_node_or_null(window.rows_path)
+	check(rows is VBoxContainer,
+		"the window's rows_path resolves to the row list: '%s' -> %s"
+		% [String(window.rows_path), rows])
+	var panel = window.get_node_or_null(window.panel_path)
+	check(panel is PanelContainer,
+		"the window's panel_path resolves to the panel: '%s' -> %s"
+		% [String(window.panel_path), panel])
+
+
+func _on_window_closed(why: String) -> void:
+	_window_closes.append(why)
 
 
 ## One tower as the bar draws it, by inventory id; {} when it is not listed.
