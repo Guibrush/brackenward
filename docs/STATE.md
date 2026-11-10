@@ -23,7 +23,7 @@ Last updated: 2026-11-10
   inventory, choice modal for the opening pick and for events.
 - **Level**: tower placement, three tiers, targeting, wave director with escalating waves,
   Start Wave control, HQ leaks, defeat and completion.
-- **UI**: main menu, map screen, corner block (HQ / wave / Start Wave) with live labels,
+- **UI**: main menu, map screen, corner block with exactly HQ / wave number / Start Wave,
   square inventory bar with paging and gold, drag-and-drop placement from the bar,
   tower window with equip and tier-up.
 - **Gates**: 13 scripts green, 5 suite cases (~5800 checks), smoke 4/4 at 300 s, perf 687 fps
@@ -36,6 +36,7 @@ Last updated: 2026-11-10
 | Upgrade slot label wraps mid-word | square slot is narrow; clip or shorten |
 | Anchored, non-modal tower window | window exists but opens centred/full; must anchor near the icon and close on outside interaction |
 | Map-screen drag is inert | the bar is drawn on the map; a drag there shows the ghost and raises a drop with no level to receive it |
+| `armed_feedback_demo` is red | already red at HEAD before T-0081: unresolved opening-choice modal and tower rows removed in T-0068; update or retire it |
 | Controller placing mode | not built; drag-and-drop is mouse-only, pad keeps click-then-tile |
 | Tower window behaviour proven | component and wiring exist, no demo proves equip/tier-up/read-only |
 | Square-slot demo, frame, planted failure | owed for T-0075 |
