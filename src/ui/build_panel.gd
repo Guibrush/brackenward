@@ -1157,7 +1157,9 @@ func _add_entry(list: Node, entry: Dictionary) -> void:
 		text.name = "Text"
 		text.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		text.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		# No autowrap (T-0082): a row is one short action on one line. Wrapping let the
+		# Label report no text width, so a min-size block collapsed until "Start Wave"
+		# broke into "Start" / "Wave".
 		row.add_child(text)
 		list.add_child(row)
 		entry["node"] = row
