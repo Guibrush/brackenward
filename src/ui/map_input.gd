@@ -11,8 +11,9 @@ extends RefCounted
 ## * `intent_for()` is total: every event produces a result, and an event that
 ##   means nothing produces `Intent.NONE`. Nothing is asserted and nothing is
 ##   consumed here; this object only translates.
-## * The action names are the game's own four - `game_focus_next`,
-##   `game_focus_prev`, `game_confirm`, `game_dismiss` - declared in
+## * The action names are the game's own - `game_focus_next`,
+##   `game_focus_prev`, `game_confirm`, `game_dismiss` (T-0051) and the
+##   placement pair `game_move_left`, `game_move_right` (T-0088) - declared in
 ##   `project.godot` with keyboard **and** joypad events, every event on device
 ##   -1 so any connected pad matches. They are deliberately not Godot's built-in
 ##   `ui_*` actions: measured in Godot 4.7.2, `ui_accept` and `ui_cancel` carry
@@ -20,9 +21,17 @@ extends RefCounted
 ##   confirm or dismiss anything. Depending on that split would make the
 ##   charter's "playable on a gamepad" claim depend on which half of the UI a
 ##   screen happens to use.
-## * Re-binding for a platform is an `InputMap` edit on those four names, never a
+## * Re-binding for a platform is an `InputMap` edit on those names, never a
 ##   change in this file or in the screen - the reason the brief asks for one
 ##   abstraction.
+## * Up and down stay on `game_focus_prev` / `game_focus_next`: a D-pad up or
+##   down press moves the focus row, exactly as it did before the horizontal
+##   pair existed. Left and right are the **placement** pair, `MOVE_LEFT` /
+##   `MOVE_RIGHT`, for a screen that steps a placement cursor sideways. They are
+##   a different intent from focus on purpose: a placement step must not move
+##   the focus ring, and a screen with no placement mode simply ignores them.
+##   The four T-0051 intents are unchanged by this pair - same names, same
+##   actions, same position in `intent_for()`.
 ## * A mouse click is translated to `Intent.CONFIRM` **with** a `pointer`
 ##   position, so the screen resolves "which row was clicked" and "which row is
 ##   confirmed" through the same call. A pointer device is thus a second source of
@@ -35,16 +44,21 @@ extends RefCounted
 ##
 ## The screen owns focus; this file knows nothing about rows, indices or state.
 
-enum Intent { NONE, FOCUS_NEXT, FOCUS_PREV, CONFIRM, DISMISS }
+enum Intent { NONE, FOCUS_NEXT, FOCUS_PREV, CONFIRM, DISMISS, MOVE_LEFT, MOVE_RIGHT }
 
-const INTENT_NAMES: Array[String] = ["none", "focus_next", "focus_prev", "confirm", "dismiss"]
+const INTENT_NAMES: Array[String] = [
+	"none", "focus_next", "focus_prev", "confirm", "dismiss", "move_left", "move_right"
+]
 
 ## Action names, in one table. See the header for why they are the game's own
-## four rather than the built-in `ui_*` ones.
+## rather than the built-in `ui_*` ones.
 const ACTION_FOCUS_NEXT: StringName = &"game_focus_next"
 const ACTION_FOCUS_PREV: StringName = &"game_focus_prev"
 const ACTION_CONFIRM: StringName = &"game_confirm"
 const ACTION_DISMISS: StringName = &"game_dismiss"
+## The placement pair (T-0088); up/down remain the focus actions above.
+const ACTION_MOVE_LEFT: StringName = &"game_move_left"
+const ACTION_MOVE_RIGHT: StringName = &"game_move_right"
 
 const DEVICE_MOUSE := "mouse"
 const DEVICE_KEYBOARD := "keyboard"
@@ -68,6 +82,10 @@ func intent_for(event: InputEvent) -> Dictionary:
 		return _result(Intent.FOCUS_PREV, _device_of(event))
 	if event.is_action_pressed(ACTION_DISMISS):
 		return _result(Intent.DISMISS, _device_of(event))
+	if event.is_action_pressed(ACTION_MOVE_LEFT):
+		return _result(Intent.MOVE_LEFT, _device_of(event))
+	if event.is_action_pressed(ACTION_MOVE_RIGHT):
+		return _result(Intent.MOVE_RIGHT, _device_of(event))
 	return _result(Intent.NONE, _device_of(event))
 
 
@@ -80,7 +98,10 @@ func name_of(intent: int) -> String:
 ## Every action name this router drives, for a demo or a settings screen to check
 ## the project's input map against.
 func action_names() -> Array:
-	return [ACTION_FOCUS_NEXT, ACTION_FOCUS_PREV, ACTION_CONFIRM, ACTION_DISMISS]
+	return [
+		ACTION_FOCUS_NEXT, ACTION_FOCUS_PREV, ACTION_CONFIRM, ACTION_DISMISS,
+		ACTION_MOVE_LEFT, ACTION_MOVE_RIGHT,
+	]
 
 
 func _mouse_intent(event: InputEventMouseButton) -> Dictionary:
