@@ -22,8 +22,12 @@ extends Control
 ## * **Every action goes through the owner of the rule.** Equipping calls the
 ##   inventory; tier-up and take-back call the arena, which owns the phase lock and
 ##   the price. The window never charges, raises or moves anything itself, so a
-##   refused action is the owner's refusal and the window shows the owner's words
+##   refused action is the owner's refusal and the window reports the owner's words
 ##   verbatim (`Inventory.last_refusal()`, `Arena.last_refusal()`).
+## * **A refusal is told, not drawn** (T-0086). The window ends at its last action
+##   row: it has no status line, no refusal sentence and no hint. The owner's words
+##   go to `TOWER_WINDOW_REFUSED` and to the `refused` signal, and `reason()` hands
+##   the last one to a caller; the tower, the gold and the row stay as they were.
 ## * **Read-only during a wave.** The window still opens and reads; `equip`,
 ##   `raise_tier` and `take_back` are each refused, and the sentence is the
 ##   arena's own. Equipping has no arena door, so the window asks the arena to
@@ -36,7 +40,7 @@ extends Control
 ##   because `apply_upgrade_to_tower()` checks the free slot before it touches the
 ##   hand. This window therefore offers no replace action and no "warning before
 ##   destroying" is needed: there is no destroy path here to warn about. The
-##   refusal is shown, the upgrade stays in hand, and the tower keeps what it had.
+##   refusal is reported, the upgrade stays in hand, and the tower keeps what it had.
 ## * **The bar's list needs no filtering here.** `Inventory.upgrades()` is the
 ##   pool *in hand*; an applied upgrade lives on its tower and has left that pool,
 ##   so equipping removes the item from the bar by construction. This window adds
@@ -101,9 +105,6 @@ const KIND_TAKE_BACK := "take_back"
 @export var tier_path: NodePath = ^"Panel/Margin/Column/Tier"
 @export var equipped_path: NodePath = ^"Panel/Margin/Column/Equipped"
 @export var rows_path: NodePath = ^"Panel/Margin/Column/Rows"
-@export var status_path: NodePath = ^"Panel/Margin/Column/Status"
-@export var reason_path: NodePath = ^"Panel/Margin/Column/Reason"
-@export var hint_path: NodePath = ^"Panel/Margin/Column/Hint"
 ## The panel itself, so a click outside it can be told from one inside it.
 @export var panel_path: NodePath = ^"Panel"
 
@@ -133,8 +134,8 @@ const KIND_TAKE_BACK := "take_back"
 @export var nothing_equipped_text: String = "nothing equipped"
 @export var slots_format: String = " %d/%d slots"
 @export var gold_format: String = "Gold %d"
-## The status line between waves, and during one.
-@export var ready_text: String = "between waves - equip, upgrade or take back"
+## The sentence `_arena_wave_reason()` falls back to when there is no arena to ask.
+## It is no longer drawn: a refusal is logged and emitted, never displayed (T-0086).
 @export var read_only_text: String = "read only: a wave is running - nothing can be changed"
 ## One row per upgrade in hand.
 @export var equip_row_format: String = "Equip %s"
@@ -155,7 +156,6 @@ const KIND_TAKE_BACK := "take_back"
 @export var take_back_in_hand_text: String = "this tower is already in the inventory"
 ## Between an option's label and its detail.
 @export var field_separator: String = " · "
-@export var hint_text: String = "Up/Down moves · Enter or a click acts · Escape closes"
 @export var focus_marker: String = "> "
 
 @export_group("Tuning — PLACEHOLDER (T-0069)")
@@ -805,10 +805,6 @@ func _apply_copy() -> void:
 		_set_label(identity_path, identity_format % [_open_id, where])
 		_set_label(tier_path, tier_format % int(tower.tier))
 		_set_label(equipped_path, _equipped_text(tower))
-	var lock := read_only_text if read_only() else ready_text
-	_set_label(status_path, "%s%s%s" % [gold_format % _gold(), field_separator, lock])
-	_set_label(reason_path, _reason)
-	_set_label(hint_path, hint_text)
 	for entry in _rows:
 		var node = (entry as Dictionary).get("node", null)
 		if node is PanelContainer:

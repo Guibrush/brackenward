@@ -50,17 +50,3 @@ text = "Carrying: nothing equipped 0/2 slots"
 [node name="Rows" type="VBoxContainer" parent="Panel/Margin/Column"]
 layout_mode = 2
 theme_override_constants/separation = 6
-
-[node name="Status" type="Label" parent="Panel/Margin/Column"]
-layout_mode = 2
-autowrap_mode = 3
-text = "Gold 0 · between waves - equip, upgrade or take back"
-
-[node name="Reason" type="Label" parent="Panel/Margin/Column"]
-layout_mode = 2
-autowrap_mode = 3
-
-[node name="Hint" type="Label" parent="Panel/Margin/Column"]
-layout_mode = 2
-autowrap_mode = 3
-text = "Up/Down moves · Enter or a click acts · Escape closes"

@@ -46,6 +46,9 @@ extends SceneTree
 ##      for, and visible, open, revealed and placed two frames later - the reveal
 ##      order the popover bug violated. Every window that is open anywhere in this
 ##      walk has a positive panel rect that the viewport wholly contains.
+##   9. (T-0086) the window ends at its last action row: its column is exactly
+##      `Title`, `Identity`, `Tier`, `Equipped`, `Rows`, and nothing is drawn at the
+##      removed `Status` / `Reason` / `Hint` names.
 ##
 ## The same file produces the acceptance frame. With `--write-movie` on the command
 ## line it holds the final state for `MOVIE_HOLD_FRAMES`, so the last PNG the movie
@@ -111,6 +114,19 @@ const EXPECTED_COLUMN: Array[String] = ["State", "Wave", "Actions"]
 const EXPECTED_STATE_TEXT := "HQ 10/10"
 const EXPECTED_WAVE_TEXT := "Wave 1/6"
 const EXPECTED_START_WAVE_TEXT := "Start Wave"
+
+## The tower window's column, by the scene path the window is built with. The old
+## `Status` / `Reason` / `Hint` exports pointed here, so this is the one path worth
+## naming in the demo (T-0086).
+const WINDOW_COLUMN := "Panel/Margin/Column"
+
+## What the tower window's column must hold (T-0086), duplicated here for the same
+## reason as `EXPECTED_COLUMN`: the window ends at its last action row, so a status
+## line, a refusal sentence or a hint left in the scene fails this comparison.
+const EXPECTED_WINDOW_COLUMN: Array[String] = ["Title", "Identity", "Tier", "Equipped", "Rows"]
+## The rows T-0086 removed. Named here so the absence is asserted by name, against
+## the path the old exports used, rather than by counting children alone.
+const WINDOW_REMOVED_ROWS: Array[String] = ["Status", "Reason", "Hint"]
 
 var _boot = null
 var _panel = null
@@ -561,8 +577,13 @@ func _run() -> void:
 		var take_back_row := _window_row_index(take_back_window, "take_back")
 		if check(take_back_row >= 0, "the window offers taking it back: %s" % [take_back_window.rows()]):
 			var row_point: Vector2 = take_back_window.row_rect(take_back_row).get_center()
-			check(not _bar.claim_point(row_point),
-				"the window's row is off the bar, so that click is the window's: %s" % [row_point])
+			# After T-0086 the trimmed window is short enough that its last row can sit
+			# over the bar's rect. The window is drawn above the bar and consumes the
+			# press first (T-0083 input ownership), so the row is still the window's;
+			# the take-back assertions below are what prove the click landed.
+			check(take_back_window.panel_rect().has_point(row_point),
+				"the take-back row is inside the window's panel: %s in %s"
+				% [row_point, take_back_window.panel_rect()])
 			await _click(row_point, "left click on the window's Take back row")
 	await _close_window("close the window after taking the tower back")
 	_state_evidence("taken back")
@@ -1251,15 +1272,17 @@ func _close_window(what: String) -> void:
 ## resolves to the class the node is drawn with (T-0083). The T-0083 scene move took
 ## the panel out of a `Center` container and invalidated all nine paths at once; this
 ## is the assertion that fails if any of them is left behind (L-041).
+##
+## After T-0086 the window ends at its last action row, so the column is asserted
+## whole: exactly `Title`, `Identity`, `Tier`, `Equipped`, `Rows`, and nothing at the
+## old `Status` / `Reason` / `Hint` names. A status line put back is a failed case
+## here, not a surprise on the human's screen.
 func _check_window_paths(window) -> void:
 	var labels := {
 		"title_path": window.title_path,
 		"identity_path": window.identity_path,
 		"tier_path": window.tier_path,
 		"equipped_path": window.equipped_path,
-		"status_path": window.status_path,
-		"reason_path": window.reason_path,
-		"hint_path": window.hint_path,
 	}
 	for key in labels:
 		var path: NodePath = labels[key]
@@ -1274,6 +1297,32 @@ func _check_window_paths(window) -> void:
 	check(panel is PanelContainer,
 		"the window's panel_path resolves to the panel: '%s' -> %s"
 		% [String(window.panel_path), panel])
+
+	# --- T-0086: the column ends with its rows -----------------------------
+	var column = window.get_node_or_null(WINDOW_COLUMN)
+	var column_children: Array[String] = []
+	if column != null:
+		for child in column.get_children():
+			column_children.append(String(child.name))
+	check(column is VBoxContainer,
+		"the window's column resolves to a VBoxContainer: '%s' -> %s"
+		% [WINDOW_COLUMN, column])
+	check(column_children.size() == EXPECTED_WINDOW_COLUMN.size(),
+		"the window's column has exactly five children: %s" % [column_children])
+	check(column_children == EXPECTED_WINDOW_COLUMN,
+		"the window's column is Title, Identity, Tier, Equipped, Rows and nothing else: %s"
+		% [column_children])
+	var absent: Array[String] = []
+	for gone in WINDOW_REMOVED_ROWS:
+		var node = window.get_node_or_null(WINDOW_COLUMN + "/" + gone)
+		check(node == null, "nothing is drawn at the old %s row: %s" % [gone, node])
+		absent.append("%s=%s" % [gone, node == null])
+	print("PANEL_BAR_WINDOW " + JSON.stringify({
+		"case": "column",
+		"column": column_children,
+		"absent": absent,
+		"panel": _rect_json(window.panel_rect()),
+	}))
 
 
 func _on_window_closed(why: String) -> void:
