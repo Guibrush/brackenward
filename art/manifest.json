@@ -98,8 +98,12 @@
       "placeholder": false,
       "status": "shipped",
       "directions": 1,
-      "actions": ["idle"],
-      "frames": ["assets/art/towers/arrow/idle/south.png"],
+      "actions": [
+        "idle"
+      ],
+      "frames": [
+        "assets/art/towers/arrow/idle/south.png"
+      ],
       "license": "generated: PixelLab, commercial use",
       "prompt": "tall stone watchtower with a steep conical/pyramidal roof, arrow slits and an arched door, isometric 3/4, isolated object on a transparent background, filling the frame: the roof smaller than the wall footprint with a visible overhang and eaves line, no flat roof slab, no crenellations or merlons, nothing clipped by the canvas edge, comparable to art/style/anchor.png",
       "prompt_source": "reconstructed from tasks/T-0033.md 'What to produce'. The T-0033 call was not persisted verbatim and the generator jobs have expired, so this records the intent that produced the sprite, not a byte-exact log of the request.",
@@ -551,6 +555,86 @@
       "bytes": 973,
       "verified": "2026-11-12",
       "source_task": "T-0095"
+    },
+    {
+      "id": "tower-rime-candidate",
+      "license": "generated: PixelLab, commercial use",
+      "type": "prop",
+      "file": "art/candidates/tower-rime-candidate.png",
+      "width": 64,
+      "height": 64,
+      "purpose": "Rime tower candidate from the T-0096 regeneration with art/director's absolute-width prompt: an ice-and-frost siege tower, a square shaft under a wide bristling crown of faceted crystal shards. Accepted on the brief's mechanical rules (0 pad greens, non-zero and then complete ink coverage, fill rule met). It is a candidate, not a shipping asset: art/director has still to rule on the two weaknesses recorded below, and nothing is wired into a scene.",
+      "placeholder": true,
+      "status": "candidate",
+      "frames": 1,
+      "directions": 1,
+      "generator": "pixellab.create_image_pro_flash",
+      "generator_detail": "64x64, no_background true, style_options {color_palette:false, outline:true, detail:true, shading:true}, palette = the locked 16 (bracken dusk), palette_name 'bracken dusk', max_colors 12, seed 9601",
+      "job_id": "2b2bfdbe-8e96-4d90-8fa5-67fa6572170b",
+      "source_image_id": "c353c61f-08f3-5a7d-bd74-c4fe3abaa385",
+      "prompt": "a rime tower: a solid ice-and-frost siege tower. A sturdy square shaft of pale frost-veined stone at least 28 to 32 px wide (occupying the full tile width), resting on a 32 px wide stone footing block on the bottom row. The crown is a wide, bristling cluster of sharp faceted ice crystal shards branching outward to span 36 to 48 px wide across the top of the canvas. A continuous 1 px #1b1a26 dark ink outline around the entire outer silhouette. No detached floating shards, no grass, no plinth. Same rendering and top-left lighting as art/style/anchor.png.",
+      "prompt_source": "verbatim: copied from the create_image_pro_flash call made under T-0096, art/director's text unchanged. Measured at 558 code points before sending, under the 2000 limit that L-046 requires a guard for.",
+      "style_reference": "art/style/anchor.png, reused at its existing uploaded id upload:25763f10-f6ff-47c2-8f2e-d9d0a7a82df3 (64x64). No re-upload and no crop were needed.",
+      "style_reference_usage": "color_palette is false so the palette came from the passed list. style_image.usage_description restricted the reference to palette warmth, top-left light, 3/4 projection, 1 px outline weight and detail level, and explicitly excluded the anchor's grass pad, diamond plinth and base shadow - the T-0095 mitigation for the L-045 leak, reused here.",
+      "generations_spent": 0,
+      "spend_note": "The call was priced at 5 estimated generations (pricing_provisional true) but was NOT billed in generations: get_balance before the call read generations_used 36 / generations_remaining 4 / credits $10.00, and after completion read 36 / 4 / $9.97. The 5-generation estimate was funded from the credit balance instead, charged_usd 0.025220364652633668, so the vendor generation counter did not move and no plan top-up was consumed. Recorded as 0 generations precisely because that is what the vendor counter did; the $0.0252 credit charge is recorded here and in the T-0096 ledger note rather than converted into a generation count.",
+      "budget_note": "T-0096 allowed one call and one call was made. No regeneration: the second call the budget forbids was not attempted.",
+      "tones": 5,
+      "tone_detail": "slate #5b8a8c 468 px, deep teal #2f4a55 456, highlight #fff4d6 421, ink #1b1a26 247, shadow #2e2a3b 66",
+      "off_palette_colours": 0,
+      "binary_alpha": true,
+      "ground_pad_pixels": 0,
+      "pad_green_scan": "0 pixels of deep green #3a4a3a, leaf #6f8f4a or sunleaf #9ab55c, scanned on the raw before any post pass, as L-045 requires. The 'no grass, no plinth' wording plus the usage_description held.",
+      "enclosed_holes": 0,
+      "content_bbox": [
+        12,
+        0,
+        51,
+        63
+      ],
+      "fill_rule": "content height 64 of 64 px = 100% against the 80% floor, widest row 40 px at row 14 against the 24 px floor. Both met, measured pad-free including the outline.",
+      "silhouette_outline": "196/196 silhouette boundary pixels are ink #1b1a26 after the post pass; 187/196 on the raw.",
+      "measured_widths": "shaft rows 26-46 run 23-26 px wide; the base widens 26 to 34 px over rows 48-58 then tapers to 4 px at row 63; the crown reaches 40 px at row 14.",
+      "post_processing": [
+        "pad-green scan run BEFORE any post pass (L-045): 0 hits, so no pad crop was needed and nothing was erased.",
+        "no palette snap was needed: passing palette plus max_colors 12 made the generator draw inside the locked 16, straight to 5 distinct tones and 0 off-palette. Verified, not assumed.",
+        "completed the 1 px #1b1a26 ink outline by recolouring exactly the 9 boundary pixels that were not ink - (31,0) and (48,4) and (49,4) and (47,12) and (47,18) #2e2a3b, (41,5) and (50,14) and (13,15) #2f4a55, (13,14) #5b8a8c - bringing coverage from 187/196 to 196/196. Done with a deterministic Pillow script (pixelart_workbench was not used for this pass), and verified by pixel diff: exactly those 9 pixels differ between the raw and this file, no geometry moved.",
+        "alpha, holes and clipping checked after the pass: alpha values {0,255} only, 0 enclosed holes, single connected component of 1658 px (so no detached floating shards, which the prompt forbade)."
+      ],
+      "weakness_note": "Stated rather than hidden, for art/director. (1) The base is a diamond: rows 48-58 widen 26 to 34 px, wider than the 23-26 px shaft, then taper to a 4 px point on the last row. That is the geometry the ground-pad rule exists to keep off a sprite, reproduced here with 0 green pixels, so the mechanical pad-green scan passes while the shape the rule is really about is present. The fill rule passes only because the widest row is the crystal crown, not the shaft. (2) The sprite touches both canvas edges: 3 px flat at row 0 (topmost crystal apex) and 4 px at row 63 (base point), which reads as art drawn slightly larger than the frame and cropped. No post pass can restore a cut tip or widen the contact row, and the brief's own rule for this call was one call with no regeneration, so both are recorded rather than repaired. (3) The shaft misses the prompt's stated 28-32 px target at 23-26 px. (4) Palette is on-palette but off-role: 0 px of stone #8b8291 on a tower the prompt called stone, and 421 px of highlight #fff4d6 (25% of the sprite) against STYLE's 'brightest point, sparingly'.",
+      "read_note": "Un-verified by the author: whether it reads as a rime tower at 1x on the board, and whether the speckled cream-on-teal body reads as frost veining or as noise. Both are judgements for art/director, not self-assessments.",
+      "sha256": "2DB75BCA076820B1480FD337DBE7E18AE05905E5D1D0C64F9286B574F62CC7C5",
+      "bytes": 1528,
+      "raw": "art/candidates/tower-rime-candidate-retry-raw.png",
+      "verified": "2026-11-12",
+      "source_task": "T-0096"
+    },
+    {
+      "id": "tower-rime-candidate-retry-raw",
+      "license": "generated: PixelLab, commercial use",
+      "type": "prop",
+      "file": "art/candidates/tower-rime-candidate-retry-raw.png",
+      "width": 64,
+      "height": 64,
+      "purpose": "Unmodified generator output for tower-rime-candidate, kept as evidence of the pre-post state. Named -retry-raw rather than -raw because a rejected T-0095 rime raw already holds the art/candidates/tower-rime-candidate-raw.png path on the unmerged art branch; overwriting it would have destroyed that evidence record.",
+      "placeholder": true,
+      "status": "raw-evidence",
+      "frames": 1,
+      "directions": 1,
+      "generator": "pixellab.create_image_pro_flash",
+      "job_id": "2b2bfdbe-8e96-4d90-8fa5-67fa6572170b",
+      "generations_spent": 0,
+      "spend_note": "Same one call as tower-rime-candidate: charged_usd 0.025220364652633668 against the credit balance, 0 vendor generations (36/4 before and after). Billed once, on the candidate entry's spend_note.",
+      "tones": 5,
+      "off_palette_colours": 0,
+      "binary_alpha": true,
+      "ground_pad_pixels": 0,
+      "enclosed_holes": 0,
+      "silhouette_outline_at_raw": "187/196 silhouette boundary pixels in ink #1b1a26 (95.4%); the 9 gaps are listed in the candidate entry's post_processing.",
+      "sha256": "02F6E3DE08869778399A0594414D8124024F3B16030CB6AE8172B39B95FD23A2",
+      "bytes": 1574,
+      "verified": "2026-11-12",
+      "source_task": "T-0096"
     }
   ],
   "generation_ledger": {
@@ -576,5 +660,15 @@
     "recorded_detail_after_t0095": "18 recorded at T-0094 + tower-mortar-candidate 5 + tower-rime-candidate-raw 5 = 28. The rime spend is billed to the raw entry because no accepted rime candidate was produced; the rejected output still cost its 5 generations and is recorded as spent, not as unspent.",
     "unattributed_after_t0095": "36 vendor - 28 recorded = 8, still unchanged from the T-0093 gap. Both T-0095 calls are fully attributed, so the gap did not grow.",
     "budget_note_after_t0095": "The T-0095 brief allowed 10 generations and 10 were spent: two calls at 5 each. The 40-generation allowance now stands at 36 used, 4 remaining - less than the 5 a single 64x64 Pro Flash call costs. Any further tower generation is blocked until the vendor top-up already listed as pending in docs/STATE.md arrives, and a third call cannot be funded from the current balance at all."
+  },
+  "credit_ledger_t0096": {
+    "vendor": "pixellab",
+    "source": "pixellab.get_balance",
+    "before": "credits $10.00, generations_used 36, generations_remaining 4, generations_total 40, subscription trial",
+    "after": "credits $9.97, generations_used 36, generations_remaining 4, generations_total 40, subscription trial",
+    "call": "one create_image_pro_flash, job 2b2bfdbe-8e96-4d90-8fa5-67fa6572170b, 64x64, estimated_generations 5, pricing_provisional true, charged_usd 0.025220364652633668",
+    "finding": "The 5-generation estimate was met from the $10 credit balance, not from the plan's 4 remaining generations: the vendor generation counter read 36 used / 4 remaining both before and after, and only the credit balance moved, by $0.03. The docs/STATE.md line that rime/beacon/bramble are blocked until a plan top-up is therefore inaccurate for the credit path, at roughly $0.025 per 64x64 Pro Flash call. This note records what two get_balance calls measured; if the generation counter settles later it will contradict this line and the note is the weaker evidence.",
+    "measured_at": "2026-11-12",
+    "recorded_by": "T-0096 (art/pixel)"
   }
 }
