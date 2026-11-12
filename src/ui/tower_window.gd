@@ -49,8 +49,12 @@ extends Control
 ##   backdrop and no `Center` container: the panel is placed beside the click that
 ##   opened it - above and to the right, `anchor_gap` away - clamped inside the
 ##   viewport with `viewport_margin` to spare, and flipped below when the clamped
-##   panel would cover that click. Placement happens after one layout frame, so the
-##   panel's own measured size is what the arithmetic uses. A pointer confirm
+##   panel would cover that click. Placement happens after one layout frame in which
+##   the panel is shown **fully transparent**, so its own measured size is what the
+##   arithmetic uses and the player never sees the scene's default rect; the
+##   placement tick restores the alpha, so the first visible frame is the final
+##   rect. `is_revealed()` is false until then, and a pointer confirm before the
+##   placement - including the click that opened the window - is ignored.
 ##   outside `panel_rect()` closes the window (`why = "clicked outside"`), consumes
 ##   the event and does nothing else; a pointer confirm that arrives before the
 ##   panel has been placed - including the click that opened the window - is
@@ -86,6 +90,10 @@ const MapInputScript := preload("res://src/ui/map_input.gd")
 const KIND_EQUIP := "equip"
 const KIND_TIER := "tier"
 const KIND_TAKE_BACK := "take_back"
+
+## Layout ticks the placement waits for before revealing the window (T-0084). One is
+## enough: the panel is shown transparent first so its wrapping labels are measured at
+## the real width, then the next tick places it and turns it opaque.
 
 @export_group("Layout — node paths")
 @export var title_path: NodePath = ^"Panel/Margin/Column/Title"
@@ -223,6 +231,9 @@ func unbind() -> void:
 	_open = false
 	_open_id = -1
 	_panel_placed = false
+	# A countdown left running would place a panel for a run this window no longer
+	# has; `_process` also guards on `_open`, and this is the second lock (T-0084).
+	_place_countdown = -1
 	_flow = null
 	_arena = null
 	_rows.clear()
@@ -261,6 +272,11 @@ func open_for(instance_id: int) -> bool:
 	_anchor = _click_point()
 	_open_frame = Engine.get_process_frames()
 	_panel_placed = false
+	# Shown fully transparent for the layout tick, then placed and made opaque by
+	# `_place_panel()` (T-0084). A transparent Control still lays out, so the wrapping
+	# labels measure at the real width; the player never sees the scene's default
+	# rect, because nothing is drawn until the alpha goes back to 1.
+	modulate.a = 0.0
 	show()
 	refresh(true)
 	_place_countdown = 1
@@ -288,6 +304,7 @@ func close(why: String = "") -> bool:
 	hide()
 	_panel_placed = false
 	_place_countdown = -1
+	modulate.a = 1.0
 	var instance_id := _open_id
 	_open_id = -1
 	_rows.clear()
@@ -301,6 +318,14 @@ func close(why: String = "") -> bool:
 
 func is_open() -> bool:
 	return _open and visible
+
+
+## True once the player can actually see the window: open, visible, and no longer in
+## the transparent layout tick before placement (T-0084). The bug this distinguishes
+## from `is_open()` is a window whose scene rect is drawn for a frame before the
+## panel is placed.
+func is_revealed() -> bool:
+	return is_open() and modulate.a > 0.0
 
 
 func opened_instance() -> int:
@@ -937,11 +962,14 @@ func _index_of_key(key: String) -> int:
 
 # --- internals: placement (T-0083) ------------------------------------------
 
-## One process tick of grace before the panel is placed, then the placement itself.
-## A container's measured size is only final once it has been laid out, and placing
-## a popover on a stale rect is how half of it ends up off-screen. The countdown is
-## a field rather than an `await` so a window freed mid-open cannot leave a
-## coroutine resuming on a dead node.
+## The placement's grace, tick by tick, then the placement itself. A container's
+## measured size is only final once it has been laid out **at the width it will
+## keep**, and this panel's labels wrap, so their height depends on that width: with
+## no layout at all the height measures as if the text were one word per line. The
+## first tick therefore gives the hidden panel its width (nothing is visible yet),
+## and the next measures that layout, places it and shows it. The countdown is a
+## field rather than an `await` so a window freed mid-open cannot leave a coroutine
+## resuming on a dead node.
 func _process(_delta: float) -> void:
 	if not _open or _place_countdown < 0:
 		return
@@ -950,6 +978,17 @@ func _process(_delta: float) -> void:
 		return
 	_place_panel()
 	_place_countdown = -1
+
+
+## The width the panel keeps: its content's own minimum is the floor, the popover's
+## ceiling the cap, and `panel_min_width` the column the design asks for.
+func _panel_width(panel: Control) -> float:
+	var measured: Vector2 = panel.get_combined_minimum_size()
+	return clampf(
+		maxf(float(measured.x), float(panel_min_width)),
+		float(panel_min_width),
+		float(panel_max_width)
+	)
 
 
 ## Places the panel beside the anchor: above and to the right of the click, inside
@@ -962,14 +1001,10 @@ func _place_panel() -> void:
 		return
 	var panel := node as Control
 	# Width first: the labels wrap, so their height is only right at the width the
-	# panel keeps. The content's own minimum is the floor, the popover's ceiling the
-	# cap, and `panel_min_width` the column the design asks for.
+	# panel keeps. The panel has been visible (transparent) since `open_for()`, so
+	# this measurement is of a real layout.
 	var measured: Vector2 = panel.get_combined_minimum_size()
-	var width := clampf(
-		maxf(float(measured.x), float(panel_min_width)),
-		float(panel_min_width),
-		float(panel_max_width)
-	)
+	var width := _panel_width(panel)
 	var size := Vector2(width, maxf(float(measured.y), 1.0))
 	var view := get_viewport().get_visible_rect().size
 	var gap := float(anchor_gap)
@@ -986,6 +1021,9 @@ func _place_panel() -> void:
 		flipped = true
 	panel.size = size
 	panel.position = position
+	# Reveal only now (T-0084): the first frame the player can see is the frame the
+	# panel is already at its final rect. Before this it was shown at alpha 0.
+	modulate.a = 1.0
 	_panel_placed = true
 	print("TOWER_WINDOW_PLACED " + JSON.stringify({
 		"instance": _open_id,

@@ -42,6 +42,10 @@ extends SceneTree
 ##      bar are both refused without the arena being asked, and the panel's own
 ##      take-back returns the tower so the cases below run as they did;
 ##   7. the panel's last line sits above the bar, not under it.
+##   8. (T-0084) the window is fully transparent on the frame `open_for()` is asked
+##      for, and visible, open, revealed and placed two frames later - the reveal
+##      order the popover bug violated. Every window that is open anywhere in this
+##      walk has a positive panel rect that the viewport wholly contains.
 ##
 ## The same file produces the acceptance frame. With `--write-movie` on the command
 ## line it holds the final state for `MOVIE_HOLD_FRAMES`, so the last PNG the movie
@@ -303,6 +307,7 @@ func _run() -> void:
 		check(window.is_open(), "the click on the bar opened the tower window (T-0074)")
 		check_eq_int(int(window.opened_instance()), picked_id, "the window opened on the tower the bar selected")
 		_check_window_paths(window)
+		_check_window_placed(window, "the click on the bar")
 		var panel_rect: Rect2 = window.panel_rect()
 		var viewport := Rect2(Vector2.ZERO, Vector2(root.size))
 		var anchor: Vector2 = window.anchor_point()
@@ -336,6 +341,50 @@ func _run() -> void:
 		"Escape closed the window through its own dismiss path: %s" % [_window_closes])
 	check_eq_int(int(_bar.selected_instance()), picked_id, "closing the window left the bar's selection alone")
 	check_eq_int(int(_panel.selected_instance()), picked_id, "closing the window left the panel's selection alone")
+
+	# --- 2a. the window is invisible until it is placed (T-0084) ------------
+	# The bug this case exists for: `open_for()` called `show()` and placed the panel
+	# on a later tick, so the first visible frames were the scene's default rect in
+	# the corner. The reveal is asserted on the frame it is asked for and on the
+	# placement that follows - not on a screenshot - and a regression that shows
+	# first fails the same-frame `visible` check.
+	_case("the window is hidden on the frame it opens and placed when it is shown")
+	var reveal_window = _window()
+	if check(reveal_window != null and not _window_open(reveal_window),
+		"this case starts with the tower window closed"):
+		check(reveal_window.open_for(picked_id),
+			"open_for() accepts a tower that is in hand: %d" % picked_id)
+		var transparent_same_frame: bool = reveal_window.modulate.a == 0.0
+		var alpha_at_open: float = reveal_window.modulate.a
+		var unrevealed_same_frame: bool = not reveal_window.is_revealed()
+		var anchor_at_open: Vector2 = reveal_window.anchor_point()
+		check(transparent_same_frame,
+			"the window is drawn transparent on the frame it opens: alpha=%.2f"
+			% reveal_window.modulate.a)
+		check(unrevealed_same_frame,
+			"the window is not revealed before it is placed: is_revealed()=%s"
+			% reveal_window.is_revealed())
+		# One layout tick at alpha 0, then the placement and the reveal.
+		await _hold(2)
+		var revealed: Rect2 = reveal_window.panel_rect()
+		check(reveal_window.is_revealed(), "the window is revealed once the panel is placed")
+		check(reveal_window.is_open(),
+			"the placed window is open: is_open()=%s" % [reveal_window.is_open()])
+		_check_window_placed(reveal_window, "reveal order")
+		check(reveal_window.anchor_point().is_equal_approx(anchor_at_open),
+			"the placement used the anchor recorded when it opened: %s vs %s"
+			% [reveal_window.anchor_point(), anchor_at_open])
+		print("PANEL_BAR_WINDOW " + JSON.stringify({
+			"case": "reveal order",
+			"alpha_same_frame": alpha_at_open,
+			"transparent_same_frame": transparent_same_frame,
+			"unrevealed_same_frame": unrevealed_same_frame,
+			"revealed_after_placement": reveal_window.is_revealed(),
+			"open": reveal_window.is_open(),
+			"panel": _rect_json(revealed),
+			"viewport": _rect_json(Rect2(Vector2.ZERO, Vector2(root.size))),
+		}))
+	await _close_window("close the window the reveal-order case opened")
 
 	# A click outside the popover closes it and is consumed (T-0083): the click that
 	# dismisses a window is not also a board click. The point is chosen off the panel
@@ -439,6 +488,7 @@ func _run() -> void:
 		check(placed_window.is_open(), "the click on the placed tower opened the tower window (T-0074)")
 		check_eq_int(int(placed_window.opened_instance()), picked_id,
 			"the window opened on the tower standing there")
+		_check_window_placed(placed_window, "the click on the placed tower")
 	await _press(KEY_ESCAPE, "game_dismiss (Escape): close the tower window")
 	_state_evidence("placed tower window closed")
 	check(not _window_open(placed_window), "Escape closed the placed tower's window")
@@ -616,6 +666,7 @@ func _run() -> void:
 	# click's meaning, asserted here so the close below has something to close.
 	var press_window = _window()
 	check(_window_open(press_window), "the drop's press opened the tower window")
+	_check_window_placed(press_window, "the drop's press")
 	await _drag_move(release, "drag the tower onto the board at (%.0f, %.0f)" % [release.x, release.y])
 	# T-0080: the drag announcement is what puts that window away, before the release
 	# can place under it. This is the visible half of the wiring.
@@ -763,6 +814,7 @@ func _run() -> void:
 	check(not _bar.drag_active(), "no drag starts while the wave lock is on: %s" % [_drag_json()])
 	check(_window_open(_window()),
 		"the locked press still selected the tower it landed on: its window opened")
+	_check_window_placed(_window(), "the locked press")
 	check(_bar.ghost_rect().size.x <= 0.0, "no ghost is drawn while locked: %s" % [_bar.ghost_rect()])
 	await _drag_move(locked_point + Vector2(0, -200), "drag 200 px up while locked")
 	check_eq_int(_starts.size(), starts_before_lock, "a locked press announced no drag")
@@ -825,6 +877,7 @@ func _run() -> void:
 			"left click on the placed tower's bar slot for the frame")
 		var frame_window = _window()
 		check(_window_open(frame_window), "the tower window is open for the acceptance frame")
+		_check_window_placed(frame_window, "the acceptance frame")
 		# The lines read back off the Labels through the shipped paths, so the
 		# frame's evidence and the frame itself are the same artifact (T-0077, L-041).
 		print("PANEL_BAR_FRAME " + JSON.stringify({
@@ -1190,6 +1243,24 @@ func _check_window_paths(window) -> void:
 
 func _on_window_closed(why: String) -> void:
 	_window_closes.append(why)
+
+
+## The invariant the reveal-order bug violated (T-0084): an **open** window's panel
+## has a positive rect and is wholly inside the viewport, because the panel is placed
+## before the alpha is restored. Reading the running window, not a stored
+## expectation, so the same helper works at every point of the walk where a window is
+## up.
+func _check_window_placed(window, where: String) -> void:
+	if not _window_open(window):
+		check(false, "%s: there is no open window to check the placement of" % where)
+		return
+	var rect: Rect2 = window.panel_rect()
+	var view := Rect2(Vector2.ZERO, Vector2(root.size))
+	check(rect.size.x > 0.0 and rect.size.y > 0.0,
+		"%s: the open window's panel has a positive rect: %s" % [where, rect])
+	check(view.encloses(rect),
+		"%s: the open window's panel is wholly inside the viewport: %s in %s"
+		% [where, rect, view])
 
 
 ## One tower as the bar draws it, by inventory id; {} when it is not listed.
