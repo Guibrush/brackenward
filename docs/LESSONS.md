@@ -44,3 +44,33 @@ Evidence: T-0082 first windowed run: 95 PNGs, checks:9 failed:1
 unmet ["tower"], exit non-zero; identical command re-run: 180 PNGs,
 checks:187 failed:0, exit 0; eng/gameplay independent first-run fail at 9
 checks, repeat pass; headless runs green at 187 every time.
+
+## L-044 — 2026-11-12 — A second windowed-demo first-run flake signature (drag count drift); generalises L-043
+Situation: T-0090 added the bar's controller focus and captured the acceptance
+frame with a windowed `--write-movie` run of
+`src/ui/tests/inventory_migration_demo.gd`. The first run wrote 253 PNGs,
+exited 1 and printed `PANEL_BAR_SELF_TEST {"checks":292,"failed":2,"failures":
+["a press alone announces no drag: this could still be a click
+(tower_drag_started): expected 0, got 1","the motion past the threshold
+announced the drag exactly once (tower_drag_started): expected 1,
+got 2"],"movie":true,"status":"fail"}`. The identical command in a fresh temp
+dir wrote 253 PNGs, exited 0 and printed `{"checks":293,"failed":0,"failures":
+[],"movie":true,"status":"pass"}`. Headless runs of the same demo were 285/285
+twice, byte-identical focus lines. This is not the L-043 signature (9 checks,
+opening-choice `unmet ["tower"]`); it is drag-announcement count drift in the
+same demo under windowed timing.
+Worked: the builder applied L-043's spirit without being told — re-ran once in
+a fresh temp dir, got green, and did not report a product defect.
+Failed: L-043's rule was written to one signature, so a second, different
+first-run failure could have been misread as a real defect.
+Rule: a windowed demo run has more than one known first-run flake signature
+(L-043 opening-choice, L-044 drag count drift) — any windowed-only failure
+that does not reproduce headless is timing evidence, not a product defect;
+re-run once with a fresh temp dir before diagnosis, and movie evidence must
+name the run count. Fixing the demo's wall-clock timing remains its own task.
+Supersedes: L-043's signature-specific scope (its rule now holds via this
+general rule); L-043 remains as the first evidence record.
+Evidence: T-0090 first windowed run: 253 PNGs, checks:292 failed:2 (drag
+count drift), exit 1; identical command fresh temp dir: 253 PNGs,
+checks:293 failed:0, exit 0; headless 285/285 twice, byte-identical focus
+lines.

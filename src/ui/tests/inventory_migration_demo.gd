@@ -138,6 +138,12 @@ const EXPECTED_IN_HAND_TIER_ROW := "Upgrade to T2 \u2014 60 gold"
 const EXPECTED_TIER_2_SLOT_TEXT := "T2"
 const EXPECTED_TIER_2_LINE := "Tier T2"
 
+## How far the controller focus frame is drawn outside the slot it frames (T-0090),
+## duplicated here on purpose, like `EXPECTED_COLUMN`: a demo that read the number off
+## the bar would agree with a frame that drifted off the slot. One pixel - the frame
+## sits just outside the slot's own border, so both cues stay readable.
+const FOCUS_FRAME_EXPAND_PX := 1.0
+
 var _boot = null
 var _panel = null
 var _bar = null
@@ -313,6 +319,93 @@ func _run() -> void:
 			% [restored, String(_panel.state()["label"])])
 		check(restored.contains("%d/%d" % [hq_before, hq_max]),
 			"the visible line carries the restored number: '%s'" % restored)
+
+	# --- 1c. the bar's controller face (T-0090) ----------------------------
+	# The pad drives the bar through its API - the panel's calls in T-0091 - and this
+	# case is the bar's half of that: left/right moves a focus across the current
+	# page's tower slots, confirm selects and arms, dismiss clears. Every assertion is
+	# read off the bar's own drawn frame and off the panel's selection, because "bar
+	# and panel agree" is the claim, not "the bar said so".
+	_case("the bar can be driven by a controller (T-0090)")
+	await _settle()
+	if not check(_bar.slot_state("towers", 0) == "in_hand",
+		"the focus case starts on a tower in hand: '%s'" % _bar.slot_state("towers", 0)):
+		_finish()
+		return
+	var in_hand_rect: Rect2 = _bar.slot_rect("towers", 0)
+	check(_bar.focus_rect().size.x <= 0.0, "nothing is framed before the pad moves: %s" % [_bar.focus_rect()])
+	check_eq_int(int(_bar.focused_instance()), -1, "nothing is focused before the pad moves")
+
+	var focused_id := int(_bar.focus_tower(1))
+	check_eq_int(focused_id, picked_id, "focus_tower(1) lands on the run's only tower")
+	check_eq_int(int(_bar.focused_instance()), picked_id, "focused_instance() names that tower")
+	# The frame as drawn, against the slot grown by the one pixel the frame adds: a
+	# frame that drifted off the slot, or was never drawn, fails here (L-041).
+	var focus_frame: Rect2 = _bar.focus_rect()
+	check(focus_frame.size.x > 0.0 and focus_frame.size.y > 0.0,
+		"the focus frame is a drawn rect: %s" % [focus_frame])
+	var want_frame: Rect2 = in_hand_rect.grow(FOCUS_FRAME_EXPAND_PX)
+	check(_rects_near(focus_frame, want_frame, 1.0),
+		"the focus frame frames the slot: %s vs slot %s grown by %.0f px"
+		% [focus_frame, in_hand_rect, FOCUS_FRAME_EXPAND_PX])
+	# Focus is the frame, not a repaint: the slot's state border is still its own.
+	check(_bar.slot_border("towers", 0).is_equal_approx(_bar.hand_border_colour),
+		"focusing left the slot's state border untouched: %s vs %s"
+		% [_bar.slot_border("towers", 0), _bar.hand_border_colour])
+	print("PANEL_BAR_FOCUS " + JSON.stringify({
+		"case": "focused",
+		"instance": focused_id,
+		"frame": _rect_json(focus_frame),
+		"slot": _rect_json(in_hand_rect),
+		"want_frame": _rect_json(want_frame),
+		"selected": int(_bar.selected_instance()),
+	}))
+
+	# Confirm: the focus's selection door is `_select()`, so the panel arms the tower
+	# exactly as a click does - and nothing opens, because a pad selection is not a
+	# click on the tower (T-0085). The window is the assertion for that: the boot
+	# opens it on `tower_clicked`, so a window here is that signal having been raised.
+	_case("confirm selects and arms the focused tower, and opens no window (T-0090)")
+	check(_bar.activate_focused(), "activate_focused() took the focused tower")
+	_state_evidence("pad confirm")
+	check_eq_int(int(_bar.selected_instance()), picked_id, "the bar marks the focused tower selected")
+	check_eq_int(int(_panel.selected_instance()), picked_id, "the panel shows the same tower selected")
+	check_eq_int(int(_panel.armed_instance()), picked_id, "the panel armed the tower the pad confirmed")
+	check(not _window_open(_window()),
+		"a controller selection opened no tower window: window_open=%s" % _window_open(_window()))
+	check(_bar.focus_rect().size.x > 0.0,
+		"the focus frame still frames the slot it confirmed: %s" % [_bar.focus_rect()])
+
+	# Dismiss: the panel's own Escape clears the selection in both views, and
+	# `clear_focus()` drops the frame. Two cues, two calls - focus is not selection.
+	_case("dismiss clears the selection and the focus (T-0090)")
+	await _press(KEY_ESCAPE, "game_dismiss (Escape): clear the pad selection")
+	_state_evidence("pad selection cleared")
+	check_eq_int(int(_panel.selected_instance()), -1, "Escape cleared the panel's selection")
+	check_eq_int(int(_bar.selected_instance()), -1, "Escape cleared the bar's selection too")
+	check_eq_int(int(_panel.armed_instance()), -1, "Escape disarmed the tower")
+	_bar.clear_focus()
+	check(_bar.focus_rect().size.x <= 0.0 and _bar.focus_rect().size.y <= 0.0,
+		"clear_focus() empties the frame's rect: %s" % [_bar.focus_rect()])
+	check_eq_int(int(_bar.focused_instance()), -1, "clear_focus() empties focused_instance()")
+
+	# One tower in this run, so a second move wraps onto the same id - the case a pad
+	# player with a single tower is in for the whole of the first wave.
+	var wrapped_id := int(_bar.focus_tower(1))
+	check_eq_int(wrapped_id, picked_id, "a second focus_tower(1) wraps to the same tower")
+	check_eq_int(int(_bar.focused_instance()), picked_id, "the focus is on it again")
+	check(_bar.focus_rect().size.x > 0.0, "the frame is drawn again: %s" % [_bar.focus_rect()])
+	print("PANEL_BAR_FOCUS " + JSON.stringify({
+		"case": "wrapped",
+		"instance": wrapped_id,
+		"towers": int(_bar.state()["tower_count"]),
+		"frame": _rect_json(_bar.focus_rect()),
+		"slot": _rect_json(_bar.slot_rect("towers", 0)),
+	}))
+	# Left unfocused for the rest of the walk: the frame is this case's evidence, and
+	# the cases below are about the mouse and the keyboard.
+	_bar.clear_focus()
+	check_eq_int(int(_bar.focused_instance()), -1, "the case leaves nothing focused behind")
 
 	# --- 2. bar -> panel ----------------------------------------------------
 	_case("a real click on a tower in the bar selects it in the panel")
@@ -1061,6 +1154,25 @@ func _run() -> void:
 			"tier_row": frame_tier_text,
 			"hold_frames": MOVIE_HOLD_FRAMES,
 		}))
+		# T-0090's acceptance frame: the bar with a focused slot. The window is closed
+		# first (a popover over the slot would hide the cue), then the case the panel
+		# will make in T-0091 - one focus move - and the frame is read back off the
+		# node it draws, so the PNG and the evidence are the same artifact.
+		await _close_window("close the window before the focused frame")
+		var held_focus := int(_bar.focus_tower(1))
+		var held_frame: Rect2 = _bar.focus_rect()
+		check_eq_int(held_focus, picked_id, "the held frame focuses the tower in hand")
+		check(held_frame.size.x > 0.0, "the held frame draws the focus frame: %s" % [held_frame])
+		check(_rects_near(held_frame, _bar.slot_rect("towers", 0).grow(FOCUS_FRAME_EXPAND_PX), 1.0),
+			"the held frame's focus frame is on the slot: %s" % [held_frame])
+		print("PANEL_BAR_FRAME " + JSON.stringify({
+			"case": "focus",
+			"instance": held_focus,
+			"focus_frame": _rect_json(held_frame),
+			"slot": _rect_json(_bar.slot_rect("towers", 0)),
+			"window_open": _window_open(_window()),
+			"hold_frames": MOVIE_HOLD_FRAMES,
+		}))
 		await _hold(MOVIE_HOLD_FRAMES)
 
 	_finish()
@@ -1609,6 +1721,20 @@ func _geometry() -> Dictionary:
 
 func _rect_json(rect: Rect2) -> Array:
 	return [rect.position.x, rect.position.y, rect.size.x, rect.size.y]
+
+
+## True when two rects agree within `tolerance` on every edge. The comparison the
+## focus frame and the slot it frames need (T-0090): a container's layout is not
+## guaranteed to land on whole pixels, so "the frame is on the slot" is a claim about
+## edges within a pixel rather than an equality that a sub-pixel offset would break.
+func _rects_near(a: Rect2, b: Rect2, tolerance: float) -> bool:
+	if absf(a.position.x - b.position.x) > tolerance:
+		return false
+	if absf(a.position.y - b.position.y) > tolerance:
+		return false
+	if absf(a.size.x - b.size.x) > tolerance:
+		return false
+	return absf(a.size.y - b.size.y) <= tolerance
 
 
 func _free_slot() -> Dictionary:
