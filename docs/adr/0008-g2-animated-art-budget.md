@@ -1,7 +1,9 @@
 # ADR-0008 — Raise the G2 PixelLab generation ceiling for animated enemies
 
 Date: 2026-11-12
-Status: accepted (studio-lead; human approved the option)
+Status: accepted (studio-lead; human approved the option) — **superseded in part by
+ADR-0009**: G2 ships static enemy sprites; the animation budget and the 200 ceiling are
+withdrawn.
 Deciders: human, on studio-lead's recommendation
 
 ## Context

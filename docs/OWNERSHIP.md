@@ -67,7 +67,7 @@ mistaken for routine practice (see L-014).
 
 | 2026-11-07 | `eng/tools` | `src/systems/tests/**` (deletion only) | T-0044 moves four selftests into `scripts/tests/cases/` so `tests.ps1` runs them. The originals are deleted to prevent a stale duplicate; no assertions change owner, only location. |
 
-| 2026-11-12 | `studio-lead` | `docs/CHARTER.md` generation-budget row and cost note, `docs/adr/0008-g2-animated-art-budget.md` | The human approved raising the G2 PixelLab ceiling to ≤200 for animated enemies after the vendor audit (24 remaining, full animation ~168). The lead scribed the ADR and the charter row; the substance and the funding decision are the human's. |
+| 2026-11-12 | `studio-lead` | `docs/CHARTER.md` generation-budget row and cost note, `docs/adr/0008-g2-animated-art-budget.md`, `docs/adr/0009-g2-static-enemy-art.md` | The human first approved raising the G2 PixelLab ceiling to ≤200 for animated enemies, then reversed the animation scope: static sprites are approved first, animation deferred. The lead scribed ADR-0008, its partial supersession in ADR-0009, and the returning charter row (≤60); the substance and the funding decisions are the human's. |
 
 ## Unassigned paths
 
