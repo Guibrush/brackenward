@@ -40,7 +40,7 @@ Last updated: 2026-11-12
 | Stale demo walks | `armed_feedback_demo`, `input_route_demo`, `build_panel_demo`, `build_panel_boot_demo` are red before this milestone's UI tasks (opening-choice modal, tower rows removed in T-0068); each needs its walk repaired or retired |
 | Tower window behaviour proven | component and wiring exist, no demo proves equip/tier-up/read-only |
 | Square-slot demo, frame, planted failure | owed for T-0075 |
-| Art integration | towers and enemies are still polygons; one tower sprite is shipped and unwired. G2 scope is five tower sprites + eight static enemy sets (~33 generations); animation is deferred by ADR-0009 until the static sprites are approved. Vendor top-up pending (24 remain) |
+| Art integration | towers and enemies are still polygons; ballista and mortar candidates are approved, arrow is shipped. G2 scope is five tower sprites + eight static enemy sets; animation is deferred by ADR-0009. Vendor: **36/40 plan generations used, 4 remaining**; one Pro Flash call is 5, so rime/beacon/bramble wait on a plan top-up |
 | Content | 9 maps, 6 towers, 20 items, 5 enemies + bosses exist as tables, not content |
 | Audio batch | 4 tracks + ~48 one-shots unbuilt; music blocked on ADR-0005 |
 | Fun hypothesis test | not run — G2.11 |
