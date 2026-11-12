@@ -680,6 +680,15 @@ func _wire_level_panel() -> void:
 	if panel.has_method("select_instance"):
 		_connect(bar, "tower_selected", Callable(panel, "select_instance"))
 	_connect(panel, "tower_selected", Callable(bar, "mark_selected"))
+	# The controller's door (T-0091): the panel drives the bar's focus, its confirm
+	# and its dismiss, so the level still has one input reader and the bar still
+	# reads no keys. Read back off the return value rather than assumed, so a bar the
+	# panel refuses is visible in the line below.
+	var bar_api := false
+	if panel.has_method("bind_inventory_bar"):
+		bar_api = bool(panel.bind_inventory_bar(bar))
+	else:
+		_refuse("bind the inventory bar", "the panel has no bind_inventory_bar")
 	# The window's second door and its arena (T-0074). The arena is the level that
 	# owns the phase lock and the tier price, and a run opens more than one level, so
 	# it is bound here - once per level - rather than at the mount.
@@ -719,6 +728,7 @@ func _wire_level_panel() -> void:
 		"window_arena": window_arena,
 		"drop": drop_wired,
 		"drag_closes_window": drag_closes,
+		"bar_api": bar_api,
 		"level": _flow.level_node_id(),
 		"screen": screen_name(),
 	}))

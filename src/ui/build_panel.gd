@@ -171,6 +171,32 @@ extends Control
 ## drives `handle_input()` directly (a demo, or a future screen) cannot reach the
 ## board through a bar-owned point either.
 ##
+## THE CONTROLLER'S THREE MODES (T-0091)
+## -------------------------------------
+## A pad or keyboard player closes the placement loop here, and nowhere else. The
+## panel keeps one control mode, and every intent it reads is answered by it:
+##   * **ROWS** (the default, and the whole of the behaviour before T-0091):
+##     `FOCUS_NEXT/PREV` move the row focus and `CONFIRM` takes the focused row.
+##     `MOVE_LEFT/RIGHT` enter the bar.
+##   * **BAR**: `MOVE_LEFT/RIGHT` call `bar.focus_tower(±1)`; `CONFIRM` calls
+##     `bar.activate_focused()` and, once that armed a tower, enters TILES;
+##     `DISMISS` calls `bar.clear_focus()` and comes back to ROWS. **The bar is
+##     driven, never read**: the panel asks the bar to move its own focus, so the two
+##     views cannot disagree about which slot is focused or which tower is armed.
+##   * **TILES**: `FOCUS_NEXT/PREV` (down/up) and `MOVE_LEFT/RIGHT` step a **tile
+##     cursor** to the nearest **free** build tile inside a 90-degree cone in that
+##     direction - nothing in the cone is no move, never a wrap; `CONFIRM` places the
+##     armed tower through `place_at()`; `DISMISS` disarms and comes back to ROWS.
+## A successful `place_at()` from **any** path - a click, a drop, a pad confirm -
+## returns the mode to ROWS and hides the cursor, so "the player placed a tower" has
+## one consequence wherever it happened. The cursor is a `ReferenceRect` this file
+## builds (`Cursor`), hidden outside TILES, placed from the slot's world point
+## through the same transform `_pointer_world()` inverts: one transform, so the tile
+## a click would hit and the tile the cursor draws cannot disagree.
+## Input still arrives through `handle_input()` alone - the modes are state this file
+## keeps, not a second reader - and a pointer confirm behaves as it always did, in
+## every mode: a mouse is never forced through the cursor.
+##
 ## BINDING ORDER
 ## -------------
 ## A panel instanced into a level scene has its `_ready` run **before** the arena
@@ -205,6 +231,12 @@ extends Control
 ##   BUILD_PANEL_SETTLED {json}   a confirm dropped because the panel had just
 ##                                appeared (T-0071), with how much of the window
 ##                                was left
+##   BUILD_PANEL_BAR_BOUND {json} once, when the bar a pad drives was bound (T-0091)
+##   BUILD_PANEL_MODE {json}      every pad mode change, and every bar focus step or
+##                                confirm with what it took (T-0091)
+##   BUILD_PANEL_CURSOR {json}    every tile-cursor move, with the tile it landed on,
+##                                the rect drawn there and the free tiles it could
+##                                have chosen (T-0091)
 ##
 ## `ARENA_*` lines in the same output are the arena's, not this file's.
 
@@ -240,6 +272,16 @@ signal action_refused(action: String, reason: String)
 const KIND_START_WAVE := "start_wave"
 const KIND_UPGRADE := "upgrade"
 const KIND_TAKE_BACK := "take_back"
+
+## The three control modes a pad walks through (T-0091). `control_mode()` answers
+## with one of these, and the demo reads it back rather than the panel's internals.
+const MODE_ROWS := "rows"
+const MODE_BAR := "bar"
+const MODE_TILES := "tiles"
+## Half-angle of the cone one cursor step searches, in degrees (T-0091): a
+## 90-degree cone either side of the pressed direction, so a tile diagonally ahead
+## counts and a tile directly sideways does not.
+const CURSOR_CONE_HALF_DEGREES := 45.0
 
 @export_group("Layout — node paths")
 ## Exported rather than hardcoded, so the scene can be rearranged without touching
@@ -335,6 +377,23 @@ const KIND_TAKE_BACK := "take_back"
 ## window, which is what a demo measuring the pre-T-0071 behaviour sets.
 @export var input_settle_seconds: float = 0.35
 
+@export_group("Tuning — the placement cursor (T-0091)")
+## Side of the square cursor drawn on the build tile a pad confirm would place on,
+## in pixels. Range 24-64: below a tile's own size the cue disappears into the art,
+## much above it the cursor covers two tiles and lies about which one is chosen.
+@export var cursor_size: float = 40.0
+## Border colour of the cursor. Suggested range: a hue no tile in the level uses,
+## luminance above 0.7 so it reads against both grass and stone.
+@export var cursor_colour: Color = Color(1.0, 0.92, 0.25, 1.0)
+## Border thickness of the cursor, in pixels. Range 1-4; 0 leaves a cursor that is
+## drawn but invisible, which is the failure this cue exists to prevent.
+@export var cursor_border_width: int = 2
+## The panel's own refusal for a pad confirm in TILES with no free tile under the
+## cursor. The arena is never asked: with no free tile there is nothing to hand it,
+## and its "no free build tile" would be the wrong sentence for "the cursor is
+## nowhere yet".
+@export var no_free_tile_text: String = "no free build tile to place on"
+
 @export_group("Tuning — the armed and selected cue (T-0064)")
 ## Text colour of an armed row and the border of its band. Warm, because it is the
 ## row the player is about to act on. Suggested range: amber to orange, luminance
@@ -383,6 +442,19 @@ var _armed_id: int = -1
 ## The inventory instance the action rows belong to, or -1.
 var _selected_id: int = -1
 
+## The inventory bar this panel drives with a pad (T-0091), bound by
+## `bind_inventory_bar()`. Null means the controller's bar mode is refused, and the
+## rows and the mouse keep working exactly as they did.
+var _bar: Node = null
+## The mode a pad is in (T-0091): `MODE_ROWS`, `MODE_BAR` or `MODE_TILES`.
+var _mode: String = MODE_ROWS
+## The build tile the tile cursor is on, by the arena's own node name, or "" when the
+## cursor is not showing. Never set to an occupied tile: the cursor only ever walks
+## free ones.
+var _cursor_slot: String = ""
+## The cursor node, built once in `_ready` and hidden outside TILES (T-0091).
+var _cursor: ReferenceRect = null
+
 var _reason: String = ""
 var _last_signature: String = ""
 ## When the settle window ends, in `Time.get_ticks_msec()` terms (T-0071). Set
@@ -409,6 +481,9 @@ func _ready() -> void:
 			bind_arena(target)
 	_apply_copy()
 	_apply_metrics()
+	# The pad's tile cursor exists from the first frame, hidden: a node built on the
+	# first confirm would be drawn one frame late (T-0091).
+	_ensure_cursor()
 	# The arena is a parent: its `_ready` has not run yet, so there is no run and
 	# no inventory to read. Draw after it has seeded itself.
 	call_deferred("_deferred_draw")
@@ -432,6 +507,9 @@ func bind_arena(arena: Node) -> bool:
 	# it settles from now: the confirm that opened the level must not reach a row
 	# (T-0071).
 	_begin_settle()
+	# A pad mode belongs to one level's board: a cursor over the old level's tiles
+	# would point at nothing here (T-0091).
+	_set_mode(MODE_ROWS, "the panel was bound to a level")
 	# The arena is usually this panel's parent, and a parent's `_ready` runs
 	# **after** its children's: at this moment the arena has not resolved its
 	# ledger or its phase yet, so drawing now would show "Gold 0" for one frame.
@@ -446,6 +524,53 @@ func bind_arena(arena: Node) -> bool:
 
 func arena() -> Node:
 	return _arena
+
+
+# --- the controller's modes (T-0091) ----------------------------------------
+
+## Binds the inventory bar the pad drives. The boot calls this in
+## `_wire_level_panel()`, next to the pointer guard and the two selection
+## directions, because the boot is the only object that sees both the bar (in the HUD
+## layer) and the panel (inside the level).
+##
+## Returns whether the bar is usable. Refused for a null bar, and for one that cannot
+## be driven (`focus_tower` / `activate_focused` missing): a panel that entered a mode
+## the bar cannot answer would be a pad player stuck in a mode with no exit but
+## Escape, which is exactly what the refusal prevents.
+func bind_inventory_bar(bar) -> bool:
+	if bar == null:
+		_reject("bind the inventory bar", "no bar was handed over")
+		return false
+	if not bar.has_method("focus_tower") or not bar.has_method("activate_focused"):
+		_reject("bind the inventory bar", "the bar cannot be driven: it has no focus_tower/activate_focused")
+		return false
+	_bar = bar
+	_set_mode(MODE_ROWS, "the bar was bound")
+	print("BUILD_PANEL_BAR_BOUND " + JSON.stringify({
+		"bar": String((bar as Node).name),
+		"mode": _mode,
+	}))
+	return true
+
+
+## The mode the pad is in: `"rows"`, `"bar"` or `"tiles"` (T-0091).
+func control_mode() -> String:
+	return _mode
+
+
+## The build tile the tile cursor is on, by the arena's own node name, or "" when the
+## cursor is hidden (T-0091).
+func cursor_slot_name() -> String:
+	return _cursor_slot
+
+
+## The cursor as the player sees it, or an empty rect while it is not showing - the
+## same convention as the bar's `ghost_rect()` and `focus_rect()` (T-0091). Read off
+## the node that draws it, so the cue and the assertion are one artifact (L-041).
+func cursor_rect() -> Rect2:
+	if _cursor == null or not is_instance_valid(_cursor) or not _cursor.visible:
+		return Rect2()
+	return _cursor.get_global_rect()
 
 
 # --- pointer ownership ------------------------------------------------------
@@ -510,6 +635,10 @@ func refresh(force: bool = false) -> void:
 	_rebuild_rows()
 	_apply_copy()
 	_apply_visuals()
+	# The cursor is a function of the mode and the arena's tiles (T-0091): a re-draw
+	# is where a level swap, a taken-back tower or a moved board is noticed, and it
+	# is cheap while the cursor is hidden.
+	_place_cursor()
 	var signature := _signature()
 	if force or signature != _last_signature:
 		_last_signature = signature
@@ -850,6 +979,9 @@ func place_at(world_position: Vector2) -> bool:
 	_armed_id = -1
 	_selected_id = instance_id
 	_show_reason("")
+	# A placed tower ends the pad's placement for every path (T-0091): a click, a
+	# drop and a pad confirm all come through here, so the mode has one reset.
+	_set_mode(MODE_ROWS, "a tower was placed")
 	var slot := _slot_of(tower)
 	print("BUILD_PANEL_PLACED " + JSON.stringify({
 		"instance": instance_id,
@@ -963,24 +1095,31 @@ func select_at(world_position: Vector2) -> bool:
 # --- input ------------------------------------------------------------------
 
 ## One door for input. The event is translated by `MapInput`; this method moves
-## focus, takes a row, or resolves a pointer to a board action, and returns what it
-## did so a caller (or a demo) can assert on the translation as well as the effect.
+## focus, takes a row, drives the bar, steps the tile cursor, or resolves a pointer
+## to a board action, and returns what it did so a caller (or a demo) can assert on
+## the translation as well as the effect. `mode` in the result is the mode **after**
+## the event, which is what the read-back is for (T-0091).
 func handle_input(event: InputEvent) -> Dictionary:
 	var result: Dictionary = _router.intent_for(event)
 	var out := result.duplicate()
 	out["applied"] = false
+	out["mode"] = _mode
 	if not visible:
 		out["ignored"] = "the panel is not showing"
 		return out
 
 	match int(result["intent"]):
 		MapInputScript.Intent.FOCUS_NEXT:
-			out["applied"] = _move_focus(1)
+			out["applied"] = _step_focus(1, out)
 		MapInputScript.Intent.FOCUS_PREV:
-			out["applied"] = _move_focus(-1)
+			out["applied"] = _step_focus(-1, out)
 		MapInputScript.Intent.CONFIRM:
 			if result.has("pointer"):
 				out["applied"] = _confirm_pointer(result["pointer"], out)
+			elif _mode == MODE_BAR:
+				out["applied"] = _confirm_bar(out)
+			elif _mode == MODE_TILES:
+				out["applied"] = _confirm_tiles(out)
 			elif _focus < 0:
 				# Nothing is focused when the panel appears, on purpose (T-0071):
 				# row 0 is Start Wave, and a confirm with no focus must take no
@@ -992,10 +1131,345 @@ func handle_input(event: InputEvent) -> Dictionary:
 				out["target"] = "row"
 				out["applied"] = activate(_focus)
 		MapInputScript.Intent.DISMISS:
-			out["applied"] = _dismiss()
+			out["applied"] = _dismiss_in_mode(out)
+		MapInputScript.Intent.MOVE_LEFT:
+			out["applied"] = _step_across(-1, out)
+		MapInputScript.Intent.MOVE_RIGHT:
+			out["applied"] = _step_across(1, out)
 		_:
 			pass
+	# The mode the event left behind, and the cursor it left: one read-back pair, so
+	# a caller never has to infer the state from the intent it sent (T-0091).
+	out["mode"] = _mode
+	out["cursor"] = _cursor_slot
 	return out
+
+
+# --- the pad's modes in practice (T-0091) -----------------------------------
+
+## Up/down: the row focus in ROWS, a vertical cursor step in TILES, and nothing in
+## BAR - the bar's focus moves left and right, because that is the direction it is
+## drawn in. One function, so "up did nothing" is always the same answer.
+func _step_focus(delta: int, out: Dictionary) -> bool:
+	match _mode:
+		MODE_TILES:
+			return _move_cursor(Vector2(0.0, float(delta)), out)
+		MODE_BAR:
+			out["target"] = "bar"
+			out["ignored"] = "the bar's focus moves left and right"
+			return false
+		_:
+			out["target"] = "row"
+			return _move_focus(delta)
+
+
+## Left/right: the bar's focus in BAR, a horizontal cursor step in TILES, and the way
+## into the bar from ROWS (T-0091).
+func _step_across(delta: int, out: Dictionary) -> bool:
+	match _mode:
+		MODE_BAR:
+			return _move_bar_focus(delta, out)
+		MODE_TILES:
+			return _move_cursor(Vector2(float(delta), 0.0), out)
+		_:
+			return _enter_bar(delta, out)
+
+
+## ROWS -> BAR: the pad's way into the inventory. The bar is asked to focus its first
+## slot whatever the direction (`focus_tower` lands on the first with nothing
+## focused), so the entry is one call and the bar owns where it lands.
+func _enter_bar(delta: int, out: Dictionary) -> bool:
+	if not _bar_bound():
+		out["ignored"] = "no inventory bar is bound to the panel"
+		return false
+	_set_mode(MODE_BAR, "left/right entered the bar")
+	var focused := int(_bar.focus_tower(delta))
+	out["target"] = "bar"
+	out["instance"] = focused
+	print("BUILD_PANEL_MODE " + JSON.stringify({
+		"mode": _mode,
+		"why": "focus",
+		"delta": delta,
+		"focused": focused,
+		"armed": _armed_id,
+	}))
+	return focused != -1
+
+
+## BAR: one step of the bar's own focus.
+func _move_bar_focus(delta: int, out: Dictionary) -> bool:
+	if not _bar_bound():
+		out["ignored"] = "no inventory bar is bound to the panel"
+		return false
+	var focused := int(_bar.focus_tower(delta))
+	out["target"] = "bar"
+	out["instance"] = focused
+	print("BUILD_PANEL_MODE " + JSON.stringify({
+		"mode": _mode,
+		"why": "focus",
+		"delta": delta,
+		"focused": focused,
+		"armed": _armed_id,
+	}))
+	return focused != -1
+
+
+## BAR: confirm takes the focused tower through the bar's own selection door
+## (`activate_focused()` -> `_select()` -> `tower_selected` -> this panel's
+## `select_instance()`), and a tower that arrived **armed** is what enters TILES. A
+## tower already on a tile has nothing to place, so the pad stays in the bar and the
+## confirm meant "select it", which is what it did.
+func _confirm_bar(out: Dictionary) -> bool:
+	if not _bar_bound():
+		out["ignored"] = "no inventory bar is bound to the panel"
+		return false
+	out["target"] = "bar"
+	var took := bool(_bar.activate_focused())
+	out["instance"] = int(_bar.focused_instance())
+	out["armed"] = _armed_id
+	print("BUILD_PANEL_MODE " + JSON.stringify({
+		"mode": _mode,
+		"why": "confirm",
+		"took": took,
+		"instance": int(out["instance"]),
+		"armed": _armed_id,
+		"selected": _selected_id,
+	}))
+	if not took:
+		return false
+	if _armed_id == -1:
+		return true
+	_set_mode(MODE_TILES, "a tower was armed in the bar")
+	_set_cursor_slot(_first_free_slot_name())
+	out["mode"] = _mode
+	out["cursor"] = _cursor_slot
+	return true
+
+
+## TILES: confirm places the armed tower on the tile the cursor names, through the
+## one placement door. Returns whether a tower was placed.
+func _confirm_tiles(out: Dictionary) -> bool:
+	out["target"] = "tile"
+	var slot := _current_cursor_slot()
+	if slot.is_empty():
+		# This panel's own refusal: with no free tile there is nothing to hand the
+		# arena, and its sentence would answer a question nobody asked (T-0091).
+		_refuse_action("place", no_free_tile_text)
+		return false
+	var world: Vector2 = slot["position"]
+	out["tile"] = String(slot["name"])
+	out["world"] = [world.x, world.y]
+	return place_at(world)
+
+
+## One cursor step: the nearest free build tile inside the 90-degree cone `direction`
+## from the tile the cursor is on. No candidate is **no move** (the cursor stays where
+## it is and nothing is refused: a pad player pressing into a wall has not made a
+## mistake). Returns whether the cursor moved.
+func _move_cursor(direction: Vector2, out: Dictionary) -> bool:
+	out["target"] = "tile"
+	var from := _current_cursor_slot()
+	var step := _slot_in_cone(from, direction)
+	out["from"] = String(from.get("name", ""))
+	if step.is_empty():
+		out["tile"] = String(from.get("name", ""))
+		out["cursor_step"] = "stayed"
+		return false
+	out["tile"] = String(step["name"])
+	out["cursor_step"] = "moved"
+	_set_cursor_slot(String(step["name"]))
+	return true
+
+
+# --- the cursor (T-0091) ----------------------------------------------------
+
+## The mode's one writer: stores it, keeps the cursor's visibility a function of it,
+## and prints one line per change. A re-entry into TILES prints nothing (the cursor's
+## own line carries the movement), which is what keeps one press to one line.
+func _set_mode(mode: String, why: String) -> void:
+	if mode == _mode:
+		return
+	_mode = mode
+	if mode != MODE_TILES:
+		_cursor_slot = ""
+	_hide_cursor()
+	print("BUILD_PANEL_MODE " + JSON.stringify({
+		"mode": _mode,
+		"why": why,
+		"armed": _armed_id,
+		"selected": _selected_id,
+		"cursor": _cursor_slot,
+	}))
+
+
+## Points the cursor at the build tile `slot_name` and draws it there. The one writer
+## of `_cursor_slot`, so "the cursor names X" and "the cursor is drawn on X" cannot
+## come apart.
+func _set_cursor_slot(slot_name: String) -> void:
+	_cursor_slot = slot_name
+	_place_cursor()
+	print("BUILD_PANEL_CURSOR " + JSON.stringify({
+		"slot": _cursor_slot,
+		"mode": _mode,
+		"rect": _rect_json(cursor_rect()),
+		"free_tiles": _free_slot_names(),
+	}))
+
+
+## Builds the cursor once, as the panel's last child so it draws over the block, and
+## never inside a re-draw. `editor_only` is switched off on purpose: a `ReferenceRect`
+## draws nothing in a running game while it is on, which would make the cue an
+## editor-only one by accident (the bar records the same trap at T-0090).
+func _ensure_cursor() -> ReferenceRect:
+	if _cursor != null and is_instance_valid(_cursor):
+		return _cursor
+	var node := ReferenceRect.new()
+	node.name = "Cursor"
+	# A view, never a target: the cursor must not eat the click on the tile it frames.
+	node.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	node.editor_only = false
+	node.visible = false
+	add_child(node)
+	_cursor = node
+	_apply_cursor_style()
+	return node
+
+
+## The cursor's colour and thickness, from the two exports, applied on build and again
+## on every placement: a designer tuning them in the inspector sees the change without
+## an edit here.
+func _apply_cursor_style() -> void:
+	if _cursor == null or not is_instance_valid(_cursor):
+		return
+	if _cursor.border_color != cursor_colour:
+		_cursor.border_color = cursor_colour
+	var width := maxi(cursor_border_width, 0)
+	if _cursor.border_width != width:
+		_cursor.border_width = width
+
+
+func _hide_cursor() -> void:
+	if _cursor != null and is_instance_valid(_cursor):
+		_cursor.visible = false
+
+
+## Draws the cursor on the tile it names, or hides it. The tile's world point goes
+## through `_slot_canvas_point()` - the inverse of `_pointer_world()` - and the
+## control is placed in this panel's own coordinates, so a camera or an offset canvas
+## moves the cursor with the board instead of leaving it behind.
+func _place_cursor() -> void:
+	var node := _ensure_cursor()
+	if node == null:
+		return
+	_apply_cursor_style()
+	var slot := _current_cursor_slot()
+	if _mode != MODE_TILES or slot.is_empty():
+		node.visible = false
+		return
+	var centre := _slot_canvas_point(slot["position"])
+	var local := get_global_transform_with_canvas().affine_inverse() * centre
+	var side := maxf(cursor_size, 1.0)
+	if not node.size.is_equal_approx(Vector2(side, side)):
+		node.size = Vector2(side, side)
+	node.position = local - node.size * 0.5
+	node.visible = visible
+
+
+## The name of the first free build tile, or "" when the level has none. Ordered by
+## the arena's own slot list, so "the first free tile" means the same thing on every
+## run and a demo can predict it.
+func _first_free_slot_name() -> String:
+	if not _bound():
+		return ""
+	for slot in _arena.build_slots():
+		if bool(slot["free"]):
+			return String(slot["name"])
+	return ""
+
+
+## The build slot the cursor is on, or an empty dictionary when there is none.
+func _current_cursor_slot() -> Dictionary:
+	if _cursor_slot == "" or not _bound():
+		return {}
+	for slot in _arena.build_slots():
+		if String(slot["name"]) == _cursor_slot:
+			return slot
+	return {}
+
+
+## The nearest **free** build tile inside the 90-degree cone `direction` from `from`,
+## or an empty dictionary. "Inside the cone" is `lateral <= forward`, which is exactly
+## 45 degrees either side of the pressed direction, so a tile diagonally ahead counts
+## and one directly sideways does not; ties in distance are broken by the arena's slot
+## order, which is stable.
+func _slot_in_cone(from: Dictionary, direction: Vector2) -> Dictionary:
+	if not _bound() or from.is_empty():
+		return {}
+	var dir := direction.normalized()
+	if dir.is_equal_approx(Vector2.ZERO):
+		return {}
+	var origin: Vector2 = from["position"]
+	var from_name := String(from["name"])
+	var best: Dictionary = {}
+	var best_distance := INF
+	for slot in _arena.build_slots():
+		if not bool(slot["free"]) or String(slot["name"]) == from_name:
+			continue
+		var offset: Vector2 = (slot["position"] as Vector2) - origin
+		var forward := offset.dot(dir)
+		if forward <= 0.0:
+			continue
+		if absf(offset.cross(dir)) > forward:
+			continue
+		var distance := offset.length()
+		if distance >= best_distance:
+			continue
+		best = slot
+		best_distance = distance
+	return best
+
+
+## The mode-aware Escape: BAR clears the bar's focus and comes back to ROWS (the
+## selection is untouched - focus and selection are two cues, the bar's own rule);
+## TILES disarms, hides the cursor and comes back to ROWS; ROWS is the dismiss it
+## always was.
+func _dismiss_in_mode(out: Dictionary) -> bool:
+	match _mode:
+		MODE_BAR:
+			out["target"] = "bar"
+			if _bar_bound():
+				_bar.clear_focus()
+			_set_mode(MODE_ROWS, "dismiss left the bar")
+			return true
+		MODE_TILES:
+			out["target"] = "tile"
+			_dismiss()
+			_set_mode(MODE_ROWS, "dismiss left the tiles")
+			return true
+		_:
+			return _dismiss()
+
+
+func _bar_bound() -> bool:
+	return _bar != null and is_instance_valid(_bar) and _bar.has_method("focus_tower")
+
+
+## A rect as JSON-safe numbers, for the lines that report a drawn cue.
+func _rect_json(rect: Rect2) -> Array:
+	return [rect.position.x, rect.position.y, rect.size.x, rect.size.y]
+
+
+## The names of every free build tile, in the arena's order: what a cursor step may
+## choose from, printed so a failure names the board it happened on.
+func _free_slot_names() -> Array:
+	var out: Array = []
+	if not _bound():
+		return out
+	for slot in _arena.build_slots():
+		if bool(slot["free"]):
+			out.append(String(slot["name"]))
+	return out
+
 
 
 ## The level's single input entry point (T-0063). The engine calls this before the
@@ -1375,6 +1849,15 @@ func _pointer_world(point: Vector2) -> Vector2:
 	if _bound() and _arena is CanvasItem:
 		return (_arena as CanvasItem).get_global_transform_with_canvas().affine_inverse() * point
 	return point
+
+
+## A world point as the canvas point a Control is placed at: the **inverse** of
+## `_pointer_world()`, so the tile a click would hit and the tile the cursor draws on
+## are one conversion rather than two (T-0091).
+func _slot_canvas_point(world: Vector2) -> Vector2:
+	if _bound() and _arena is CanvasItem:
+		return (_arena as CanvasItem).get_global_transform_with_canvas() * world
+	return world
 
 
 # --- internals: presentation ------------------------------------------------
