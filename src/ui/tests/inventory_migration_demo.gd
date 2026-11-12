@@ -1106,7 +1106,86 @@ func _run() -> void:
 	check(_arena_has_tower(picked_id), "the board holds it again: %d" % picked_id)
 	check_eq_int(_drops.size(), before_lock, "the click-then-tile path raised no drop")
 
-	# --- 5. no overlap -----------------------------------------------------
+	# --- 6. controller placement (T-0091) ----------------------------------
+	# A pad's whole route: right enters the bar, confirm arms the focused tower and
+	# enters the tile mode, a direction steps the cursor, confirm places on it. The
+	# events are real key presses through the root viewport.
+	_case("a pad focuses the bar, arms a tower, moves a tile cursor and places it")
+	check(_panel.take_back_selected(), "the setup takes the placed tower back")
+	await _settle()
+	check(not _arena_has_tower(picked_id), "the tower is back in hand before the pad walk")
+	await _press(KEY_ESCAPE, "game_dismiss: clear the selection before the pad walk")
+	check_eq_int(int(_panel.selected_instance()), -1, "no tower is selected before the pad walk")
+	check(_panel.control_mode() == "rows",
+		"the panel starts in rows mode: '%s'" % _panel.control_mode())
+
+	await _press(KEY_RIGHT, "game_move_right: enter the bar")
+	check(_panel.control_mode() == "bar",
+		"right entered the bar: '%s'" % _panel.control_mode())
+	check_eq_int(int(_bar.focused_instance()), picked_id, "the bar focused the in-hand tower")
+	check(_bar.focus_rect().size.x > 0.0,
+		"the focus frame is drawn: %s" % [_bar.focus_rect()])
+
+	await _press(KEY_ENTER, "game_confirm: arm the focused tower")
+	check(_panel.control_mode() == "tiles",
+		"confirm armed the tower and entered tiles: '%s'" % _panel.control_mode())
+	check_eq_int(int(_panel.armed_instance()), picked_id, "the panel armed the focused tower")
+	var first_cursor: String = _panel.cursor_slot_name()
+	check(first_cursor != "", "the cursor starts on a free tile: '%s'" % first_cursor)
+	var cursor_rect: Rect2 = _panel.cursor_rect()
+	check(cursor_rect.size.x > 0.0, "the cursor is drawn: %s" % [cursor_rect])
+	check(_slot_holding(picked_id).is_empty(), "nothing is placed before the confirm")
+
+	var moved_cursor: String = first_cursor
+	for step_key in [KEY_UP, KEY_DOWN, KEY_RIGHT, KEY_LEFT]:
+		if moved_cursor != first_cursor:
+			break
+		await _press(step_key, "step the tile cursor")
+		moved_cursor = _panel.cursor_slot_name()
+	check(moved_cursor != first_cursor,
+		"a direction moved the cursor off the first tile: '%s' -> '%s'"
+		% [first_cursor, moved_cursor])
+	check(moved_cursor != "", "the cursor still names a free tile after the step: '%s'" % moved_cursor)
+	var cursor_is_free := false
+	for build_slot in _arena.build_slots():
+		if String(build_slot["name"]) == moved_cursor and bool(build_slot["free"]):
+			cursor_is_free = true
+	check(cursor_is_free, "the cursor names a free tile: '%s'" % moved_cursor)
+	check(_slot_holding(picked_id).is_empty(), "the cursor step placed nothing")
+
+	await _press(KEY_ENTER, "game_confirm: place on the cursor's tile")
+	check(_arena_has_tower(picked_id), "the confirm placed the tower: %d" % picked_id)
+	var standing: Dictionary = _slot_holding(picked_id)
+	check(String(standing.get("name", "")) == moved_cursor,
+		"the tower stands on the cursor's tile: '%s' vs '%s'"
+		% [String(standing.get("name", "")), moved_cursor])
+	check(_panel.control_mode() == "rows",
+		"placement returned to rows: '%s'" % _panel.control_mode())
+	check(_panel.cursor_rect().size.x <= 0.0, "the cursor is hidden after placement")
+	print("PANEL_BAR_MODES " + JSON.stringify({
+		"case": "pad placed",
+		"first_cursor": first_cursor,
+		"cursor": moved_cursor,
+		"placed_on": String(standing.get("name", "")),
+		"mode": _panel.control_mode(),
+		"instance": picked_id,
+	}))
+
+	_case("dismiss leaves the pad's tile mode without placing")
+	check(_panel.take_back_selected(), "the dismiss setup takes the tower back")
+	await _settle()
+	await _press(KEY_ESCAPE, "game_dismiss: clear the selection")
+	await _press(KEY_RIGHT, "game_move_right: enter the bar")
+	await _press(KEY_ENTER, "game_confirm: arm and enter tiles")
+	check(_panel.control_mode() == "tiles", "the dismiss case reached tiles")
+	var free_before_dismiss: int = _arena.free_slot_count()
+	await _press(KEY_ESCAPE, "game_dismiss: leave the tiles")
+	check(_panel.control_mode() == "rows", "dismiss returned to rows")
+	check_eq_int(int(_panel.armed_instance()), -1, "dismiss disarmed the tower")
+	check_eq_int(int(_arena.free_slot_count()), free_before_dismiss, "dismiss placed nothing")
+	check(_panel.cursor_rect().size.x <= 0.0, "dismiss hid the cursor")
+
+	# --- 7. no overlap -----------------------------------------------------
 	_case("the panel's content stops above the bar")
 	var geometry := _geometry()
 	print("PANEL_BAR_GEOMETRY " + JSON.stringify(geometry))
@@ -1171,6 +1250,24 @@ func _run() -> void:
 			"focus_frame": _rect_json(held_frame),
 			"slot": _rect_json(_bar.slot_rect("towers", 0)),
 			"window_open": _window_open(_window()),
+			"hold_frames": MOVIE_HOLD_FRAMES,
+		}))
+		# T-0091's acceptance: arm through the bar and enter the tile mode, so the
+		# held frame shows the cursor on a free tile as well as the bar focus.
+		await _press(KEY_RIGHT, "game_move_right: enter the bar for the frame")
+		await _press(KEY_ENTER, "game_confirm: arm and enter tiles for the frame")
+		var held_mode: String = _panel.control_mode()
+		var held_cursor: String = _panel.cursor_slot_name()
+		var held_cursor_rect: Rect2 = _panel.cursor_rect()
+		check(held_mode == "tiles", "the held frame is in tiles mode: '%s'" % held_mode)
+		check(held_cursor != "", "the held frame's cursor names a tile: '%s'" % held_cursor)
+		check(held_cursor_rect.size.x > 0.0, "the held frame draws the cursor: %s" % [held_cursor_rect])
+		print("PANEL_BAR_FRAME " + JSON.stringify({
+			"case": "tiles",
+			"mode": held_mode,
+			"cursor": held_cursor,
+			"cursor_rect": _rect_json(held_cursor_rect),
+			"focus_frame": _rect_json(_bar.focus_rect()),
 			"hold_frames": MOVIE_HOLD_FRAMES,
 		}))
 		await _hold(MOVIE_HOLD_FRAMES)
