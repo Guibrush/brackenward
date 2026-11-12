@@ -53,5 +53,5 @@ Last updated: 2026-11-10
 
 | Metric | Value | Note |
 | --- | --- | --- |
-| Builder cap-hit rate | 5 of 9 dispatches on 2026-11-10 (56%) | T-0077, T-0080 and T-0082 fit; T-0078 capped twice, T-0079, T-0081 and T-0083 once each. Shared demos are what consume the steps. |
+| Builder cap-hit rate | 9 of 12 dispatches on 2026-11-12 (75%) | T-0077, T-0080 and T-0082 fit; the rest capped. Shared-demo edits consume the steps; the lead finished T-0084..T-0087 from the builders' partials. |
 | Usable delivery under a cap hit | 100% | T-0078's second cap left a planted mutation on disk; L-042 now forbids that and requires copy-only demonstrations. |
