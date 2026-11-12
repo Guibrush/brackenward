@@ -228,6 +228,10 @@ var _inventory_bar = null
 ## same run session, or null between runs. One per run, freed with it (T-0074); it
 ## is the only window that shows a tower's tier, what it carries and its actions.
 var _tower_window = null
+## The bar signal the window opens on (T-0085): `tower_clicked` for a bar that carries
+## it, `tower_selected` for an older one, empty when neither exists. Printed in
+## `BOOT_HUD`, so a wiring choice is evidence rather than an assumption.
+var _window_door: String = ""
 ## The run session for the current run, or null between runs.
 var _flow = null
 var _screen: int = Screen.NONE
@@ -512,8 +516,19 @@ func _mount_tower_window() -> bool:
 	# both screens, so a click on a tower in hand opens the window on the map as well
 	# as in a level - and the map is where a tower in hand is selected to equip
 	# (T-0074). The level's door follows in `_wire_level_panel()`.
+	#
+	# `tower_clicked` (T-0085), not `tower_selected`: a press selects the tower and
+	# may still become a drag, and a window that opened on the press was closed again
+	# a frame later by `tower_drag_started`. The older door is kept as a fallback so a
+	# bar from an older scene still opens a window, and the choice is printed in
+	# `BOOT_HUD` rather than left to be inferred.
 	if _inventory_bar != null and is_instance_valid(_inventory_bar):
-		_connect(_inventory_bar, "tower_selected", _on_tower_open_requested)
+		_window_door = "tower_clicked" if _inventory_bar.has_signal("tower_clicked") else "tower_selected"
+		if _inventory_bar.has_signal(_window_door):
+			_connect(_inventory_bar, _window_door, _on_tower_open_requested)
+		else:
+			_window_door = ""
+			_refuse("open the tower window", "the bar carries neither tower_clicked nor tower_selected")
 	_print_hud("mount_window", "the run began")
 	return true
 
@@ -609,6 +624,7 @@ func _print_hud(action: String, why: String) -> void:
 		"visible": _inventory_bar != null and is_instance_valid(_inventory_bar) and _inventory_bar.visible,
 		"bound": _flow != null and _inventory_bar != null and is_instance_valid(_inventory_bar),
 		"window": _tower_window != null and is_instance_valid(_tower_window),
+		"window_door": _window_door,
 		"window_open": (
 			_tower_window != null and is_instance_valid(_tower_window) and _tower_window.is_open()
 		),

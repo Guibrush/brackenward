@@ -424,6 +424,28 @@ func _run() -> void:
 	await _press(KEY_ESCAPE, "game_dismiss (Escape): close the reopened window")
 	check(not _window_open(_window()), "Escape still closes the reopened window")
 
+	# --- 2b. a press waits for its release (T-0085) -------------------------
+	# The flash the human saw: a press on the bar opened the window and a drag
+	# closed it a frame later. The press now selects and waits; only a release that
+	# is not a drop opens the window.
+	_case("a bar press does not open the window; its release does (T-0085)")
+	await _drag_press(bar_click, "left press on the in-hand tower, no motion yet")
+	check(_bar.drag_active(), "the press is still a live gesture: %s" % [_drag_json()])
+	check(not _window_open(_window()),
+		"the press did not open the tower window: %s" % [_window_open(_window())])
+	await _drag_release(bar_click, "release without moving: a click")
+	var press_release_window = _window()
+	check(_window_open(press_release_window), "the release opened the tower window")
+	_check_window_placed(press_release_window, "the release that opened it")
+	print("PANEL_BAR_WINDOW " + JSON.stringify({
+		"case": "press waits",
+		"open_after_press": false,
+		"open_after_release": _window_open(press_release_window),
+		"anchor": [press_release_window.anchor_point().x, press_release_window.anchor_point().y]
+			if press_release_window != null else [],
+	}))
+	await _close_window("close the window the release opened")
+
 	# --- 3. the board did not hear it --------------------------------------
 	_case("the click on the bar did not reach the board")
 	var free_before: int = _arena.free_slot_count()
@@ -662,16 +684,14 @@ func _run() -> void:
 	var expected := _nearest_free_slot(_world_point(release))
 	await _drag_press(bar_slot_point,
 		"left press on the tower in hand, for the drop")
-	# The press selected the tower, and selecting it opened the window over it - a
-	# click's meaning, asserted here so the close below has something to close.
+	# T-0085: the press waits to learn whether it is a drag, so it does not open
+	# the window; the motion and the drop must leave it closed too.
 	var press_window = _window()
-	check(_window_open(press_window), "the drop's press opened the tower window")
-	_check_window_placed(press_window, "the drop's press")
-	await _drag_move(release, "drag the tower onto the board at (%.0f, %.0f)" % [release.x, release.y])
-	# T-0080: the drag announcement is what puts that window away, before the release
-	# can place under it. This is the visible half of the wiring.
 	check(not _window_open(press_window),
-		"the drag announcement closed the window the press opened: window_open=%s" % _window_open(press_window))
+		"the drop's press did not open the tower window: window_open=%s" % _window_open(press_window))
+	await _drag_move(release, "drag the tower onto the board at (%.0f, %.0f)" % [release.x, release.y])
+	check(not _window_open(press_window),
+		"the drag did not open the window either: window_open=%s" % _window_open(press_window))
 	print("PANEL_BAR_DRAG " + JSON.stringify({
 		"case": "drop drag",
 		"instance": int(_bar.drag_instance()),
@@ -682,6 +702,8 @@ func _run() -> void:
 	}))
 	await _drag_release(release, "release the tower over the board")
 	check_eq_int(_drops.size(), drops_before + 1, "the release raised one drop for the receiver")
+	check(not _window_open(press_window),
+		"the drop did not open the window: window_open=%s" % _window_open(press_window))
 	await _close_window("close the window the drop's press opened")
 	if _drops.size() == drops_before + 1:
 		# The payload the bar raised, not a reconstruction of it.
@@ -812,16 +834,29 @@ func _run() -> void:
 	var locked_point: Vector2 = _bar.slot_rect("towers", 0).get_center()
 	await _drag_press(locked_point, "left press on the in-hand tower while locked")
 	check(not _bar.drag_active(), "no drag starts while the wave lock is on: %s" % [_drag_json()])
-	check(_window_open(_window()),
-		"the locked press still selected the tower it landed on: its window opened")
-	_check_window_placed(_window(), "the locked press")
+	check(not _window_open(_window()),
+		"the locked press did not open its window: the release decides (T-0085)")
 	check(_bar.ghost_rect().size.x <= 0.0, "no ghost is drawn while locked: %s" % [_bar.ghost_rect()])
 	await _drag_move(locked_point + Vector2(0, -200), "drag 200 px up while locked")
 	check_eq_int(_starts.size(), starts_before_lock, "a locked press announced no drag")
 	check(_bar.ghost_rect().size.x <= 0.0, "a locked drag draws no ghost either: %s" % [_bar.ghost_rect()])
 	await _drag_release(_bar.slot_rect("towers", 0).get_center(), "release while locked")
 	check_eq_int(_drops.size(), before_lock, "a locked press raised no drop")
-	await _close_window("close the window the locked press opened")
+	var locked_window = _window()
+	check(_window_open(locked_window),
+		"the locked press's release opened the window: %s" % [_window_open(locked_window)])
+	_check_window_placed(locked_window, "the locked release")
+	if _window_open(locked_window):
+		# The bar's lock is not the arena's phase in this demo, so `read_only` is
+		# reported as the window's own reading rather than asserted (the real wave
+		# read-only case is exercised against the arena's phase elsewhere).
+		print("PANEL_BAR_WINDOW " + JSON.stringify({
+			"case": "locked release",
+			"open": true,
+			"read_only": bool(locked_window.read_only()),
+			"bar_locked": _bar.wave_locked(),
+		}))
+	await _close_window("close the window the locked release opened")
 	_bar.set_wave_locked(false)
 	await _settle()
 	_state_evidence("wave lock off")

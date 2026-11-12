@@ -43,11 +43,11 @@ extends Control
 ##   object, so placing a tower changes its border and its header count, not its
 ##   presence here.
 ## * **No modifying actions.** Selecting a tower is the only thing a click here
-##   does; the floating tower window is the next task, so this file raises
-##   `tower_selected` and marks the selection, and builds no window. During a wave
-##   the bar stays drawn and readable for the same reason: with no modifying
-##   action of its own, there is nothing here to lock - `set_wave_locked()` only
-##   repaints the border for the task that will own the lock.
+##   does; this file raises `tower_selected` on the press and `tower_clicked` on the
+##   release, and builds no window. During a wave the bar stays drawn and readable
+##   for the same reason: with no modifying action of its own, there is nothing
+##   here to lock - `set_wave_locked()` only repaints the border and puts down a
+##   gesture the phase change interrupted.
 ## * **Input comes through one door**, `handle_input()`, which asks `MapInput` for
 ##   the intent. The bar acts on a pointer `CONFIRM` that lands on one of its own
 ##   slots or page controls and on nothing else - it never moves focus and never
@@ -67,10 +67,21 @@ extends Control
 ##   the ghost is one persistent child of the bar, built outside `_rebuild()`, so
 ##   no rebuild can free it mid-gesture. While a drag is live the release is
 ##   consumed (`set_input_as_handled`), so nothing under the bar answers the same
-##   gesture. A **placed** tower begins no drag (its click opens the window), and
-##   `set_wave_locked(true)` suppresses one. The point is in viewport coordinates,
-##   the space `MapInput.intent_for()` reports: the bar does not convert to world,
-##   because it does not own the board's transform.
+##   gesture. A **placed** tower begins no drag (its window waits for the release,
+##   T-0085), and `set_wave_locked(true)` suppresses one. The point is in viewport
+##   coordinates, the space `MapInput.intent_for()` reports: the bar does not
+##   convert to world, because it does not own the board's transform.
+## * **A press waits to learn whether it is a click (T-0085).** A press on a tower
+##   slot - in hand **or placed** - selects it and records it as the *click
+##   candidate*; the tower window opens on the **release**, and only when the
+##   release was not a drop. Before this the press opened the window and
+##   `tower_drag_started` closed it again, so a gesture that was about to become a
+##   drag flashed a window for a frame. A release that ends a drag inside the bar, or
+##   under `drag_threshold_px`, is a click and opens the window; a release that drops
+##   opens nothing. A **placed** slot drags nothing, so its candidate waits for the
+##   plain release `_release_click()` answers. A press anywhere else in the bar, a
+##   cancelled drag, `unbind()` and the wave lock coming on all clear the candidate,
+##   so a release can only open a window for a press that is still the player's.
 ## * **Pointer only.** The gesture reads the mouse button and motion directly,
 ##   because `MapInput` has no drag intent - a stick has no "drag", and inventing
 ##   one there would make a pointer gesture look like a pad action. Gamepad and
@@ -82,6 +93,7 @@ extends Control
 ##   INVENTORY_BAR_STALE {json}    once per distinct stale mismatch caught
 ##   INVENTORY_BAR_PAGE {json}     once per page change, with the page before/after
 ##   INVENTORY_BAR_SELECT {json}   once per tower selected
+##   INVENTORY_BAR_CLICK {json}    once per press-and-release that opens a window
 ##   INVENTORY_BAR_DRAG {json}     once per drag begun or cancelled
 ##   INVENTORY_BAR_DROP {json}     once per release that ended a drag
 ##   INVENTORY_BAR_REJECTED {json} a bind or call this bar refused
@@ -93,9 +105,18 @@ const MapInputScript := preload("res://src/ui/map_input.gd")
 const GROUP_TOWERS := "towers"
 const GROUP_UPGRADES := "upgrades"
 
-## A tower in the bar was selected. `instance_id` is the inventory's id. The
-## floating tower window (next task) listens here; this task only raises it.
+## A tower in the bar was selected: the **press** on its slot (T-0085). `instance_id`
+## is the inventory's id. This is the selection door - the level's panel hears it and
+## selects the same tower - and deliberately not the window's door: a press that is
+## about to become a drag must not open a window, so the window waits for
+## `tower_clicked`.
 signal tower_selected(instance_id: int)
+## A tower slot was **clicked**: pressed and released without the gesture becoming a
+## drop (T-0085). `instance_id` is the inventory's id, and this is the door the tower
+## window opens on (`boot.gd`), for a tower in hand and for one already placed. The
+## press alone raises nothing here, which is the whole point: the release is the
+## first moment the bar knows the gesture was a click.
+signal tower_clicked(instance_id: int)
 ## A tower **in hand** was pressed in the bar and released past
 ## `drag_threshold_px`, outside the bar (T-0078). `screen_point` is the release
 ## position in viewport coordinates - the space `MapInput.intent_for()` reports - so
@@ -106,11 +127,11 @@ signal tower_dropped(instance_id: int, screen_point: Vector2)
 ## A drag began: `instance_id` is the tower the player is carrying (T-0078). Raised
 ## **once per gesture**, the first time the pointer has travelled past
 ## `drag_threshold_px` and the gesture is therefore no longer a click - so a plain
-## click on a tower in hand announces nothing, which is what keeps the tower window
-## it opens from being closed again by a signal meant for drags. Never raised for a
-## placed slot and never while `set_wave_locked(true)` is in force. It exists because
-## every bar selection opens the tower window (`boot.gd`), so a drag has to say so
-## before it is dragged under an open window; T-0080 is the receiver that closes it.
+## click on a tower in hand announces nothing, which is what keeps the window it
+## opens on release from being closed again by a signal meant for drags. Never raised
+## for a placed slot and never while `set_wave_locked(true)` is in force. It exists so
+## that a gesture which turns into a drag can put away a window already open for
+## another tower (T-0080), before the release can place under it.
 signal tower_drag_started(instance_id: int)
 ## A group moved to another page.
 signal page_changed(group_id: String, page: int, pages: int)
@@ -252,6 +273,11 @@ var _drag_text: String = ""
 ## once, on the first motion past the threshold, and a drop that never saw one
 ## announces itself before the drop.
 var _drag_announced: bool = false
+## The click candidate (T-0085): the tower slot whose press is still waiting for its
+## release, or -1. Set by `handle_input()` on a tower slot - in hand or placed - so
+## the press can be a drag or a click; spent by `_emit_click()`, and cleared by a
+## press anywhere else, a cancelled drag, `unbind()` and the wave lock.
+var _click_id: int = -1
 ## The ghost: one persistent child of the bar, built once outside `_rebuild()` so a
 ## slot rebuild cannot free it mid-gesture. Added last, so it draws over the row.
 var _ghost: Panel = null
@@ -288,6 +314,7 @@ func bind_session(flow) -> bool:
 func unbind() -> void:
 	_disconnect_session()
 	_cancel_drag("the bar was unbound")
+	_click_id = -1
 	_flow = null
 	_shown = {}
 	_forced = {}
@@ -504,8 +531,10 @@ func _bar_contains(point: Vector2) -> bool:
 
 ## The single action path: a click on a slot selects a tower, a click on a page
 ## control moves that group's page. Nothing here modifies the inventory - this
-## task has no modifying action of its own. On a tower **in hand** the click also
+## task has no modifying action of its own. On a tower **in hand** the press also
 ## begins a drag (T-0078): the selection is today's meaning and stands either way.
+## On any tower slot it also records the click candidate (T-0085), which is what the
+## release uses to decide whether a window opens.
 func handle_input(event: InputEvent) -> Dictionary:
 	var result: Dictionary = _router.intent_for(event)
 	var out := result.duplicate()
@@ -522,6 +551,9 @@ func handle_input(event: InputEvent) -> Dictionary:
 	if not control.is_empty():
 		out["target"] = "page"
 		out["group"] = String(control["group"])
+		# A press anywhere that is not a tower slot is not a click on a tower (T-0085):
+		# the candidate from an earlier press cannot survive it.
+		_click_id = -1
 		out["applied"] = move_page(String(control["group"]), int(control["dir"]))
 		return out
 
@@ -535,12 +567,17 @@ func handle_input(event: InputEvent) -> Dictionary:
 		out["target"] = "slot"
 		out["id"] = slot_id
 		out["applied"] = _select(slot_id, "bar")
+		# The press is a click candidate whether or not this slot drags (T-0085): a
+		# placed slot drags nothing but still opens its window on release, and a
+		# tower in hand is a click until the motion says otherwise.
+		_click_id = slot_id if bool(out["applied"]) else -1
 		# A drag needs a pointer, so a pad or a key can never start one: those never
 		# carry a `pointer` and never reach here (see the header).
 		if drags and bool(out["applied"]):
 			out["drag"] = _begin_drag(slot_id, point, slot_text)
 		return out
 
+	_click_id = -1
 	out["target"] = "none"
 	return out
 
@@ -586,9 +623,12 @@ func set_wave_locked(locked: bool) -> void:
 		return
 	_wave_locked = locked
 	# A tower held mid-gesture when a wave starts is put down, not thrown: the lock
-	# suppresses the drag, so it also ends one that is already live (T-0078).
+	# suppresses the drag, so it also ends one that is already live (T-0078). A press
+	# still waiting for its release is no longer the player's either (T-0085): the
+	# phase changed under it, so it opens nothing.
 	if locked:
 		_cancel_drag("the wave lock came on")
+		_click_id = -1
 	_rebuild()
 	print("INVENTORY_BAR_LOCK " + JSON.stringify({
 		"locked": _wave_locked,
@@ -675,7 +715,13 @@ func _update_drag(event: InputEvent) -> bool:
 		if button.button_index != MOUSE_BUTTON_LEFT or button.pressed:
 			return false
 		_drag_to = button.position
-		_finish_drag(_drag_to)
+		# The carried id is read before `_finish_drag()` clears it, and the release
+		# opens a window only when it was **not** a drop (T-0085): a throw is a
+		# gesture on the board, a click on the slot is a request for its window.
+		var carried := _drag_id
+		var dropped := _finish_drag(_drag_to)
+		if not dropped:
+			_emit_click(carried)
 		get_viewport().set_input_as_handled()
 		return true
 	return false
@@ -683,8 +729,9 @@ func _update_drag(event: InputEvent) -> bool:
 
 ## Ends the live drag at `point`: a release further than `drag_threshold_px` from
 ## the press **and** outside the bar raises `tower_dropped` once; anything else was
-## a click, whose work (the selection) the press already did.
-func _finish_drag(point: Vector2) -> void:
+## a click (T-0085), whose window the caller opens through `_emit_click()`. Returns
+## the drop verdict, so the caller never recomputes it.
+func _finish_drag(point: Vector2) -> bool:
 	var instance := _drag_id
 	var travelled := point.distance_to(_drag_from)
 	var outside := not _bar_contains(point)
@@ -694,6 +741,9 @@ func _finish_drag(point: Vector2) -> void:
 	_drag_id = -1
 	_drag_text = ""
 	_drag_announced = false
+	# The gesture is over, so its press is spent whether it was thrown or clicked:
+	# a candidate that outlived it would open a window on the next release anywhere.
+	_click_id = -1
 	_hide_ghost()
 	print("INVENTORY_BAR_DROP " + JSON.stringify({
 		"instance": instance,
@@ -706,12 +756,50 @@ func _finish_drag(point: Vector2) -> void:
 	}))
 	if dropped:
 		tower_dropped.emit(instance, point)
+	return dropped
+
+
+## Raises `tower_clicked` for the press whose release ended the gesture as a click
+## (T-0085), and spends the candidate. One door for both halves - a drag that ended
+## inside the bar and a placed slot that never dragged - so the window has one
+## trigger and the candidate has one place it is cleared by.
+func _emit_click(instance_id: int) -> void:
+	if instance_id < 0:
+		_click_id = -1
+		return
+	_click_id = -1
+	print("INVENTORY_BAR_CLICK " + JSON.stringify({
+		"instance": instance_id,
+		"locked": _wave_locked,
+		"selected": _selected_id,
+		"source": "release",
+	}))
+	tower_clicked.emit(instance_id)
+
+
+## The release half of a click on a **placed** slot (T-0085). A placed tower begins
+## no drag, so nothing else answers its release: the candidate recorded by the press
+## is spent here. Returns true when the event was this bar's.
+func _release_click(event: InputEvent) -> bool:
+	if _click_id == -1:
+		return false
+	if not (event is InputEventMouseButton):
+		return false
+	var button := event as InputEventMouseButton
+	if button.button_index != MOUSE_BUTTON_LEFT or button.pressed:
+		return false
+	var instance := _click_id
+	get_viewport().set_input_as_handled()
+	_emit_click(instance)
+	return true
 
 
 ## Puts down a tower held mid-gesture without raising `tower_dropped`: the gesture
 ## stopped being the player's (a wave started, or the bar was unbound), so nothing
-## was thrown anywhere.
+## was thrown anywhere - and nothing opens on the release that may still arrive
+## (T-0085), so the candidate goes with it.
 func _cancel_drag(why: String) -> void:
+	_click_id = -1
 	if _drag_id == -1:
 		return
 	print("INVENTORY_BAR_DRAG " + JSON.stringify({
@@ -1191,16 +1279,24 @@ func _page_at(point: Vector2) -> Dictionary:
 ## same event: without this, a click on a slot would also be a node choice on the
 ## map. Keys and focus are deliberately not taken - the level's panel owns those.
 ## A live drag is answered first (T-0078), because its motion and its release land
-## outside the bar's rect, where `claim_point()` is false.
+## outside the bar's rect, where `claim_point()` is false; a placed slot's release is
+## answered second (T-0085), for the same reason in reverse - no drag exists to claim
+## it, but it is still the release of a bar press.
 func _input(event: InputEvent) -> void:
 	if not visible:
 		return
 	if _update_drag(event):
 		return
+	# A placed slot's release, which no drag will claim (T-0085).
+	if _release_click(event):
+		return
 	var result: Dictionary = _router.intent_for(event)
 	if int(result["intent"]) != MapInputScript.Intent.CONFIRM or not result.has("pointer"):
 		return
 	if not claim_point(result["pointer"]):
+		# A press that lands off the bar starts a new gesture too, so the earlier
+		# press's candidate cannot survive it (T-0085).
+		_click_id = -1
 		return
 	get_viewport().set_input_as_handled()
 	handle_input(event)
