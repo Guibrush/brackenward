@@ -309,17 +309,24 @@
       "source_task": "T-0092"
     },
     {
-      "id": "tower-ballista-candidate",
+      "id": "tower-ballista-idle-south",
       "license": "generated: PixelLab, commercial use",
       "type": "prop",
-      "file": "art/candidates/tower-ballista-candidate.png",
+      "file": "assets/art/towers/ballista/idle/south.png",
       "width": 64,
       "height": 64,
-      "purpose": "Ballista tower, first of the five missing towers and the first real generation under the approved art plan. A tall timber siege A-frame carrying a wide horizontal crossbow beam, deliberately unroofed so the silhouette cannot be confused with the roofed arrow tower at thumbnail size. Candidate only: art/director and the human judge it before the rest of the batch is spent.",
-      "placeholder": true,
-      "status": "candidate",
+      "purpose": "Ballista tower, idle, single direction: a tall timber siege A-frame carrying a wide horizontal crossbow beam, deliberately unroofed so the silhouette cannot be confused with the roofed arrow tower at thumbnail size. Ships as the G2 ballista tower, approved by art/director on 2026-11-12.",
+      "placeholder": false,
+      "status": "shipped",
+      "status_detail": "shipped under T-0100 with zero generation: the bytes were copied from art/candidates/tower-ballista-candidate.png unchanged (same SHA-256 1CBDC5B0..., same 2133 bytes) and that candidate file was deleted, so this shipping path is now the only copy of the approved pixels.",
+      "promoted_from": "art/candidates/tower-ballista-candidate.png (deleted under T-0100)",
       "directions": 1,
-      "frames": 1,
+      "actions": [
+        "idle"
+      ],
+      "frames": [
+        "assets/art/towers/ballista/idle/south.png"
+      ],
       "generator": "pixellab.create_image_pro_flash",
       "generator_detail": "64x64, no_background true, style_options {color_palette:false, outline:true, detail:true, shading:true}, palette = the locked 16 (bracken dusk), max_colors 12, seed 9301",
       "job_id": "ad013a47-f481-4354-b9de-cf43ab046430",
@@ -404,7 +411,7 @@
       "style_reference_usage": "palette, top-left light, 3/4 projection, outline and detail level. color_palette is false so the palette came from the passed list. The anchor's roofed silhouette was excluded by prompt and did not leak; the anchor's grass diamond pad was not excluded and did.",
       "generations_spent": 5,
       "spend_note": "One Pro Flash call at 64x64 = 5 generations (charged_generations 5). No regeneration: the candidate fails the ground-pad rule, which T-0094 treats as a stop condition, so generations 6-10 of the 10-generation budget were not spent and the rime call was not made.",
-      "rejected_candidate_id": "tower-mortar-candidate",
+      "rejected_attempt": "this T-0094 output. No candidate PNG was ever produced from it, and the id tower-mortar-candidate no longer exists: the mortar tower that ships as tower-mortar-idle-south comes from the T-0095 retry, whose raw is tower-mortar-candidate-retry-raw.",
       "verdict": "REJECTED at the STYLE §Ground pad rule ('no grass tiles, no diamond plinths'). 466 pixels of the palette's two foliage greens (#6f8f4a leaf 234 px, #3a4a3a deep green 232 px) form a diamond platform under the emplacement: rows 49-63, columns 2-60, tapering to a 2 px point at row 63, with a lit green top face at rows 52-58. It repeats the anchor's own pad geometry, which is the second grid the rule exists to prevent. It cannot be cropped: the drum and the sandbag blocks sit on it, so removing it means repainting the base, which is authoring art, not post-processing. Everything else about the sprite is on brief (see silhouette_note), so the failure is the prompt's footing wording, not the route.",
       "post_processing": [
         "none. No post pass was run and no tower-mortar-candidate.png was produced: the barrier is in the art, not in the encoding. A crop cannot remove a plinth the tower stands on, and an outline/palette pass on a rejected silhouette would only make a failing sprite look finished.",
@@ -432,17 +439,24 @@
       "source_task": "T-0094"
     },
     {
-      "id": "tower-mortar-candidate",
+      "id": "tower-mortar-idle-south",
       "license": "generated: PixelLab, commercial use",
       "type": "prop",
-      "file": "art/candidates/tower-mortar-candidate.png",
+      "file": "assets/art/towers/mortar/idle/south.png",
       "width": 64,
       "height": 64,
-      "purpose": "Mortar tower, retry after the T-0094 rejection. A squat wide stone emplacement with a thick iron-banded tube angled steeply up, an open dark bore reading at the very top of the silhouette, and three round shells on the drum. Same identity as the rejected attempt, with the base corrected: this one stands on a narrow footing block the width of the drum and carries no generator ground. Candidate only: art/director and the human judge it before it is wired or shipped.",
-      "placeholder": true,
-      "status": "candidate",
+      "purpose": "Mortar tower, idle, single direction, from the T-0095 retry after the T-0094 ground-pad rejection: a squat wide stone emplacement with a thick iron-banded tube angled steeply up, an open dark bore reading at the very top of the silhouette, and three round shells on the drum, standing on a narrow footing block the width of the drum with no generator ground. Ships as the G2 mortar tower, approved by art/director on 2026-11-12.",
+      "placeholder": false,
+      "status": "shipped",
+      "status_detail": "shipped under T-0100 with zero generation: the bytes were copied from art/candidates/tower-mortar-candidate.png unchanged (same SHA-256 F67007BA..., same 1917 bytes) and that candidate file was deleted, so this shipping path is now the only copy of the approved pixels.",
+      "promoted_from": "art/candidates/tower-mortar-candidate.png (deleted under T-0100)",
       "directions": 1,
-      "frames": 1,
+      "actions": [
+        "idle"
+      ],
+      "frames": [
+        "assets/art/towers/mortar/idle/south.png"
+      ],
       "generator": "pixellab.create_image_pro_flash",
       "generator_detail": "64x64, no_background true, style_options {color_palette:false, outline:true, detail:true, shading:true}, palette = the locked 16 (bracken dusk), palette_name 'bracken dusk', max_colors 12, seed 9501",
       "job_id": "a77735bc-4de0-4f1d-8b2b-f83199e1d1a0",
@@ -531,7 +545,7 @@
       "style_reference": "art/style/anchor.png, reused at upload:25763f10-f6ff-47c2-8f2e-d9d0a7a82df3 (64x64). style_image.usage_description limited the reference to outline weight, detail level, light direction and projection, and explicitly excluded both the anchor's ground pad and its warm palette.",
       "generations_spent": 5,
       "spend_note": "One Pro Flash call at 64x64 = 5 charged generations (job 3c721cc1). This is the second and last call of the T-0095 budget; the 10-generation ceiling is exactly reached and no regeneration was available or attempted.",
-      "rejected_candidate_id": "tower-rime-candidate",
+      "rejected_attempt": "this T-0095 output. No candidate PNG was produced from it; the rime tower that ships as tower-rime-idle-south comes from the T-0098 raw plus the T-0099 post pass.",
       "verdict": "REJECTED at art/STYLE.md canvas fill: widest row 18 px against the 24 px floor for a tapering-top tower (and against 32 px for a flat-topped one). The content box is 24x63 only because the two floating shards sit at different rows on either side of the crown; no single row of the sprite is wider than 18 px, and the shaft is about 12 px. At 1x on the 960x576 board that is a stick next to the 28 px arrow tower, which is the readability failure the floor exists to prevent. It cannot be repaired by post: an outline pass adds no width, and horizontal scaling would be authoring, not post-processing.",
       "secondary_defect": "The call requested style_options.outline true but the output contains no ink #1b1a26 at all: 0/171 silhouette boundary pixels are ink, and #1b1a26 is absent from the sprite's tone set. Every delivered tower so far arrived at 129/129, 169/172 and 293/293, i.e. nearly complete, so this is an outlier of the route rather than a routine post step - it would have meant authoring a 171-pixel outline over the whole silhouette, which is outside a 'complete the 1px outline' pass.",
       "post_processing": [
@@ -557,17 +571,23 @@
       "source_task": "T-0095"
     },
     {
-      "id": "tower-rime-candidate",
+      "id": "tower-rime-idle-south",
       "license": "generated: PixelLab, commercial use",
       "type": "prop",
-      "file": "art/candidates/tower-rime-candidate.png",
+      "file": "assets/art/towers/rime/idle/south.png",
       "width": 64,
       "height": 64,
-      "purpose": "Rime tower candidate, ready for director review: the T-0098 raw moved down 1 px so row 0 is empty and the base rests on row 63, with the outer silhouette boundary completed to a continuous 1 px #1b1a26 ink outline (176/190 -> 190/190). Nothing else was changed: same pixels, same palette, same geometry. Placeholder true - it is a candidate to wire, not a shipping asset.",
-      "placeholder": true,
-      "status": "candidate",
-      "status_detail": "candidate, produced entirely by a zero-generation deterministic post pass under T-0099 from art/candidates/tower-rime-candidate-t0098-raw.png. Not final and not wired: art/director has still to rule, and G4.8 forbids a placeholder surviving.",
-      "frames": 1,
+      "purpose": "Rime tower, idle, single direction: a sturdy pale-stone shaft under a wide bristling crown of sharp ice crystal shards, completed from the T-0098 raw by the zero-generation T-0099 post pass (1 px translation so the base rests on row 63, plus a boundary ink completion 176/190 -> 190/190) and nothing else changed. Ships as the G2 rime tower, approved by art/director on 2026-11-12.",
+      "placeholder": false,
+      "status": "shipped",
+      "status_detail": "shipped under T-0100 with zero generation: the bytes were copied from art/candidates/tower-rime-candidate.png unchanged (same SHA-256 EB9DCB26..., same 1925 bytes) and that candidate file was deleted, so this shipping path is now the only copy of the approved pixels. The sprite is a post pass, not a fresh render: its generation provenance is on tower-rime-candidate-t0098-raw.",
+      "promoted_from": "art/candidates/tower-rime-candidate.png (deleted under T-0100)",
+      "actions": [
+        "idle"
+      ],
+      "frames": [
+        "assets/art/towers/rime/idle/south.png"
+      ],
       "directions": 1,
       "generator": "pixellab.create_image_pro_flash",
       "generator_detail": "64x64, no_background true, style_options {color_palette:false, outline:true, detail:true, shading:true}, palette = the locked 16 (bracken dusk), palette_name 'bracken dusk', max_colors 12, seed 9801. The file itself is the generator output after the T-0099 post pass; the pass was a deterministic Python/Pillow script and cost 0 generations.",
@@ -664,16 +684,23 @@
       "source_task": "T-0096"
     },
     {
-      "id": "tower-bramble-candidate",
+      "id": "tower-bramble-idle-south",
       "license": "generated: PixelLab, commercial use",
       "type": "prop",
-      "file": "art/candidates/tower-bramble-candidate.png",
+      "file": "assets/art/towers/bramble/idle/south.png",
       "width": 64,
       "height": 64,
-      "purpose": "Bramble tower candidate from T-0097: a stone watchtower choked by thorny overgrowth, dark green foliage clumps and orange-brown thorn stems over a stone core, no roof of any kind. Accepted on the brief's mechanical rules after a two-part post pass that removed a 2 px top-edge clip and completed 26 px of outline. Candidate only: art/director and the human judge it before it is wired or shipped.",
-      "placeholder": true,
-      "status": "candidate",
-      "frames": 1,
+      "purpose": "Bramble tower, idle, single direction, from T-0097: a stone watchtower choked by thorny overgrowth, dark green foliage clumps and orange-brown thorn stems over a stone core, no roof of any kind, after a two-part post pass that removed a 2 px top-edge clip and completed 26 px of outline. Ships as the G2 bramble tower, approved by art/director on 2026-11-12.",
+      "placeholder": false,
+      "status": "shipped",
+      "status_detail": "shipped under T-0100 with zero generation: the bytes were copied from art/candidates/tower-bramble-candidate.png unchanged (same SHA-256 F24511D3..., same 2442 bytes) and that candidate file was deleted, so this shipping path is now the only copy of the approved pixels.",
+      "promoted_from": "art/candidates/tower-bramble-candidate.png (deleted under T-0100)",
+      "actions": [
+        "idle"
+      ],
+      "frames": [
+        "assets/art/towers/bramble/idle/south.png"
+      ],
       "directions": 1,
       "generator": "pixellab.create_image_pro_flash",
       "generator_detail": "64x64, no_background true, style_options {color_palette:false, outline:true, detail:true, shading:true}, palette = the locked 16 (bracken dusk), palette_name 'bracken dusk', max_colors 12, seed 9702",
@@ -771,7 +798,7 @@
       "style_reference_usage": "color_palette is false so the palette came from the passed list. style_image.usage_description restricted the reference to palette warmth, top-left light, 3/4 projection, 1 px outline weight and detail level, and explicitly excluded the anchor's grass pad, diamond plinth and base shadow.",
       "generations_spent": 0,
       "spend_note": "One Pro Flash call at 64x64, estimated_generations 5 with pricing_provisional true, billed to the credit balance: charged_usd 0.027074077462514244. get_balance read generations_used 36 / remaining 4 before and after. Recorded as 0 generations because that is what the counter did; the dollar charge is in credit_ledger_t0097.",
-      "rejected_candidate_id": "tower-beacon-candidate",
+      "rejected_attempt": "this T-0097 output. No candidate PNG was produced from it, and the id tower-beacon-candidate no longer exists: the beacon tower that ships as tower-beacon-idle-south comes from the T-0098 raw plus the T-0099 post pass.",
       "verdict": "REJECTED before post, on three of the brief's own checks. (1) SILHOUETTE INK COVERAGE 92/169 = 54.4%, against T-0097's 90% line and against every tower accepted so far (129/129, 169/172, 172/172, 187/196, 293/293). The 77 non-ink boundary pixels split into 38 flame-toned (clay #b06a3b, amber #d08a4a, rust #8c5a4a at rows 1-9, i.e. the outer edge of the fire itself) and 38 shadow #2e2a3b plus 1 dusk #4a3b52 (the vertical side edges, which carry a dark rim in the wrong tone). Completing this is not 'a small shortfall': inking the 38 flame-edge pixels would blacken the fire's outer silhouette and change its identity, and that is authoring, not post-processing. (2) 7 ENCLOSED HOLES inside the flame, the gaps between the licks; filling them with shadow or ink would leave dark pits inside the fire. (3) TWO DETACHED FRAGMENTS, a 7 px clay flake at (34,1)-(35,5) and a 3 px ember at (27,6)-(27,8), which the brief's fill rule forbids, and they cannot be merged without drawing. Each of the three is independently disqualifying; together they put the sprite outside what a deterministic post pass may repair.",
       "secondary_defect": "The shaft is 24 px wide over rows 50-61 with a widest row of 26 px (the brazier), against the prompt's stated 28-32 px and the same class of undershoot the rime recorded at 23-26 px. The widest-row pass is carried by the bowl, not by the tower body.",
       "post_processing": [
@@ -825,7 +852,7 @@
       "style_reference_usage": "color_palette is false so the palette came from the passed list. style_image.usage_description restricted the reference to palette warmth, top-left light, 3/4 projection, 1 px outline weight and detail level, and explicitly excluded the anchor's grass pad, diamond plinth, base shadow and ground tile shape - the L-045 mitigation, reused.",
       "generations_spent": 0,
       "spend_note": "One Pro Flash call at 64x64, estimated_generations 5 with pricing_provisional true, billed to the credit balance: charged_usd 0.025769163773218792. get_balance read generations_used 36 / remaining 4 before and after. Recorded as 0 generations because that is what the vendor counter did; the dollar charge is in credit_ledger_t0098.",
-      "rejected_candidate_id": "tower-rime-candidate",
+      "rejected_attempt": "this T-0098 output as delivered, which failed two of T-0098's pre-post rules. It is not a discarded attempt: the T-0099 pass translated it 1 px down and completed its boundary outline, and that result ships as tower-rime-idle-south.",
       "verdict": "REJECTED before post, on two of T-0098's own pre-post rules. (1) CONTENT ON ROW 0: 2 opaque px on row 0 - the apex of the tallest crystal shard sits on the top canvas border, against the brief's 'content on row 0 (top clipping)' rule and against the prompt's own 'clear 2 to 3 px margin at the top so no crystal tip touches or clips the top canvas border'. (2) DIAMOND/TAPERING BASE: the shaft runs 25 px over rows 43-50, the footing block widens to 31 px over rows 53-57 and then tapers 25, 21, 17, 10, 6 across rows 58-62, closing to a near-point - the exact 'no tapering point / no diamond plinth' shape the prompt forbade and the same class of defect art/director recorded on the T-0096 rime. The base also leaves row 63 empty, so it does not rest on the bottom row as asked. Neither barrier is post-repairable: erasing row 0 would cut the apex, translating the sprite down 1 px is a composition change rather than an outline or palette pass, and the base taper can only be fixed by drawing.",
       "post_processing": [
         "none. No post pass was run and no tower-rime-candidate.png was produced or replaced, following the T-0094, T-0095 and T-0097 precedent: an outline and palette pass on a sprite that fails the row-0 and base-shape rules would only make a failing sprite look finished.",
@@ -866,7 +893,7 @@
       "purpose": "Second beacon tower attempt under T-0098, art/director's exact prompt, kept as evidence. A wide stone shaft with an arched door under a flared brazier bowl holding one solid connected flame - the prompt's hardest constraint - but the candidate is REJECTED before post at T-0098's own rules: content on row 0, boundary ink 88.4% against the 90% floor, and a tapering base.",
       "placeholder": true,
       "status": "raw-evidence",
-      "status_detail": "raw-evidence: no tower-beacon-candidate.png exists, because three of the brief's pre-post rules fail. The ink gap alone would be inside a 'complete a small outline shortfall' pass, but the row-0 contact and the base taper are not, so the pass would only make a failing sprite look finished.",
+      "status_detail": "raw-evidence: no tower-beacon-candidate.png was produced under T-0098, because three of the brief's pre-post rules fail. The ink gap alone would be inside a 'complete a small outline shortfall' pass, but the row-0 contact and the base taper are not, so the pass would only make a failing sprite look finished.",
       "frames": 1,
       "directions": 1,
       "generator": "pixellab.create_image_pro_flash",
@@ -880,7 +907,7 @@
       "style_reference_usage": "color_palette is false so the palette came from the passed list. style_image.usage_description restricted the reference to palette warmth, top-left light, 3/4 projection, 1 px outline weight and detail level, and explicitly excluded the anchor's grass pad, diamond plinth, base shadow and ground tile shape.",
       "generations_spent": 0,
       "spend_note": "One Pro Flash call at 64x64, estimated_generations 5 with pricing_provisional true, billed to the credit balance: charged_usd 0.025835958505630495. get_balance read generations_used 36 / remaining 4 before and after. Recorded as 0 generations because that is what the vendor counter did; the dollar charge is in credit_ledger_t0098.",
-      "rejected_candidate_id": "tower-beacon-candidate",
+      "rejected_attempt": "this T-0098 output as delivered, which failed three of T-0098's pre-post rules. It is not a discarded attempt: the T-0099 pass translated it 1 px down and completed its boundary outline, and that result ships as tower-beacon-idle-south.",
       "verdict": "REJECTED before post, on three of T-0098's own pre-post rules. (1) CONTENT ON ROW 0: 2 opaque px on row 0 - the flame tip reaches the top canvas border, against the brief's rule and against the prompt's own 'clear margin of 4 to 6 px above the tallest flame tip'. Top rows: 2,4,4,5,6,7,11,13,13,13,15,17,18,19,21,24. (2) BOUNDARY INK 137/155 = 88.4%, under the brief's 90% floor. The 18 non-ink boundary pixels are 10 shadow #2e2a3b (side edges carrying a dark rim in the wrong tone), 4 stone #8b8291 and 4 deep teal #2f4a55. (3) DIAMOND/TAPERING BASE: 27 px at row 43 widening to 34 px over rows 54-56, then 32, 25, 20, 13, 9, 4 across rows 57-62, closing to a near-point, with row 63 left empty so the base does not rest on the bottom row. The prompt asked for 'no plinth, no taper' and 'resting flat on the bottom row'.",
       "secondary_defect": "The prompt asked for the sprite to be 52 to 56 px tall with a 4 to 6 px top margin; it is 63 px tall with a 0 px top margin. The shaft also measures 27-28 px and the widest row 34 px, which is inside the prompt's 28-32 px shaft and 34-38 px bowl ranges but only just.",
       "post_processing": [
@@ -915,17 +942,23 @@
       "source_task": "T-0098"
     },
     {
-      "id": "tower-beacon-candidate",
+      "id": "tower-beacon-idle-south",
       "license": "generated: PixelLab, commercial use",
       "type": "prop",
-      "file": "art/candidates/tower-beacon-candidate.png",
+      "file": "assets/art/towers/beacon/idle/south.png",
       "width": 64,
       "height": 64,
-      "purpose": "Beacon tower candidate, ready for director review: the T-0098 raw moved down 1 px so row 0 is empty and the base rests on row 63, with the outer silhouette boundary completed to a continuous 1 px #1b1a26 ink outline (137/155 -> 155/155). Nothing else was changed: same pixels, same palette, same geometry. Placeholder true - a candidate to wire, not a shipping asset.",
-      "placeholder": true,
-      "status": "candidate",
-      "status_detail": "candidate, produced entirely by a zero-generation deterministic post pass under T-0099 from art/candidates/tower-beacon-candidate-t0098-raw.png. Not final and not wired: art/director has still to rule, and G4.8 forbids a placeholder surviving.",
-      "frames": 1,
+      "purpose": "Beacon tower, idle, single direction: a stocky stone signal tower under a flared iron brazier bowl holding one solid connected flame, completed from the T-0098 raw by the zero-generation T-0099 post pass (1 px translation so the base rests on row 63, plus a boundary ink completion 137/155 -> 155/155) and nothing else changed. Ships as the G2 beacon tower, approved by art/director on 2026-11-12.",
+      "placeholder": false,
+      "status": "shipped",
+      "status_detail": "shipped under T-0100 with zero generation: the bytes were copied from art/candidates/tower-beacon-candidate.png unchanged (same SHA-256 C19BA660..., same 1718 bytes) and that candidate file was deleted, so this shipping path is now the only copy of the approved pixels. The sprite is a post pass, not a fresh render: its generation provenance is on tower-beacon-candidate-t0098-raw.",
+      "promoted_from": "art/candidates/tower-beacon-candidate.png (deleted under T-0100)",
+      "actions": [
+        "idle"
+      ],
+      "frames": [
+        "assets/art/towers/beacon/idle/south.png"
+      ],
       "directions": 1,
       "generator": "pixellab.create_image_pro_flash",
       "generator_detail": "64x64, no_background true, style_options {color_palette:false, outline:true, detail:true, shading:true}, palette = the locked 16 (bracken dusk), palette_name 'bracken dusk', max_colors 12, seed 9802. The file itself is the generator output after the T-0099 post pass; the pass was a deterministic Python/Pillow script and cost 0 generations.",
