@@ -87,6 +87,18 @@ extends Control
 ##   one there would make a pointer gesture look like a pad action. Gamepad and
 ##   keyboard keep the click-then-tile path; the press itself still goes through
 ##   `MapInput` in `handle_input()`, so the selection keeps its one door.
+## * **A controller face, driven from outside (T-0090).** Left/right moves a
+##   **focus** across the current page's tower slots, confirm selects and arms the
+##   focused tower, dismiss clears the focus. The bar still reads **no** key or pad
+##   button for it: `focus_tower()`, `activate_focused()` and `clear_focus()` are a
+##   door the panel calls (T-0091), so the one input door above is untouched and the
+##   keyboard keeps one owner. Focus is drawn as a `ReferenceRect` named
+##   `FocusFrame` - one persistent child added after the ghost, framing the focused
+##   slot one pixel outside its own rect - and it is **not** the selection: state
+##   stays the slot's border and selection stays the fill, text colour and prefix,
+##   so three cues on one slot never overwrite each other. `activate_focused()` goes
+##   through `_select(..., "pad")`, which raises `tower_selected` (the panel arms the
+##   tower) and never `tower_clicked`: a controller selection opens no window.
 ##
 ## Prints on stdout, one line per event:
 ##   INVENTORY_BAR_SHOWN {json}    once per draw whose content changed
@@ -96,6 +108,7 @@ extends Control
 ##   INVENTORY_BAR_CLICK {json}    once per press-and-release that opens a window
 ##   INVENTORY_BAR_DRAG {json}     once per drag begun or cancelled
 ##   INVENTORY_BAR_DROP {json}     once per release that ended a drag
+##   INVENTORY_BAR_FOCUS {json}    once per focus move or clear
 ##   INVENTORY_BAR_REJECTED {json} a bind or call this bar refused
 
 const MapInputScript := preload("res://src/ui/map_input.gd")
@@ -104,6 +117,12 @@ const MapInputScript := preload("res://src/ui/map_input.gd")
 ## own offer table uses for a kind, so a caller can talk about them by name.
 const GROUP_TOWERS := "towers"
 const GROUP_UPGRADES := "upgrades"
+
+## How far, in pixels, the focus frame is drawn **outside** the slot it frames
+## (T-0090). One pixel: enough that the frame does not sit on the slot's own border -
+## so the state border stays readable inside it - and small enough that it still reads
+## as one slot. Not exported: it is the relationship the brief fixes, not a feel value.
+const FOCUS_FRAME_EXPAND := 1.0
 
 ## A tower in the bar was selected: the **press** on its slot (T-0085). `instance_id`
 ## is the inventory's id. This is the selection door - the level's panel hears it and
@@ -228,6 +247,16 @@ signal page_changed(group_id: String, page: int, pages: int)
 ## Inside padding of a slot, in pixels. Range 0-10.
 @export var slot_padding: int = 4
 
+@export_group("Tuning — the controller focus (T-0090, PLACEHOLDER)")
+## Colour of the focus frame: the cue a controller drives. Near-white, and
+## deliberately outside the selection tint (`selected_colour`) and all three state
+## borders, so a slot can be focused, selected and placed at once and show three
+## separate cues that cannot be mistaken for each other.
+@export var focus_colour: Color = Color(0.97, 0.97, 0.92, 1.0)
+## Border thickness of the focus frame, in pixels. Range 1-4: below 1 the frame stops
+## reading at 1152x648, and above 4 it starts to look like a state border.
+@export var focus_border_width: int = 2
+
 var _flow = null
 var _router = MapInputScript.new()
 
@@ -282,11 +311,20 @@ var _click_id: int = -1
 ## slot rebuild cannot free it mid-gesture. Added last, so it draws over the row.
 var _ghost: Panel = null
 var _ghost_label: Label = null
+## The controller focus (T-0090): the instance the frame is drawn on, or -1 when
+## nothing is focused. Only the id is stored - the index is derived from the page as
+## drawn, so a rebuild cannot leave the focus pointing at a slot that is not there.
+var _focus_id: int = -1
+## The focus frame: one persistent child of the bar, added after the ghost so it draws
+## over the slots, and built outside `_rebuild()` for the ghost's reason - a rebuild
+## runs on every selection and page change and must not free the cue mid-walk.
+var _focus_frame: ReferenceRect = null
 
 
 func _ready() -> void:
 	_build()
 	_ensure_ghost()
+	_ensure_focus_frame()
 	_apply_copy()
 	call_deferred("_deferred_refresh")
 
@@ -320,6 +358,7 @@ func unbind() -> void:
 	_forced = {}
 	_stale = false
 	_selected_id = -1
+	clear_focus()
 	_wave_locked = false
 	_slots.clear()
 	_page_controls.clear()
@@ -635,6 +674,193 @@ func set_wave_locked(locked: bool) -> void:
 		"slots": _slots.size(),
 		"states": _states(),
 	}))
+
+
+# --- the controller focus (T-0090) -------------------------------------------
+
+## Moves the controller focus by `delta` (+1 right, -1 left) across the **current
+## page's** tower slots and returns the focused instance id, or -1 when the group is
+## empty. With nothing focused the first slot is where it lands, whatever the
+## direction; from there the index wraps with `posmod`, so left at the first slot goes
+## to the last. Called by the panel (T-0091): the bar itself still reads no keys.
+func focus_tower(delta: int) -> int:
+	var items := _page_items(GROUP_TOWERS)
+	var count := items.size()
+	if count == 0:
+		clear_focus()
+		return -1
+	var current := _focus_index_of(items)
+	var index := 0 if current < 0 else int(posmod(current + delta, count))
+	_set_focus(int((items[index] as Dictionary).get("id", -1)))
+	_place_focus_frame()
+	return _focus_id
+
+
+## The instance the focus frame is drawn on, or -1 when nothing is focused - including
+## when the focused tower is not on the page drawn, because a focus the player cannot
+## see is not a focus.
+func focused_instance() -> int:
+	if _focus_id == -1 or not _focus_on_page():
+		return -1
+	return _focus_id
+
+
+## Selects **and arms** the focused tower: confirm on a pad, through `_select()`, so
+## it is the same selection door a click uses. `tower_selected` is raised (the panel
+## arms the tower and the two views agree) and `tower_clicked` is not - a controller
+## selection is not a request for the tower window, which is a pointer's click
+## (T-0085). False when nothing is focused or the tower is no longer drawn.
+func activate_focused() -> bool:
+	var instance_id := focused_instance()
+	if instance_id < 0:
+		return false
+	# A pad selection is not a click: a release a pointer press may still owe this bar
+	# must not open a window over the selection the pad just made.
+	_click_id = -1
+	var selected := _select(instance_id, "pad")
+	_place_focus_frame()
+	return selected
+
+
+## Drops the focus and hides the frame. The selection is untouched: focus and
+## selection are two cues, so a player who backs out of the bar keeps what they had
+## selected.
+func clear_focus() -> void:
+	_set_focus(-1)
+	_place_focus_frame()
+
+
+## The focus frame's rect as the player sees it, or an empty rect while it is not
+## showing - the same convention as `ghost_rect()`.
+func focus_rect() -> Rect2:
+	if _focus_frame == null or not is_instance_valid(_focus_frame) or not _focus_frame.visible:
+		return Rect2()
+	return _focus_frame.get_global_rect()
+
+
+# --- internals: the focus frame ---------------------------------------------
+
+## Builds the frame once, as the bar's **last** child so it draws over the row, and
+## outside `_rebuild()` so no rebuild frees it. `editor_only` is switched off on
+## purpose: a `ReferenceRect` draws nothing in a running game while it is on, which
+## would make this cue an editor-only one by accident.
+func _ensure_focus_frame() -> void:
+	if _focus_frame != null and is_instance_valid(_focus_frame):
+		return
+	var frame := ReferenceRect.new()
+	frame.name = "FocusFrame"
+	# A view, never a target: the frame must not eat the click on the slot it frames.
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	frame.editor_only = false
+	frame.visible = false
+	add_child(frame)
+	_focus_frame = frame
+	_apply_focus_style()
+	set_process(false)
+
+
+## The frame's colour and thickness, from the two exports. Applied on build and again
+## on every placement, so a designer tuning `focus_colour` or `focus_border_width` in
+## the inspector sees it in the game without an edit here. `ReferenceRect` ignores a
+## value it already holds, so calling this per frame costs two comparisons.
+func _apply_focus_style() -> void:
+	if _focus_frame == null or not is_instance_valid(_focus_frame):
+		return
+	if _focus_frame.border_color != focus_colour:
+		_focus_frame.border_color = focus_colour
+	var width := maxi(focus_border_width, 0)
+	if _focus_frame.border_width != width:
+		_focus_frame.border_width = width
+
+
+## The frame's upkeep while something is focused: the slot it surrounds is laid out by
+## a container, so the frame is placed from that slot's rect every frame instead of
+## only when the focus moves (T-0090). A rebuild, a page change, a container reflow and
+## a window resize all end in the same place this way, and `_place_focus_frame()` is a
+## no-op when the rect has not changed. Processing is off whenever nothing is focused.
+func _process(_delta: float) -> void:
+	_place_focus_frame()
+
+
+## Places the frame on the focused slot, or hides it. Also the one place the focus is
+## clamped: it lives on the current page's tower slots, so an id that page no longer
+## holds is not a focus any more - it clamps to that page's last slot, or clears when
+## the page holds no towers at all (the two answers the brief allows, chosen by
+## whether there is anywhere to go). Never re-enters itself: it writes through
+## `_set_focus()` and does its own placing.
+func _place_focus_frame() -> void:
+	if _focus_frame == null or not is_instance_valid(_focus_frame):
+		return
+	_apply_focus_style()
+	if _focus_id == -1:
+		_focus_frame.visible = false
+		return
+	if not _focus_on_page():
+		_clamp_focus()
+		if _focus_id == -1:
+			_focus_frame.visible = false
+			return
+	var rect := _focused_slot_rect()
+	if rect.size.x <= 0.0 or rect.size.y <= 0.0:
+		# The slot is drawn but the container has not laid it out yet - the rebuild of
+		# this very frame. Leaving the frame where it was for one frame is better than
+		# placing it at the origin, and `_process` or the next rebuild catches up.
+		_focus_frame.visible = _focus_frame.visible and visible
+		return
+	_focus_frame.visible = visible
+	var framed := rect.grow(FOCUS_FRAME_EXPAND)
+	if not _focus_frame.size.is_equal_approx(framed.size):
+		_focus_frame.size = framed.size
+	if not _focus_frame.global_position.is_equal_approx(framed.position):
+		_focus_frame.global_position = framed.position
+
+
+## The focus's one writer: stores the id, turns the frame's upkeep on and off with it,
+## and prints one line per change. It does **not** place the frame - the caller does,
+## which is what keeps `_place_focus_frame()`'s clamp from recursing into itself.
+func _set_focus(instance_id: int) -> void:
+	if _focus_id == instance_id:
+		return
+	_focus_id = instance_id
+	set_process(instance_id != -1)
+	print("INVENTORY_BAR_FOCUS " + JSON.stringify({
+		"instance": instance_id,
+		"index": _focus_index_of(_page_items(GROUP_TOWERS)),
+		"towers": _page_items(GROUP_TOWERS).size(),
+		"page": _page_of(GROUP_TOWERS) + 1,
+	}))
+
+
+## The focused tower is not on the drawn page any more: clamp to that page's last slot,
+## or clear the focus when it holds no towers.
+func _clamp_focus() -> void:
+	var items := _page_items(GROUP_TOWERS)
+	if items.is_empty():
+		_set_focus(-1)
+		return
+	_set_focus(int((items[items.size() - 1] as Dictionary).get("id", -1)))
+
+
+## The global rect of the slot the focus is drawn on, or an empty rect when that slot
+## is not drawn (it is on another page, or the row has not been rebuilt yet).
+func _focused_slot_rect() -> Rect2:
+	for entry in _slots:
+		if String(entry["group"]) == GROUP_TOWERS and int(entry["id"]) == _focus_id:
+			return (entry["node"] as Control).get_global_rect()
+	return Rect2()
+
+
+## True when the focused instance is one of the tower slots on the drawn page.
+func _focus_on_page() -> bool:
+	return _focus_index_of(_page_items(GROUP_TOWERS)) >= 0
+
+
+## The focus's index within a page's tower items, or -1 when it is not one of them.
+func _focus_index_of(items: Array) -> int:
+	for index in items.size():
+		if int((items[index] as Dictionary).get("id", -1)) == _focus_id:
+			return index
+	return -1
 
 
 # --- the drag gesture (T-0078) ----------------------------------------------
@@ -1155,6 +1381,11 @@ func _rebuild() -> void:
 			slots.add_child(empty)
 
 		_add_page_controls(group_id, nodes)
+
+	# The frame is placed from the row that was just filled (T-0090): a rebuild can
+	# move, renumber or replace the focused slot, so the cue follows it here as well
+	# as from `_process`.
+	_place_focus_frame()
 
 
 func _add_page_controls(group_id: String, nodes: Dictionary) -> void:
