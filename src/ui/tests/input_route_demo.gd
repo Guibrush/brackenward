@@ -18,6 +18,8 @@ extends SceneTree
 ##
 ## Prints, in this order:
 ##   INPUT_ROUTE_CASE {text}      one line per case
+##   INPUT_ROUTE_INTENT {json}    one line per event handed to `MapInput` in the
+##                                horizontal-pair case (T-0089)
 ##   INPUT_ROUTE_EVENT {json}     one line per pushed event: what was sent, where
 ##   INPUT_ROUTE_STATE {json}     the panel's own answer after each case: rows,
 ##                                armed, selected, focus, free tiles, reason
@@ -28,6 +30,8 @@ extends SceneTree
 ## to the objects under test, not to this file.
 
 const BOOT_SCENE := "res://scenes/boot.tscn"
+
+const MapInputScript := preload("res://src/ui/map_input.gd")
 
 ## The map this demo walks, recorded so the evidence names it (the same seed
 ## `build_panel_boot_demo.gd` uses, so both demos talk about one run).
@@ -57,6 +61,10 @@ func _run() -> void:
 	await process_frame
 	root.size = VIEWPORT
 	await process_frame
+
+	# Runs before the walk: the router is the door every later case goes
+	# through, so a missing branch is named here and not in a screen.
+	_check_horizontal_intents()
 
 	var packed = load(BOOT_SCENE)
 	if not check(packed != null, "the boot scene loads"):
@@ -177,6 +185,58 @@ func _run() -> void:
 	_state("after the bare click")
 
 	_finish()
+
+
+# --- what the router translates, before any screen is involved ---------------
+
+## T-0089: `game_move_left` / `game_move_right` are the placement pair, and they
+## are their own intents - the four focus/confirm/dismiss intents must not have
+## moved to make room for them. The events are real `InputEventKey` presses
+## matched by the project's own input map (never `InputEventAction`, which would
+## let a hand-written action name stand in for a binding), so a branch deleted
+## from `intent_for()` fails here.
+func _check_horizontal_intents() -> void:
+	_case("T-0089: KEY_LEFT / KEY_RIGHT are the placement pair, KEY_UP is still focus")
+	var router: RefCounted = MapInputScript.new()
+	var left := _intent_of(router, _key_press(KEY_LEFT), "KEY_LEFT")
+	var right := _intent_of(router, _key_press(KEY_RIGHT), "KEY_RIGHT")
+	var up := _intent_of(router, _key_press(KEY_UP), "KEY_UP")
+
+	check_eq_int(int(left["intent"]), MapInputScript.Intent.MOVE_LEFT, "KEY_LEFT is MOVE_LEFT")
+	check(String(left["device"]) == MapInputScript.DEVICE_KEYBOARD,
+		"KEY_LEFT arrives as a keyboard event: %s" % String(left["device"]))
+	check_eq_int(int(right["intent"]), MapInputScript.Intent.MOVE_RIGHT, "KEY_RIGHT is MOVE_RIGHT")
+	check(String(right["device"]) == MapInputScript.DEVICE_KEYBOARD,
+		"KEY_RIGHT arrives as a keyboard event: %s" % String(right["device"]))
+	check_eq_int(int(up["intent"]), MapInputScript.Intent.FOCUS_PREV,
+		"KEY_UP still returns FOCUS_PREV, not a placement step")
+
+	# The router names both actions, so a caller checking the input map against
+	# `action_names()` sees the pair too.
+	var names: Array = router.action_names()
+	check(names.has(MapInputScript.ACTION_MOVE_LEFT) and names.has(MapInputScript.ACTION_MOVE_RIGHT),
+		"action_names() names the placement pair: %s" % [names])
+
+
+## One real key press, as the OS would deliver it: a physical keycode matched to
+## a `game_*` action by the project's input map.
+func _key_press(keycode: int) -> InputEventKey:
+	var ev := InputEventKey.new()
+	ev.device = -1
+	ev.physical_keycode = keycode
+	ev.pressed = true
+	return ev
+
+
+## The router's answer for one event, printed as it is read.
+func _intent_of(router: RefCounted, event: InputEvent, keyname: String) -> Dictionary:
+	var result: Dictionary = router.intent_for(event)
+	print("INPUT_ROUTE_INTENT " + JSON.stringify({
+		"key": keyname,
+		"intent": String(result["name"]),
+		"device": String(result["device"]),
+	}))
+	return result
 
 
 # --- the path a player takes ------------------------------------------------
