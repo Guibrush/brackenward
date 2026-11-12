@@ -34,6 +34,13 @@ extends Node2D
 ## carried by the instance have no combat effect yet; they are identity and
 ## loadout until the design tables land.
 ##
+## T-0101: the node draws art when the type has it. A tower whose instance
+## carries a `type_id` with a shipped idle sprite (`assets/art/towers/<type>/idle/
+## south.png`) shows that sprite and hides the placeholder polygons; a type with
+## no sprite, or a node with no instance at all, keeps the polygons. Art is a
+## lookup on the type and nothing else - it never touches targeting, firing, tier
+## adoption or the instance sync.
+##
 ## Every number below is a PLACEHOLDER: the tier tables are `design/systems`
 ## work (T-0035, `docs/design/systems/towers.md`) and replace these arrays, not
 ## this code.
@@ -65,7 +72,15 @@ var candidate_source: Callable = Callable()
 ## Placeholder polygons in `scenes/tower.tscn`. Resolved by path in `_ready` so
 ## no script hardcodes a node path; a tower with no visuals still fires.
 @export var body_path: NodePath = ^"Body"
+@export var base_path: NodePath = ^"Base"
 @export var tier_mark_path: NodePath = ^"TierMark"
+## The sprite node the art goes into (T-0101). Same rule as the polygons: a path
+## resolved in `_ready`, so the scene can move the node without touching code.
+@export var sprite_path: NodePath = ^"Sprite"
+## Where a tower type's shipped art lives. `%s` is the instance's `type_id`
+## (`arrow`, `ballista`, `mortar`, `rime`, `beacon`, `bramble`); a type with no
+## file at this path falls back to the polygons.
+@export var sprite_format: String = "res://assets/art/towers/%s/idle/south.png"
 
 ## How much the placeholder body grows per tier above the first. Visual only.
 const BODY_GROWTH_PER_TIER := 0.25
@@ -86,11 +101,18 @@ var _last_hold_reason: String = ""
 var _reported_hold: Dictionary = {}
 
 var _body: Node2D = null
+var _base: Node2D = null
+var _sprite: Sprite2D = null
 var _tier_mark: Node2D = null
+## True when the sprite is carrying this tower's look and the polygons are
+## hidden. The tier cue is then the mark alone: art is drawn at 1x, never scaled.
+var _art_shown: bool = false
 
 
 func _ready() -> void:
 	_body = get_node_or_null(body_path) as Node2D
+	_base = get_node_or_null(base_path) as Node2D
+	_sprite = get_node_or_null(sprite_path) as Sprite2D
 	_tier_mark = get_node_or_null(tier_mark_path) as Node2D
 	_invested = 0
 	# A freshly built tower is ready to fire: no free shot is lost waiting out a
@@ -119,7 +141,29 @@ func sync_from_instance() -> void:
 	if instance == null:
 		return
 	_tier = clampi(instance.tier, 1, MAX_TIER)
+	_apply_art()
 	_update_visual()
+
+
+# --- art -------------------------------------------------------------------
+
+## Picks the drawing for this tower's type (T-0101): the shipped idle sprite when
+## one exists, the placeholder polygons when it does not. A node with no instance
+## has no type to look up, so it keeps the polygons it shipped with.
+func _apply_art() -> void:
+	var texture: Texture2D = null
+	if instance != null:
+		var art_path: String = sprite_format % String(instance.type_id)
+		if ResourceLoader.exists(art_path):
+			texture = load(art_path) as Texture2D
+	_art_shown = texture != null
+	if _sprite != null:
+		_sprite.texture = texture
+		_sprite.visible = _art_shown
+	if _base != null:
+		_base.visible = not _art_shown
+	if _body != null:
+		_body.visible = not _art_shown
 
 
 func tier() -> int:
@@ -303,8 +347,11 @@ func _tier_value_float(table: Array[float], tier_now: int) -> float:
 	return table[clampi(tier_now - 1, 0, table.size() - 1)]
 
 
+## Tier cue. The placeholder body grows a quarter per tier and the mark is the
+## amber square above it. A sprite tower is **not** scaled - 64x64 art at 2x is a
+## different sprite, not a higher tier - so its tier reads from the mark alone.
 func _update_visual() -> void:
-	if _body != null:
+	if _body != null and not _art_shown:
 		_body.scale = Vector2.ONE * (1.0 + BODY_GROWTH_PER_TIER * float(_tier - 1))
 	if _tier_mark != null:
 		_tier_mark.visible = _tier > 1
