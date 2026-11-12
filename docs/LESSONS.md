@@ -74,3 +74,33 @@ Evidence: T-0090 first windowed run: 253 PNGs, checks:292 failed:2 (drag
 count drift), exit 1; identical command fresh temp dir: 253 PNGs,
 checks:293 failed:0, exit 0; headless 285/285 twice, byte-identical focus
 lines.
+
+## L-045 — 2026-11-12 — The style anchor's ground pad leaks into tower generations asked to "fill the frame"
+Situation: T-0094 generated the mortar tower with `create_image_pro_flash`,
+using `art/style/anchor.png` (native 64x64) as the style reference, the locked
+16-colour palette, max_colors 12. The prompt asked for "a broad flat footing
+slab ... the footing filling the canvas almost side to side" plus an explicit
+"No grass, no ground tile, no plinth". Output was technically clean — 10 tones,
+0 off-palette, binary alpha, 0 holes, strong squat silhouette — but carried 466
+pixels of leaf #6f8f4a (234) and deep green #3a4a3a (232) in rows 49-63,
+columns 2-60, tapering to a point: the anchor's own grass diamond leaked into
+the base. The drum and sandbag blocks stand on it, so cropping would mean
+repainting the base, i.e. authoring, not post. Rejected; 5 generations spent;
+the sibling rime call was not made per the task's stop condition.
+Worked: rejecting on the pad-green scan instead of cropping; the approved
+ballista prompt ("low stone footing block at the base only", no side-to-side
+wording) shows the wording that avoids the leak.
+Failed: a "filling the canvas almost side to side" footing prompt reproduced
+the anchor pad's isometric shape; the explicit negative prohibition ("no grass,
+no ground tile, no plinth") did not override it. The anchor deliberately keeps
+its grass pad (manifest note).
+Rule: when the style anchor carries a ground pad, a tower prompt must never
+ask for a slab/footing that fills the frame — ask for a narrow footing **block**
+and no ground; scan every pro-flash tower output for the three pad greens
+(#3a4a3a, #6f8f4a, #9ab55c) before any post pass, and reject rather than crop
+when the sprite stands on them.
+Evidence: art/candidates/tower-mortar-candidate-raw.png (466 pad px, rows
+49-63); manifest entry `tower-mortar-candidate-raw`; art/STYLE.md ground-pad
+rule; T-0094. Spend reported inconsistently by the dispatcher: brief body says
+19→14, evidence line says 21→26 — to be reconciled by studio-lead before the
+next generation task.
