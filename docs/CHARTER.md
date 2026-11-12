@@ -171,7 +171,7 @@ experiment that answers how much content the game actually needs.
 | Distinct levels | 9 | 8 standard maps plus 1 boss map |
 | Music tracks | 4 | menu, tower defence levels, branching map, boss |
 | Sound effects | 48 | UI 10, towers 10, enemies and bosses 8, economy 4, flow 5, status effects 6, map 3, plus 2 variants |
-| Generation budget at G2 | ≤200 PixelLab generations (ADR-0008, raised from ≤60), ≤52 ElevenLabs calls | current plan 40 generations + $10 credit; the human funds the balance before generation. 52 calls = 48 one-shots + 4 music tracks |
+| Generation budget at G2 | ≤60 PixelLab generations, ≤52 ElevenLabs calls | static art only; enemy animation is deferred by ADR-0009. Current plan 40 generations (24 remaining) + $10 credit; the human funds a small top-up before the static batch. 52 calls = 48 one-shots + 4 music tracks |
 | Systems (mechanics that need code) | 10 | each one is a risk, and none is cut at G0 |
 
 **No calendar commitment.** This is a self-directed project run at its owner's pace.
@@ -193,9 +193,10 @@ evidence.
 
 **Cost note, measured 2026-11-12.** The vendor's `get_balance` reported a trial plan of
 40 generations (16 used, 24 remaining) with $10.00 credits, and the per-generation credit
-price is not exposed by any image tool. ADR-0008 raises the G2 ceiling to ≤200 for the
-animated enemy set and records the stop condition; topping up the plan is a human action,
-not assumed by this table.
+price is not exposed by any image tool. ADR-0008 raised the ceiling for animation;
+**ADR-0009 withdrew that** — G2 ships static sprites only (~33 accepted generations plus
+retries) and animation waits for static approval under its own budget. Topping up the
+plan is a human action, not assumed by this table.
 
 ## Codename candidates
 
