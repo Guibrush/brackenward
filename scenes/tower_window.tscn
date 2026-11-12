@@ -9,73 +9,44 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+mouse_filter = 2
 script = ExtResource("1_window")
 
-[node name="Backdrop" type="ColorRect" parent="."]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-color = Color(0.0392157, 0.0509804, 0.0470588, 0.556863)
+[node name="Panel" type="PanelContainer" parent="."]
+custom_minimum_size = Vector2(320, 0)
+layout_mode = 0
+offset_right = 320.0
+offset_bottom = 240.0
+mouse_filter = 0
 
-[node name="Center" type="CenterContainer" parent="."]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-
-[node name="Panel" type="PanelContainer" parent="Center"]
-custom_minimum_size = Vector2(560, 0)
-layout_mode = 2
-
-[node name="Margin" type="MarginContainer" parent="Center/Panel"]
+[node name="Margin" type="MarginContainer" parent="Panel"]
 layout_mode = 2
 theme_override_constants/margin_left = 24
 theme_override_constants/margin_top = 20
 theme_override_constants/margin_right = 24
 theme_override_constants/margin_bottom = 20
 
-[node name="Column" type="VBoxContainer" parent="Center/Panel/Margin"]
+[node name="Column" type="VBoxContainer" parent="Panel/Margin"]
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="Title" type="Label" parent="Center/Panel/Margin/Column"]
+[node name="Title" type="Label" parent="Panel/Margin/Column"]
 layout_mode = 2
 text = "Tower"
 
-[node name="Identity" type="Label" parent="Center/Panel/Margin/Column"]
+[node name="Identity" type="Label" parent="Panel/Margin/Column"]
 layout_mode = 2
 text = "instance 0 · in hand"
 
-[node name="Tier" type="Label" parent="Center/Panel/Margin/Column"]
+[node name="Tier" type="Label" parent="Panel/Margin/Column"]
 layout_mode = 2
 text = "Tier T1"
 
-[node name="Equipped" type="Label" parent="Center/Panel/Margin/Column"]
+[node name="Equipped" type="Label" parent="Panel/Margin/Column"]
 layout_mode = 2
 autowrap_mode = 3
 text = "Carrying: nothing equipped 0/2 slots"
 
-[node name="Rows" type="VBoxContainer" parent="Center/Panel/Margin/Column"]
+[node name="Rows" type="VBoxContainer" parent="Panel/Margin/Column"]
 layout_mode = 2
 theme_override_constants/separation = 6
-
-[node name="Status" type="Label" parent="Center/Panel/Margin/Column"]
-layout_mode = 2
-autowrap_mode = 3
-text = "Gold 0 · between waves - equip, upgrade or take back"
-
-[node name="Reason" type="Label" parent="Center/Panel/Margin/Column"]
-layout_mode = 2
-autowrap_mode = 3
-custom_minimum_size = Vector2(0, 40)
-
-[node name="Hint" type="Label" parent="Center/Panel/Margin/Column"]
-layout_mode = 2
-autowrap_mode = 3
-text = "Up/Down moves · Enter or a click acts · Escape closes"

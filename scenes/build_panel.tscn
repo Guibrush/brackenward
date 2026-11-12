@@ -32,7 +32,7 @@ script = ExtResource("1_panel")
 layout_mode = 1
 offset_left = 12.0
 offset_top = 12.0
-offset_right = 292.0
+offset_right = 12.0
 offset_bottom = 12.0
 mouse_filter = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_block")
@@ -46,10 +46,6 @@ layout_mode = 2
 mouse_filter = 2
 theme_override_constants/separation = 6
 
-[node name="Title" type="Label" parent="Block/Margin/Column"]
-layout_mode = 2
-text = "Build"
-
 [node name="State" type="Label" parent="Block/Margin/Column"]
 layout_mode = 2
 text = "HQ 0/0"
@@ -62,17 +58,3 @@ text = "Wave 0/0"
 [node name="Actions" type="VBoxContainer" parent="Block/Margin/Column"]
 layout_mode = 2
 theme_override_constants/separation = 4
-
-[node name="Status" type="Label" parent="Block/Margin/Column"]
-layout_mode = 2
-autowrap_mode = 3
-text = ""
-
-[node name="Reason" type="Label" parent="Block/Margin/Column"]
-layout_mode = 2
-custom_minimum_size = Vector2(0, 34)
-autowrap_mode = 3
-
-[node name="Hint" type="Label" parent="Block/Margin/Column"]
-layout_mode = 2
-autowrap_mode = 3

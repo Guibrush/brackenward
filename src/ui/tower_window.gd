@@ -16,14 +16,21 @@ extends Control
 ##   `open_for()`, so both doors reach one window and neither screen builds one.
 ## * **Possession is enough to equip.** A tower in hand is an inventory instance
 ##   with no node and no tile, and `Inventory.apply_upgrade_to_tower()` needs
-##   neither, so the window equips on it directly. Tier upgrades and take-back need
-##   the map (a price table and a tile), so they are refused, with a reason, for a
-##   tower that is not placed - that refusal is a sentence, not a disabled row.
+##   neither, so the window equips on it directly. A tier needs a price and a
+##   take-back needs a tile, so both need a level: the arena caches the tower
+##   scene's tier table and prices an in-hand tower from it (T-0087), and a tower
+##   in hand is upgraded through `Arena.upgrade_inventory_tower()`. With no level
+##   open (the map screen) there is nothing to price against, and that refusal is
+##   a sentence, not a disabled row.
 ## * **Every action goes through the owner of the rule.** Equipping calls the
 ##   inventory; tier-up and take-back call the arena, which owns the phase lock and
 ##   the price. The window never charges, raises or moves anything itself, so a
-##   refused action is the owner's refusal and the window shows the owner's words
+##   refused action is the owner's refusal and the window reports the owner's words
 ##   verbatim (`Inventory.last_refusal()`, `Arena.last_refusal()`).
+## * **A refusal is told, not drawn** (T-0086). The window ends at its last action
+##   row: it has no status line, no refusal sentence and no hint. The owner's words
+##   go to `TOWER_WINDOW_REFUSED` and to the `refused` signal, and `reason()` hands
+##   the last one to a caller; the tower, the gold and the row stay as they were.
 ## * **Read-only during a wave.** The window still opens and reads; `equip`,
 ##   `raise_tier` and `take_back` are each refused, and the sentence is the
 ##   arena's own. Equipping has no arena door, so the window asks the arena to
@@ -36,7 +43,7 @@ extends Control
 ##   because `apply_upgrade_to_tower()` checks the free slot before it touches the
 ##   hand. This window therefore offers no replace action and no "warning before
 ##   destroying" is needed: there is no destroy path here to warn about. The
-##   refusal is shown, the upgrade stays in hand, and the tower keeps what it had.
+##   refusal is reported, the upgrade stays in hand, and the tower keeps what it had.
 ## * **The bar's list needs no filtering here.** `Inventory.upgrades()` is the
 ##   pool *in hand*; an applied upgrade lives on its tower and has left that pool,
 ##   so equipping removes the item from the bar by construction. This window adds
@@ -45,6 +52,26 @@ extends Control
 ##   cannot be thrown away): the window is a view and an action list, and `DISMISS`
 ##   or a click outside the panel closes it. While it is open it consumes every
 ##   mapped intent (`_input`), so the bar and the build panel behind it are inert.
+## * **It is a popover, not a centred sheet** (T-0083). The scene has no dimming
+##   backdrop and no `Center` container: the panel is placed beside the click that
+##   opened it - above and to the right, `anchor_gap` away - clamped inside the
+##   viewport with `viewport_margin` to spare, and flipped below when the clamped
+##   panel would cover that click. Placement happens after one layout frame in which
+##   the panel is shown **fully transparent**, so its own measured size is what the
+##   arithmetic uses and the player never sees the scene's default rect; the
+##   placement tick restores the alpha, so the first visible frame is the final
+##   rect. `is_revealed()` is false until then, and a pointer confirm before the
+##   placement - including the click that opened the window - is ignored.
+##   outside `panel_rect()` closes the window (`why = "clicked outside"`), consumes
+##   the event and does nothing else; a pointer confirm that arrives before the
+##   panel has been placed - including the click that opened the window - is
+##   ignored, because `_input` order can deliver that click here after the bar or
+##   the build panel raised the door that opened it.
+## * **Pad caveat.** The anchor is the click that opened the window: the point the
+##   session just delivered. A pad open delivers no click, so the anchor falls back
+##   to the last pointer position this window saw, which is stale for a pad player
+##   (and `(0, 0)` in a headless run). Anchoring on the focused slot or tile is the
+##   controller task's; this file does not guess a pad position.
 ## * Input has one door, `handle_input()`, which asks `MapInput` for the intent:
 ##   keyboard, mouse and gamepad reach the same three actions.
 ##
@@ -56,6 +83,7 @@ extends Control
 ##   TOWER_WINDOW_REFUSED {json}   every refused action, with the owner's reason
 ##   TOWER_WINDOW_CLOSED {json}    once per close, with why
 ##   TOWER_WINDOW_SHOWN {json}     once per draw whose content changed
+##   TOWER_WINDOW_PLACED {json}    once per open, with the anchor and the panel's rect
 
 signal closed(why: String)
 ## An action was applied: `action` is "equip" | "tier" | "take_back", `tier` the
@@ -70,17 +98,32 @@ const KIND_EQUIP := "equip"
 const KIND_TIER := "tier"
 const KIND_TAKE_BACK := "take_back"
 
+## Layout ticks the placement waits for before revealing the window (T-0084). One is
+## enough: the panel is shown transparent first so its wrapping labels are measured at
+## the real width, then the next tick places it and turns it opaque.
+
 @export_group("Layout — node paths")
-@export var title_path: NodePath = ^"Center/Panel/Margin/Column/Title"
-@export var identity_path: NodePath = ^"Center/Panel/Margin/Column/Identity"
-@export var tier_path: NodePath = ^"Center/Panel/Margin/Column/Tier"
-@export var equipped_path: NodePath = ^"Center/Panel/Margin/Column/Equipped"
-@export var rows_path: NodePath = ^"Center/Panel/Margin/Column/Rows"
-@export var status_path: NodePath = ^"Center/Panel/Margin/Column/Status"
-@export var reason_path: NodePath = ^"Center/Panel/Margin/Column/Reason"
-@export var hint_path: NodePath = ^"Center/Panel/Margin/Column/Hint"
+@export var title_path: NodePath = ^"Panel/Margin/Column/Title"
+@export var identity_path: NodePath = ^"Panel/Margin/Column/Identity"
+@export var tier_path: NodePath = ^"Panel/Margin/Column/Tier"
+@export var equipped_path: NodePath = ^"Panel/Margin/Column/Equipped"
+@export var rows_path: NodePath = ^"Panel/Margin/Column/Rows"
 ## The panel itself, so a click outside it can be told from one inside it.
-@export var panel_path: NodePath = ^"Center/Panel"
+@export var panel_path: NodePath = ^"Panel"
+
+@export_group("Layout — anchor (T-0083)")
+## The panel's narrowest width, in pixels: a popover column, not a sheet. Range
+## 280-360.
+@export var panel_min_width: int = 320
+## The panel's hard ceiling, in pixels. A wider panel stops reading as a popover.
+## Range 320-420; the design ceiling is 360.
+@export var panel_max_width: int = 360
+## Distance kept between the click that opened the window and the panel's edges.
+## Range 8-32.
+@export var anchor_gap: int = 18
+## Distance kept between the panel and the viewport's edges when it is clamped.
+## Range 0-24.
+@export var viewport_margin: int = 8
 
 @export_group("Copy")
 ## The window's title: the tower's type id.
@@ -94,29 +137,29 @@ const KIND_TAKE_BACK := "take_back"
 @export var nothing_equipped_text: String = "nothing equipped"
 @export var slots_format: String = " %d/%d slots"
 @export var gold_format: String = "Gold %d"
-## The status line between waves, and during one.
-@export var ready_text: String = "between waves - equip, upgrade or take back"
+## The sentence `_arena_wave_reason()` falls back to when there is no arena to ask.
+## It is no longer drawn: a refusal is logged and emitted, never displayed (T-0086).
 @export var read_only_text: String = "read only: a wave is running - nothing can be changed"
 ## One row per upgrade in hand.
 @export var equip_row_format: String = "Equip %s"
 @export var tier_row_format: String = "Upgrade to T%d — %d gold"
 @export var tier_max_row_text: String = "Upgrade — already at the last tier"
-@export var tier_unpriced_text: String = "Upgrade tier — place this tower to price it"
+## Said on the tier row when there is no arena at all: the map screen has no level
+## to price a tier against (T-0087). With a level open, a tower in hand is priced
+## from the arena's own table and this sentence is never drawn.
+@export var tier_unpriced_text: String = "Upgrade tier — open a level to price it"
 @export var take_back_row_text: String = "Take back to the inventory"
 @export var no_upgrades_row_text: String = "no upgrades in hand to equip"
 @export var no_session_text: String = "no run"
-## Said when tier-up is asked for and no level is open: the price lives on the
-## tower node, which only a level has.
+## Said when tier-up is asked for and no level is open: there is no price table,
+## which only a level has.
 @export var tier_no_level_text: String = "no level is open: a tier is bought in a level"
-## Said when tier-up is asked for on a tower still in hand.
-@export var tier_in_hand_text: String = "this tower is in hand: place it to price its next tier"
 ## Said when take-back is asked for and no level is open.
 @export var take_back_no_level_text: String = "no level is open: there is no tile to take it from"
 ## Said when take-back is asked for on a tower that is already in hand.
 @export var take_back_in_hand_text: String = "this tower is already in the inventory"
 ## Between an option's label and its detail.
 @export var field_separator: String = " · "
-@export var hint_text: String = "Up/Down moves · Enter or a click acts · Escape closes"
 @export var focus_marker: String = "> "
 
 @export_group("Tuning — PLACEHOLDER (T-0069)")
@@ -130,6 +173,22 @@ var _router = MapInputScript.new()
 
 var _open: bool = false
 var _open_id: int = -1
+## Where the window was opened: the click that opened it (T-0083), and the process
+## frame that click landed on. The frame is what lets `handle_input()` ignore the
+## pointer confirm that opened the window instead of reading it as a click outside.
+var _anchor: Vector2 = Vector2.ZERO
+var _open_frame: int = -1
+## True once the panel has been placed for the current open. Before that there is
+## no rect a click could be outside of.
+var _panel_placed: bool = false
+## Process ticks left before the panel is placed: 1 is set on open and counts down
+## in `_process`, so the placement uses a laid-out panel (see `_place_panel()`).
+var _place_countdown: int = -1
+## The last pointer this window saw, recorded from `_input()` even while it is
+## closed. The click that opens the window is delivered here before the bar or the
+## build panel raises the door that opens it, and `Viewport.get_mouse_position()`
+## answers from the display server - which is `(0, 0)` in a headless run.
+var _last_pointer: Vector2 = Vector2.INF
 ## One entry per focusable row, in drawing order:
 ##     index, kind, id, type_id, label, node
 var _rows: Array = []
@@ -175,6 +234,10 @@ func unbind() -> void:
 	_disconnect_session()
 	_open = false
 	_open_id = -1
+	_panel_placed = false
+	# A countdown left running would place a panel for a run this window no longer
+	# has; `_process` also guards on `_open`, and this is the second lock (T-0084).
+	_place_countdown = -1
 	_flow = null
 	_arena = null
 	_rows.clear()
@@ -210,8 +273,17 @@ func open_for(instance_id: int) -> bool:
 	_open_id = instance_id
 	_focus = 0
 	_reason = ""
+	_anchor = _click_point()
+	_open_frame = Engine.get_process_frames()
+	_panel_placed = false
+	# Shown fully transparent for the layout tick, then placed and made opaque by
+	# `_place_panel()` (T-0084). A transparent Control still lays out, so the wrapping
+	# labels measure at the real width; the player never sees the scene's default
+	# rect, because nothing is drawn until the alpha goes back to 1.
+	modulate.a = 0.0
 	show()
 	refresh(true)
+	_place_countdown = 1
 	print("TOWER_WINDOW_OPEN " + JSON.stringify({
 		"instance": instance_id,
 		"type_id": String(tower.type_id),
@@ -223,6 +295,8 @@ func open_for(instance_id: int) -> bool:
 		"phase": _phase_name(),
 		"gold": _gold(),
 		"rows": _rows.size(),
+		"anchor": [_anchor.x, _anchor.y],
+		"frame": _open_frame,
 	}))
 	return true
 
@@ -232,6 +306,9 @@ func close(why: String = "") -> bool:
 		return false
 	_open = false
 	hide()
+	_panel_placed = false
+	_place_countdown = -1
+	modulate.a = 1.0
 	var instance_id := _open_id
 	_open_id = -1
 	_rows.clear()
@@ -247,8 +324,23 @@ func is_open() -> bool:
 	return _open and visible
 
 
+## True once the player can actually see the window: open, visible, and no longer in
+## the transparent layout tick before placement (T-0084). The bug this distinguishes
+## from `is_open()` is a window whose scene rect is drawn for a frame before the
+## panel is placed.
+func is_revealed() -> bool:
+	return is_open() and modulate.a > 0.0
+
+
 func opened_instance() -> int:
 	return _open_id
+
+
+## The viewport point the window was opened at: the click that opened it (T-0083).
+## The anchor is a record of that click, not a live read of the pointer, so it stays
+## the same point until the next open.
+func anchor_point() -> Vector2:
+	return _anchor
 
 
 ## True while the level in play is in its wave phase. The arena owns the phase;
@@ -297,8 +389,10 @@ func equip(upgrade_id: int) -> bool:
 
 
 ## Buys the open tower's next tier out of the run's gold, through the arena. A
-## tower in hand has no price table (it lives on the tower node the scene exports),
-## so it is refused with a sentence rather than a guessed cost.
+## tower on the board is upgraded through its node; a tower in hand has no node, so
+## it goes through `Arena.upgrade_inventory_tower()` and the arena prices it from
+## the table it cached off the tower scene (T-0087). Both doors charge and grant;
+## this window never does either.
 func raise_tier() -> bool:
 	if not _can_act("tier"):
 		return false
@@ -309,19 +403,25 @@ func raise_tier() -> bool:
 		return _refuse("tier", "no tower %d is in the inventory" % _open_id)
 	if _arena == null:
 		return _refuse("tier", tier_no_level_text)
-	var node = _arena.tower_for_instance(tower.id) if _arena.has_method("tower_for_instance") else null
-	if node == null:
-		return _refuse("tier", tier_in_hand_text)
+	var node = _tower_node(tower.id)
+	if node == null and not _arena.has_method("upgrade_inventory_tower"):
+		return _refuse("tier", "the level cannot upgrade a tower in hand")
 
 	var tier_before := int(tower.tier)
 	var gold_before := _gold()
-	var cost: int = node.upgrade_cost()
-	if not _arena.upgrade_tower(node):
+	var cost: int = _tier_cost(tower)
+	var bought := false
+	if node != null:
+		bought = _arena.upgrade_tower(node)
+	else:
+		bought = bool(_arena.upgrade_inventory_tower(int(tower.id)))
+	if not bought:
 		return _refuse("tier", _owner_reason(_arena.last_refusal()))
 	_tiers += 1
 	print("TOWER_WINDOW_TIER " + JSON.stringify({
 		"instance": tower.id,
-		"tower": String(node.name),
+		"tower": String(node.name) if node != null else "<in hand>",
+		"placed": node != null,
 		"tier_before": tier_before,
 		"tier": int(tower.tier),
 		"cost": cost,
@@ -383,11 +483,21 @@ func handle_input(event: InputEvent) -> Dictionary:
 		MapInputScript.Intent.CONFIRM:
 			var index := _focus
 			if result.has("pointer"):
-				if not _panel_contains(result["pointer"]):
-					out["target"] = "outside"
-					out["applied"] = close("a click outside the window")
+				var pointer: Vector2 = result["pointer"]
+				# The click that opened the window is delivered here too, after the
+				# door that opened it: `_input` order is the tree's, not the click's.
+				# Reading it as a click outside would shut the window in the frame it
+				# appeared, so the opening frame - and the frame before the panel has
+				# been placed at all - answers nothing.
+				if not _panel_placed or Engine.get_process_frames() <= _open_frame:
+					out["target"] = "opening"
+					out["ignored"] = "the click that opened the window"
 					return out
-				index = _index_at(result["pointer"])
+				if not _panel_contains(pointer):
+					out["target"] = "outside"
+					out["applied"] = close("clicked outside")
+					return out
+				index = _index_at(pointer)
 			out["index"] = index
 			out["target"] = "row"
 			out["applied"] = activate(index)
@@ -423,7 +533,14 @@ func activate(index: int) -> bool:
 ## mapped intent is consumed here, before the bar's or the build panel's `_input`
 ## can see it. That is what makes the screens behind it inert, and it is why the
 ## close path has to be this window's own.
+##
+## The pointer is recorded before the open check on purpose: the click that opens
+## the window is delivered here first, while the window is still shut, and that
+## event is the anchor (T-0083). Consuming it is the open window's business only.
 func _input(event: InputEvent) -> void:
+	var pointer := _pointer_of(event)
+	if pointer != Vector2.INF:
+		_last_pointer = pointer
 	if not is_open():
 		return
 	var result: Dictionary = _router.intent_for(event)
@@ -436,8 +553,8 @@ func _input(event: InputEvent) -> void:
 # --- queries ----------------------------------------------------------------
 
 ## The window as data: what it shows, read live from the tower, the run and the
-## arena. `read_only` is the arena's phase; `cost` is -1 when there is no price
-## (in hand, or at the last tier).
+## arena. `read_only` is the arena's phase; `cost` is the gold to reach the next
+## tier, or -1 when there is none (no level to price against, or the last tier).
 func state() -> Dictionary:
 	var out := {
 		"open": is_open(),
@@ -469,9 +586,7 @@ func state() -> Dictionary:
 	out["placed"] = bool(tower.placed)
 	out["carrying"] = tower.upgrade_ids()
 	out["slots"] = [tower.upgrade_count(), tower.slot_count()]
-	var node = _tower_node(tower.id)
-	if node != null:
-		out["cost"] = node.upgrade_cost()
+	out["cost"] = _tier_cost(tower)
 	out["label"] = "%s %s%s%s" % [
 		String(tower.type_id), out["tier_text"], field_separator, _equipped_text(tower),
 	]
@@ -588,11 +703,14 @@ func _rebuild_rows() -> void:
 			"label": equip_row_format % String(upgrade.type_id),
 		})
 
-	var node = _tower_node(tower.id)
-	var cost: int = node.upgrade_cost() if node != null else -1
+	var cost: int = _tier_cost(tower)
 	var tier_label := tier_unpriced_text
-	if node != null:
-		tier_label = tier_max_row_text if cost < 0 else tier_row_format % [int(tower.tier) + 1, cost]
+	if cost >= 0:
+		tier_label = tier_row_format % [int(tower.tier) + 1, cost]
+	elif _arena != null and is_instance_valid(_arena):
+		# A level is open, so -1 here is the last tier, not a missing price: the
+		# arena's table is the one the tower in hand is priced from (T-0087).
+		tier_label = tier_max_row_text
 	_add_row({
 		"kind": KIND_TIER,
 		"id": int(tower.id),
@@ -700,10 +818,6 @@ func _apply_copy() -> void:
 		_set_label(identity_path, identity_format % [_open_id, where])
 		_set_label(tier_path, tier_format % int(tower.tier))
 		_set_label(equipped_path, _equipped_text(tower))
-	var lock := read_only_text if read_only() else ready_text
-	_set_label(status_path, "%s%s%s" % [gold_format % _gold(), field_separator, lock])
-	_set_label(reason_path, _reason)
-	_set_label(hint_path, hint_text)
 	for entry in _rows:
 		var node = (entry as Dictionary).get("node", null)
 		if node is PanelContainer:
@@ -801,6 +915,25 @@ func _tower_node(instance_id: int):
 	return _arena.tower_for_instance(instance_id)
 
 
+## Gold to reach the open tower's next tier, or -1 when there is no price (T-0087).
+## A tower on the board is priced by its own node - the tier table lives there. A
+## tower in hand has no node, so the arena prices it from the copy of that table it
+## cached off the tower scene; with no arena (the map screen) there is nothing to
+## price against and the answer is -1. One function, so `state()`, the tier row and
+## `raise_tier()` cannot disagree about what the next tier costs.
+func _tier_cost(tower) -> int:
+	if tower == null:
+		return -1
+	var node = _tower_node(tower.id)
+	if node != null:
+		return int(node.upgrade_cost())
+	if _arena == null or not is_instance_valid(_arena):
+		return -1
+	if not _arena.has_method("upgrade_cost_for_tier"):
+		return -1
+	return int(_arena.upgrade_cost_for_tier(int(tower.tier)))
+
+
 func _tier_now() -> int:
 	var tower = _tower_instance(_open_id)
 	return int(tower.tier) if tower != null else 0
@@ -853,6 +986,109 @@ func _index_of_key(key: String) -> int:
 		if "%s:%d" % [String((entry as Dictionary)["kind"]), int((entry as Dictionary)["id"])] == key:
 			return int((entry as Dictionary)["index"])
 	return -1
+
+
+# --- internals: placement (T-0083) ------------------------------------------
+
+## The placement's grace, tick by tick, then the placement itself. A container's
+## measured size is only final once it has been laid out **at the width it will
+## keep**, and this panel's labels wrap, so their height depends on that width: with
+## no layout at all the height measures as if the text were one word per line. The
+## first tick therefore gives the hidden panel its width (nothing is visible yet),
+## and the next measures that layout, places it and shows it. The countdown is a
+## field rather than an `await` so a window freed mid-open cannot leave a coroutine
+## resuming on a dead node.
+func _process(_delta: float) -> void:
+	if not _open or _place_countdown < 0:
+		return
+	if _place_countdown > 0:
+		_place_countdown -= 1
+		return
+	_place_panel()
+	_place_countdown = -1
+
+
+## The width the panel keeps: its content's own minimum is the floor, the popover's
+## ceiling the cap, and `panel_min_width` the column the design asks for.
+func _panel_width(panel: Control) -> float:
+	var measured: Vector2 = panel.get_combined_minimum_size()
+	return clampf(
+		maxf(float(measured.x), float(panel_min_width)),
+		float(panel_min_width),
+		float(panel_max_width)
+	)
+
+
+## Places the panel beside the anchor: above and to the right of the click, inside
+## the viewport with `viewport_margin` to spare, and below it when the clamped
+## position would cover the click. The root is a full-rect Control parented to the
+## HUD layer, so the panel's local position is its viewport position.
+func _place_panel() -> void:
+	var node := _node(panel_path)
+	if not (node is Control):
+		return
+	var panel := node as Control
+	# Width first: the labels wrap, so their height is only right at the width the
+	# panel keeps. The panel has been visible (transparent) since `open_for()`, so
+	# this measurement is of a real layout.
+	var measured: Vector2 = panel.get_combined_minimum_size()
+	var width := _panel_width(panel)
+	var size := Vector2(width, maxf(float(measured.y), 1.0))
+	var view := get_viewport().get_visible_rect().size
+	var gap := float(anchor_gap)
+	var below := _anchor + Vector2(gap, gap)
+	var position := _clamped(_anchor + Vector2(gap, -size.y - gap), size, view)
+	var rect := Rect2(position, size)
+	var flipped := false
+	if rect.has_point(_anchor):
+		# Above the click would cover it: sit under it instead, clamped the same
+		# way. A viewport too small for either keeps the below position; covering
+		# the click is then the least wrong answer rather than an unplaced panel.
+		position = _clamped(below, size, view)
+		rect = Rect2(position, size)
+		flipped = true
+	panel.size = size
+	panel.position = position
+	# Reveal only now (T-0084): the first frame the player can see is the frame the
+	# panel is already at its final rect. Before this it was shown at alpha 0.
+	modulate.a = 1.0
+	_panel_placed = true
+	print("TOWER_WINDOW_PLACED " + JSON.stringify({
+		"instance": _open_id,
+		"anchor": [_anchor.x, _anchor.y],
+		"panel": [rect.position.x, rect.position.y, rect.size.x, rect.size.y],
+		"viewport": [view.x, view.y],
+		"below": flipped,
+		"measured": [measured.x, measured.y],
+	}))
+
+
+## `position` clamped so a `size` rect stays `viewport_margin` inside `view`.
+func _clamped(position: Vector2, size: Vector2, view: Vector2) -> Vector2:
+	var margin := float(viewport_margin)
+	var max_x := maxf(margin, view.x - size.x - margin)
+	var max_y := maxf(margin, view.y - size.y - margin)
+	return Vector2(clampf(position.x, margin, max_x), clampf(position.y, margin, max_y))
+
+
+## The viewport point that opened the window. The click this window saw is the
+## answer: it is the event the door that opened the window was raised by, whereas
+## `Viewport.get_mouse_position()` asks the display server, which answers `(0, 0)`
+## in a headless run and nothing useful for a pad open (see the pad caveat above).
+func _click_point() -> Vector2:
+	if _last_pointer != Vector2.INF:
+		return _last_pointer
+	return get_viewport().get_mouse_position()
+
+
+## The pointer position an event carries, or `Vector2.INF` for events that carry
+## none. The click that opens a window is a press, so both shapes matter.
+func _pointer_of(event: InputEvent) -> Vector2:
+	if event is InputEventMouseButton:
+		return (event as InputEventMouseButton).position
+	if event is InputEventMouseMotion:
+		return (event as InputEventMouseMotion).position
+	return Vector2.INF
 
 
 # --- internals: nodes and session -------------------------------------------
