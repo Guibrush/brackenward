@@ -128,6 +128,16 @@ const EXPECTED_WINDOW_COLUMN: Array[String] = ["Title", "Identity", "Tier", "Equ
 ## the path the old exports used, rather than by counting children alone.
 const WINDOW_REMOVED_ROWS: Array[String] = ["Status", "Reason", "Hint"]
 
+## T-0087: what a tower in hand is priced at, and the row the window must draw for
+## it. Duplicated on purpose, for the same reason as `EXPECTED_COLUMN`: a demo that
+## reads the price off the arena agrees with the arena it is meant to catch. The
+## shipped separator in `tier_row_format` is an em dash.
+const TIER_2_COST := 60
+const EXPECTED_IN_HAND_TIER_ROW := "Upgrade to T2 \u2014 60 gold"
+## What the bar's slot and the window's tier line must show once the tier is bought.
+const EXPECTED_TIER_2_SLOT_TEXT := "T2"
+const EXPECTED_TIER_2_LINE := "Tier T2"
+
 var _boot = null
 var _panel = null
 var _bar = null
@@ -592,6 +602,104 @@ func _run() -> void:
 	check(not _arena_has_tower(picked_id), "the board no longer holds the tower: %d" % picked_id)
 	check_eq_int(_starts.size(), 0, "the press on a placed slot announced no drag start")
 
+	# --- 4a2. a tower in hand is priced and upgraded (T-0087) ----------------
+	# Before T-0087 the window answered a tower in hand with "place this tower to
+	# price it": the price lived only on the placed `Tower` node. The tower is in
+	# hand and no wave is running, so the window must price the next tier from the
+	# arena's own table and the row must buy it there and then - same price, same
+	# spend, same grant as a placed tower.
+	_case("a tower in hand is priced and upgraded outside a wave (T-0087)")
+	var tier_run = _flow.run_state()
+	var tier_inventory = _flow.inventory()
+	var gold_before_tier := int(tier_run.gold())
+	var tier_before := int(tier_inventory.find_tower(picked_id).tier)
+	var added := int(tier_run.add_gold(100, "demo: in-hand tier"))
+	check_eq_int(added, 100, "the run took the demo's 100 gold")
+	await _settle()
+	# The bar's own slot, clicked the way a player clicks it: the release opens the
+	# window (T-0085). Nothing here calls `open_for()` or `activate()`.
+	var hand_click: Vector2 = _bar.slot_rect("towers", 0).get_center()
+	await _click(hand_click, "left click on the in-hand tower, to price its next tier")
+	var tier_window = _window()
+	if check(_window_open(tier_window), "the click on the in-hand tower opened its window"):
+		check(_bar.slot_state("towers", 0) == "in_hand",
+			"the tower the window opened on is in hand: '%s'" % _bar.slot_state("towers", 0))
+		var tier_row := _window_row_index(tier_window, "tier")
+		if check(tier_row >= 0, "the window draws a tier row: %s" % [tier_window.rows()]):
+			var row_label := String(tier_window.row(tier_row).get("label", ""))
+			# The row as *drawn*: the Label inside the row the window built, with the
+			# focus marker the window itself puts there (L-041).
+			var drawn: String = _window_row_text(tier_window, tier_row)
+			var expected_drawn: String = EXPECTED_IN_HAND_TIER_ROW
+			if int(tier_window.focus_index()) == tier_row:
+				expected_drawn = String(tier_window.focus_marker) + EXPECTED_IN_HAND_TIER_ROW
+			check(row_label == EXPECTED_IN_HAND_TIER_ROW,
+				"the in-hand tier row is priced, not refused: '%s' (want '%s')"
+				% [row_label, EXPECTED_IN_HAND_TIER_ROW])
+			check(drawn == expected_drawn,
+				"the row a player reads is that row: '%s' vs '%s'" % [drawn, expected_drawn])
+			check(not drawn.to_lower().contains("place this tower"),
+				"the in-hand row no longer asks for placement to be priced: '%s'" % drawn)
+			check_eq_int(int(tier_window.state()["cost"]), TIER_2_COST,
+				"state() reports the in-hand tower's next tier price")
+			var tier_point: Vector2 = tier_window.row_rect(tier_row).get_center()
+			check(tier_window.panel_rect().has_point(tier_point),
+				"the tier row is inside the window's panel: %s in %s"
+				% [tier_point, tier_window.panel_rect()])
+			print("PANEL_BAR_TIER " + JSON.stringify({
+				"case": "in hand priced",
+				"instance": picked_id,
+				"placed": false,
+				"label": row_label,
+				"drawn": drawn,
+				"cost": int(tier_window.state()["cost"]),
+				"gold_before": gold_before_tier,
+				"gold": int(tier_run.gold()),
+			}))
+			await _click(tier_point, "left click on the in-hand tower's tier row")
+
+	var tier_2 = tier_inventory.find_tower(picked_id)
+	check(tier_2 != null and int(tier_2.tier) == 2,
+		"the in-hand tower is tier 2 after the click: %s" % [int(tier_2.tier) if tier_2 != null else -1])
+	check_eq_int(int(tier_run.gold()), gold_before_tier + 100 - TIER_2_COST,
+		"the tier cost exactly %d gold from the run" % TIER_2_COST)
+	check_eq_int(int(tier_window.tiers_bought()) if tier_window != null else -1, 1,
+		"the window counts one tier bought")
+	check(_window_open(tier_window), "the window stays open after buying the tier")
+	if _window_open(tier_window):
+		_check_window_placed(tier_window, "the in-hand tier bought")
+		var tier_line: String = _window_label(tier_window, tier_window.tier_path)
+		check(tier_line == EXPECTED_TIER_2_LINE,
+			"the window's tier line shows the new tier: '%s' (want '%s')"
+			% [tier_line, EXPECTED_TIER_2_LINE])
+		check(not bool(tier_window.state()["placed"]),
+			"the upgraded tower is still in hand: %s" % [tier_window.state()])
+	var slots_now: Array = _bar.slots()
+	var slot_tier := String((slots_now[0] as Dictionary).get("tier", "")) if not slots_now.is_empty() else ""
+	check(slot_tier == EXPECTED_TIER_2_SLOT_TEXT,
+		"the bar's slot shows the new tier: '%s' (want '%s')"
+		% [slot_tier, EXPECTED_TIER_2_SLOT_TEXT])
+	check_eq_int(int(_bar_tower(picked_id).get("tier", 0)), 2,
+		"the bar's tower entry carries the new tier")
+	print("PANEL_BAR_TIER " + JSON.stringify({
+		"case": "in hand upgraded",
+		"instance": picked_id,
+		"tier_before": tier_before,
+		"tier": int(tier_2.tier) if tier_2 != null else -1,
+		"slot": slot_tier,
+		"gold_before": gold_before_tier,
+		"gold": int(tier_run.gold()),
+		"expected_gold": gold_before_tier + 100 - TIER_2_COST,
+	}))
+	await _close_window("close the window the in-hand tier was bought in")
+	# The later drag and placement cases expect the tower as it now stands: the
+	# ghost names its tier and the tower is placed at T2 further down.
+	picked["tier"] = int(_bar_tower(picked_id).get("tier", 0))
+	picked["tier_text"] = String(_bar_tower(picked_id).get("tier_text", ""))
+	check(String(picked["tier_text"]) == EXPECTED_TIER_2_SLOT_TEXT,
+		"the demo's expectation for the later cases follows the new tier: '%s'" % picked["tier_text"])
+	_state_evidence("in-hand tier bought")
+
 	_case("press on an in-hand slot and drag the tower 200 px onto the board")
 	var hand_rect: Rect2 = _bar.slot_rect("towers", 0)
 	var press_point: Vector2 = hand_rect.get_center()
@@ -927,13 +1035,18 @@ func _run() -> void:
 	# --- the frame the human judges ----------------------------------------
 	if _is_movie():
 		_case("the frame is held for the movie writer")
-		# Reopen the window on the placed tower so the acceptance frame shows the
-		# popover anchored at its bar slot (T-0083), not a closed window.
+		# The frame shows the in-hand tower's priced tier row (T-0087): take the tower
+		# back first, then open its window from the bar slot, anchored as usual.
+		if _arena_has_tower(picked_id):
+			check(_panel.take_back_selected(), "the frame setup takes the tower back into hand")
+			await _settle()
 		await _click(_bar.slot_rect("towers", 0).get_center(),
-			"left click on the placed tower's bar slot for the frame")
+			"left click on the in-hand tower's bar slot for the frame")
 		var frame_window = _window()
 		check(_window_open(frame_window), "the tower window is open for the acceptance frame")
 		_check_window_placed(frame_window, "the acceptance frame")
+		var frame_tier_row := _window_row_index(frame_window, "tier") if frame_window != null else -1
+		var frame_tier_text := _window_row_text(frame_window, frame_tier_row) if frame_tier_row >= 0 else ""
 		# The lines read back off the Labels through the shipped paths, so the
 		# frame's evidence and the frame itself are the same artifact (T-0077, L-041).
 		print("PANEL_BAR_FRAME " + JSON.stringify({
@@ -945,6 +1058,7 @@ func _run() -> void:
 			"screen": _boot.screen_name(),
 			"state": _label_text(_panel.state_path),
 			"wave": _label_text(_panel.wave_path),
+			"tier_row": frame_tier_text,
 			"hold_frames": MOVIE_HOLD_FRAMES,
 		}))
 		await _hold(MOVIE_HOLD_FRAMES)
@@ -1221,6 +1335,26 @@ func _window_row_index(window, kind: String) -> int:
 		if String(row["kind"]) == kind:
 			return int(row["index"])
 	return -1
+
+
+## The text of window row `index` as the player reads it: the Label inside the row the
+## window built, including the focus marker the window puts there.
+func _window_row_text(window, index: int) -> String:
+	var rows = window.get_node_or_null(window.rows_path)
+	if rows == null:
+		return ""
+	var row = rows.get_node_or_null("Row%d" % index)
+	if row == null:
+		return ""
+	var label = row.get_node_or_null("Text")
+	return String((label as Label).text) if label is Label else ""
+
+
+## One of the window's Labels, by its exported path, as drawn. No second copy of the
+## path lives here: the caller passes the window's own export.
+func _window_label(window, path: NodePath) -> String:
+	var node = window.get_node_or_null(path)
+	return String((node as Label).text) if node is Label else ""
 
 
 func _settle(frames: int = SETTLE_FRAMES) -> void:

@@ -16,9 +16,12 @@ extends Control
 ##   `open_for()`, so both doors reach one window and neither screen builds one.
 ## * **Possession is enough to equip.** A tower in hand is an inventory instance
 ##   with no node and no tile, and `Inventory.apply_upgrade_to_tower()` needs
-##   neither, so the window equips on it directly. Tier upgrades and take-back need
-##   the map (a price table and a tile), so they are refused, with a reason, for a
-##   tower that is not placed - that refusal is a sentence, not a disabled row.
+##   neither, so the window equips on it directly. A tier needs a price and a
+##   take-back needs a tile, so both need a level: the arena caches the tower
+##   scene's tier table and prices an in-hand tower from it (T-0087), and a tower
+##   in hand is upgraded through `Arena.upgrade_inventory_tower()`. With no level
+##   open (the map screen) there is nothing to price against, and that refusal is
+##   a sentence, not a disabled row.
 ## * **Every action goes through the owner of the rule.** Equipping calls the
 ##   inventory; tier-up and take-back call the arena, which owns the phase lock and
 ##   the price. The window never charges, raises or moves anything itself, so a
@@ -141,15 +144,16 @@ const KIND_TAKE_BACK := "take_back"
 @export var equip_row_format: String = "Equip %s"
 @export var tier_row_format: String = "Upgrade to T%d — %d gold"
 @export var tier_max_row_text: String = "Upgrade — already at the last tier"
-@export var tier_unpriced_text: String = "Upgrade tier — place this tower to price it"
+## Said on the tier row when there is no arena at all: the map screen has no level
+## to price a tier against (T-0087). With a level open, a tower in hand is priced
+## from the arena's own table and this sentence is never drawn.
+@export var tier_unpriced_text: String = "Upgrade tier — open a level to price it"
 @export var take_back_row_text: String = "Take back to the inventory"
 @export var no_upgrades_row_text: String = "no upgrades in hand to equip"
 @export var no_session_text: String = "no run"
-## Said when tier-up is asked for and no level is open: the price lives on the
-## tower node, which only a level has.
+## Said when tier-up is asked for and no level is open: there is no price table,
+## which only a level has.
 @export var tier_no_level_text: String = "no level is open: a tier is bought in a level"
-## Said when tier-up is asked for on a tower still in hand.
-@export var tier_in_hand_text: String = "this tower is in hand: place it to price its next tier"
 ## Said when take-back is asked for and no level is open.
 @export var take_back_no_level_text: String = "no level is open: there is no tile to take it from"
 ## Said when take-back is asked for on a tower that is already in hand.
@@ -385,8 +389,10 @@ func equip(upgrade_id: int) -> bool:
 
 
 ## Buys the open tower's next tier out of the run's gold, through the arena. A
-## tower in hand has no price table (it lives on the tower node the scene exports),
-## so it is refused with a sentence rather than a guessed cost.
+## tower on the board is upgraded through its node; a tower in hand has no node, so
+## it goes through `Arena.upgrade_inventory_tower()` and the arena prices it from
+## the table it cached off the tower scene (T-0087). Both doors charge and grant;
+## this window never does either.
 func raise_tier() -> bool:
 	if not _can_act("tier"):
 		return false
@@ -397,19 +403,25 @@ func raise_tier() -> bool:
 		return _refuse("tier", "no tower %d is in the inventory" % _open_id)
 	if _arena == null:
 		return _refuse("tier", tier_no_level_text)
-	var node = _arena.tower_for_instance(tower.id) if _arena.has_method("tower_for_instance") else null
-	if node == null:
-		return _refuse("tier", tier_in_hand_text)
+	var node = _tower_node(tower.id)
+	if node == null and not _arena.has_method("upgrade_inventory_tower"):
+		return _refuse("tier", "the level cannot upgrade a tower in hand")
 
 	var tier_before := int(tower.tier)
 	var gold_before := _gold()
-	var cost: int = node.upgrade_cost()
-	if not _arena.upgrade_tower(node):
+	var cost: int = _tier_cost(tower)
+	var bought := false
+	if node != null:
+		bought = _arena.upgrade_tower(node)
+	else:
+		bought = bool(_arena.upgrade_inventory_tower(int(tower.id)))
+	if not bought:
 		return _refuse("tier", _owner_reason(_arena.last_refusal()))
 	_tiers += 1
 	print("TOWER_WINDOW_TIER " + JSON.stringify({
 		"instance": tower.id,
-		"tower": String(node.name),
+		"tower": String(node.name) if node != null else "<in hand>",
+		"placed": node != null,
 		"tier_before": tier_before,
 		"tier": int(tower.tier),
 		"cost": cost,
@@ -541,8 +553,8 @@ func _input(event: InputEvent) -> void:
 # --- queries ----------------------------------------------------------------
 
 ## The window as data: what it shows, read live from the tower, the run and the
-## arena. `read_only` is the arena's phase; `cost` is -1 when there is no price
-## (in hand, or at the last tier).
+## arena. `read_only` is the arena's phase; `cost` is the gold to reach the next
+## tier, or -1 when there is none (no level to price against, or the last tier).
 func state() -> Dictionary:
 	var out := {
 		"open": is_open(),
@@ -574,9 +586,7 @@ func state() -> Dictionary:
 	out["placed"] = bool(tower.placed)
 	out["carrying"] = tower.upgrade_ids()
 	out["slots"] = [tower.upgrade_count(), tower.slot_count()]
-	var node = _tower_node(tower.id)
-	if node != null:
-		out["cost"] = node.upgrade_cost()
+	out["cost"] = _tier_cost(tower)
 	out["label"] = "%s %s%s%s" % [
 		String(tower.type_id), out["tier_text"], field_separator, _equipped_text(tower),
 	]
@@ -693,11 +703,14 @@ func _rebuild_rows() -> void:
 			"label": equip_row_format % String(upgrade.type_id),
 		})
 
-	var node = _tower_node(tower.id)
-	var cost: int = node.upgrade_cost() if node != null else -1
+	var cost: int = _tier_cost(tower)
 	var tier_label := tier_unpriced_text
-	if node != null:
-		tier_label = tier_max_row_text if cost < 0 else tier_row_format % [int(tower.tier) + 1, cost]
+	if cost >= 0:
+		tier_label = tier_row_format % [int(tower.tier) + 1, cost]
+	elif _arena != null and is_instance_valid(_arena):
+		# A level is open, so -1 here is the last tier, not a missing price: the
+		# arena's table is the one the tower in hand is priced from (T-0087).
+		tier_label = tier_max_row_text
 	_add_row({
 		"kind": KIND_TIER,
 		"id": int(tower.id),
@@ -900,6 +913,25 @@ func _tower_node(instance_id: int):
 	if _arena == null or not is_instance_valid(_arena) or not _arena.has_method("tower_for_instance"):
 		return null
 	return _arena.tower_for_instance(instance_id)
+
+
+## Gold to reach the open tower's next tier, or -1 when there is no price (T-0087).
+## A tower on the board is priced by its own node - the tier table lives there. A
+## tower in hand has no node, so the arena prices it from the copy of that table it
+## cached off the tower scene; with no arena (the map screen) there is nothing to
+## price against and the answer is -1. One function, so `state()`, the tier row and
+## `raise_tier()` cannot disagree about what the next tier costs.
+func _tier_cost(tower) -> int:
+	if tower == null:
+		return -1
+	var node = _tower_node(tower.id)
+	if node != null:
+		return int(node.upgrade_cost())
+	if _arena == null or not is_instance_valid(_arena):
+		return -1
+	if not _arena.has_method("upgrade_cost_for_tier"):
+		return -1
+	return int(_arena.upgrade_cost_for_tier(int(tower.tier)))
 
 
 func _tier_now() -> int:

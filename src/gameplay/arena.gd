@@ -80,6 +80,7 @@ extends Node2D
 ##   ARENA_STUCK {json}       only when an enemy outlives its arrival (a bug)
 ##   ARENA_PLACED {json}      one line per tower placed, with the instance it came from
 ##   ARENA_TAKEN_BACK {json}  one line per tower returned to the inventory
+##   ARENA_UPGRADE_IN_HAND {json} one line per tier bought for a tower in hand (T-0087)
 ##   ARENA_KILL {json}        one line per walker killed, with the gold it paid
 ##   ARENA_REFUSED {json}     every refused build or level action, with its reason
 ##   ARENA_SUMMARY {json}     once, on exit
@@ -206,6 +207,11 @@ var _reported_stuck: Dictionary = {}
 
 var _slots: Array[BuildSlot] = []
 var _towers: Array[Tower] = []
+## The tower scene's `tier_upgrade_cost` table, copied once in `_ready` (T-0087).
+## The price of a tier lives on the placed `Tower` node's export, and a tower in
+## the inventory has no node, so the arena keeps one copy of the table and prices
+## a tier without building anything: entry 0 buys tier 2, entry 1 buys tier 3.
+var _tier_upgrade_costs: Array[int] = []
 ## Towers ever placed this level, so a name is unique even when a taken-back
 ## tower's node has not been freed yet: `_towers.size() + 1` collided in exactly
 ## that window and Godot silently renamed the node to `@Node2D@4`, which made the
@@ -269,6 +275,7 @@ func _ready() -> void:
 	_seed_level_from_run()
 	_gold_shadow = gold()
 	_collect_slots()
+	_cache_tier_costs()
 	_phase = Phase.WAVE if start_in_wave else Phase.BUILD
 
 	_build_lane_visual()
@@ -290,6 +297,7 @@ func _ready() -> void:
 		"build_slots": _slots.size(),
 		"lane_clearance_px": lane_clearance_px,
 		"tower_scene": tower_scene != null,
+		"tier_costs": _tier_upgrade_costs,
 		"gold": gold(),
 		"level_index": effective_level_index(),
 		"elite": elite_level,
@@ -1032,6 +1040,84 @@ func upgrade_tower(tower: Tower) -> bool:
 	return true
 
 
+## Gold to reach `tier + 1`, read from the table cached off the tower scene in
+## `_ready` (T-0087). -1 at the last tier, above it, and when no table was cached:
+## -1 rather than 0 so "cannot buy" cannot be mistaken for "free" (the same
+## convention `Tower.upgrade_cost()` uses). `tier` is 1-based, the table's index
+## is `tier - 1`.
+func upgrade_cost_for_tier(tier: int) -> int:
+	if tier < 1 or tier >= Tower.MAX_TIER:
+		return -1
+	var index := tier - 1
+	if index >= _tier_upgrade_costs.size():
+		return -1
+	# A negative entry means "no price for this tier" in the table itself, so it
+	# is reported the same way as a missing entry.
+	return maxi(int(_tier_upgrade_costs[index]), -1)
+
+
+## Buys the next tier for the inventory tower `instance_id`, which is **not** on
+## the map (T-0087): possession is enough to own an upgrade, and the price comes
+## from the same table a placed tower uses. The instance is what carries the tier,
+## so the grant goes through `Inventory.raise_tower_tier()` exactly as it does for
+## a placed tower; the node mirrors it when the tower is placed later.
+##
+## Refused, with its reason printed, during a wave, for an unknown instance, for
+## an instance that **is** on the map (that one is upgraded through its node), at
+## the last tier, when the table has no price, and without the gold. Paid for and
+## then refused is refunded rather than eaten.
+func upgrade_inventory_tower(instance_id: int) -> bool:
+	if _phase != Phase.BUILD:
+		_refuse("upgrade", "towers are locked during a wave")
+		return false
+	if _inventory == null:
+		_refuse("upgrade", "the arena has no inventory to read the tower from")
+		return false
+	var instance: RefCounted = _inventory.find_tower(instance_id)
+	if instance == null:
+		_refuse("upgrade", "no tower %d is in the inventory" % instance_id)
+		return false
+	if bool(instance.placed):
+		_refuse(
+			"upgrade",
+			"tower %d is on the map; a placed tower is upgraded through its node" % instance_id
+		)
+		return false
+	var tier_before := int(instance.tier)
+	if tier_before >= Tower.MAX_TIER:
+		_refuse("upgrade", "tower %d is already at tier %d" % [instance_id, tier_before])
+		return false
+	var cost := upgrade_cost_for_tier(tier_before)
+	if cost < 0:
+		_refuse(
+			"upgrade",
+			"no price for tower %d's tier %d; the level has no tower price table" % [instance_id, tier_before + 1]
+		)
+		return false
+	var gold_before := gold()
+	if not _ledger.try_spend(cost, "upgrade tower %d in hand" % instance_id):
+		_refuse("upgrade", "not enough gold for a %d gold upgrade" % cost)
+		return false
+	var new_tier: int = _inventory.raise_tower_tier(instance_id)
+	if new_tier <= tier_before:
+		# Paid for and then refused: hand the gold back rather than eat it.
+		_ledger.earn(cost, "refund: tower %d refused the upgrade" % instance_id)
+		_refuse("upgrade", "tower %d refused the upgrade it was paid for" % instance_id)
+		return false
+	print("ARENA_UPGRADE_IN_HAND " + JSON.stringify({
+		"instance": instance_id,
+		"type_id": String(instance.type_id),
+		"tier_before": tier_before,
+		"tier": int(instance.tier),
+		"cost": cost,
+		"gold_before": gold_before,
+		"gold": gold(),
+		"placed": false,
+		"phase": phase_name(),
+	}))
+	return true
+
+
 ## Picks `tower` back into the inventory and frees its tile. No gold moves in
 ## either direction (T-0045): the instance keeps its tier and its upgrades, which
 ## is the whole point of taking a tower back rather than selling one. Refused
@@ -1176,6 +1262,27 @@ func _collect_slots() -> void:
 	for child in get_children():
 		if child is BuildSlot:
 			_slots.append(child)
+
+
+## Copies the tower scene's tier price table once, in `_ready` (T-0087). One probe
+## node is instantiated, read and freed: the price is an export on the `Tower`
+## node, an in-hand instance has no node, and instantiating a tower every time a
+## player asks what the next tier costs would be a node per question. A scene with
+## no `tower_scene` caches nothing and prices every tier as -1, which the window
+## reports as "open a level to price it".
+func _cache_tier_costs() -> void:
+	_tier_upgrade_costs.clear()
+	if tower_scene == null:
+		return
+	var probe := tower_scene.instantiate()
+	if probe == null:
+		return
+	var table = probe.get("tier_upgrade_cost")
+	if table is Array:
+		for value in table:
+			_tier_upgrade_costs.append(int(value))
+	# Never entered the tree (no `_ready` ran), so freeing it now leaves nothing.
+	probe.free()
 
 
 func _resolve_ledger() -> GoldLedger:
