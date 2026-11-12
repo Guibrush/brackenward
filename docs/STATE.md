@@ -2,7 +2,7 @@
 
 Only `studio-lead` writes this file. Every other agent reads it.
 
-Last updated: 2026-11-10
+Last updated: 2026-11-12
 
 ## Milestone
 
@@ -25,9 +25,11 @@ Last updated: 2026-11-10
   Start Wave control, HQ leaks, defeat and completion.
 - **UI**: main menu, map screen, corner block with exactly HQ / wave number / Start Wave,
   square inventory bar with paging and gold, drag-and-drop placement from the bar,
-  anchored non-modal tower popover with equip, tier-up and take-back.
-- **Gates**: 13 scripts green, 5 suite cases (~5800 checks), smoke 4/4 at 300 s, perf 687 fps
-  (last measurement; see L-040 for the display provenance).
+  anchored non-modal tower popover with equip, tier-up and take-back, and controller
+  placement: left/right focuses the bar, confirm arms, directions move a tile cursor,
+  confirm places, dismiss cancels.
+- **Gates**: 13 scripts green, 6 suite cases (~5800+ checks), smoke 4/4 at 300 s, perf
+  687 fps (last measurement; see L-040 for the display provenance).
 
 ## Known broken or unfinished
 
@@ -35,8 +37,7 @@ Last updated: 2026-11-10
 | --- | --- |
 | Upgrade slot label wraps mid-word | square slot is narrow; clip or shorten |
 | Map-screen drag is inert | the bar is drawn on the map; a drag there shows the ghost and raises a drop with no level to receive it |
-| `armed_feedback_demo` is red | already red at HEAD before T-0081: unresolved opening-choice modal and tower rows removed in T-0068; update or retire it |
-| Controller placing mode | not built; drag-and-drop is mouse-only, pad keeps click-then-tile |
+| Stale demo walks | `armed_feedback_demo`, `input_route_demo`, `build_panel_demo`, `build_panel_boot_demo` are red before this milestone's UI tasks (opening-choice modal, tower rows removed in T-0068); each needs its walk repaired or retired |
 | Tower window behaviour proven | component and wiring exist, no demo proves equip/tier-up/read-only |
 | Square-slot demo, frame, planted failure | owed for T-0075 |
 | Art integration | towers and enemies are still polygons; one tower sprite is shipped and unwired |
@@ -46,12 +47,12 @@ Last updated: 2026-11-10
 
 ## Next action
 
-1. Controller placing mode, bindings in data.
-2. Art integration, then content, then audio, then the five testers.
+1. Art integration (wire the shipped tower sprite, replace polygon enemies), then content,
+   then audio, then the five testers.
 
 ## Metrics
 
 | Metric | Value | Note |
 | --- | --- | --- |
-| Builder cap-hit rate | 9 of 12 dispatches on 2026-11-12 (75%) | T-0077, T-0080 and T-0082 fit; the rest capped. Shared-demo edits consume the steps; the lead finished T-0084..T-0087 from the builders' partials. |
+| Builder cap-hit rate | 10 of 16 dispatches on 2026-11-12 (63%) | T-0077, T-0080, T-0082, T-0088 and T-0089 fit; T-0090 overran its 30-step brief without hitting 40; the rest capped. The lead finished the partials. |
 | Usable delivery under a cap hit | 100% | T-0078's second cap left a planted mutation on disk; L-042 now forbids that and requires copy-only demonstrations. |
