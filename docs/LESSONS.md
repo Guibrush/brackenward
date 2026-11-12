@@ -79,3 +79,23 @@ not a result; the outline must pass the same verification the palette, alpha
 and hole checks pass.
 Evidence: T-0095 rime output: 0/171 boundary pixels in #1b1a26; prior towers
 under `outline: true`: 129/129, 169/172, 172/172, 293/293.
+
+## L-048 — 2026-11-12 — A gate invoked via `pwsh` that is not on PATH is unrun, not a gate result
+Situation: the T-0097 art agent was asked to run `scripts/gate/assets.ps1` and
+invoked `pwsh -NoProfile -File framework/gate/assets.ps1`; `pwsh` is not on
+PATH on this Windows machine, so the command failed with `The term 'pwsh' is
+not recognized` and the gate was left unrun. The same script passes under
+`powershell.exe -NoProfile -File scripts/gate/assets.ps1` (studio-lead ran it:
+4 pass, 0 fail). No gate result was produced by the failed command, but the
+agent's envelope initially risked reading as a gate outcome.
+Worked: re-running under `powershell.exe` named explicitly by the dispatcher
+produced the real gate result (4 pass, 0 fail).
+Failed: substituting the wrong interpreter and path (`pwsh`, `framework/gate/`)
+instead of the documented command; treating a command-not-found as evidence
+about the gate rather than as `unverified`.
+Rule: run gate scripts under Windows PowerShell 5.1 by naming the interpreter
+explicitly (`powershell.exe -NoProfile -File scripts/gate/<script>.ps1`),
+never `pwsh`; a command-not-found is not a gate result and must be reported
+as `unverified`, never as pass or fail.
+Evidence: T-0097 failed call (`pwsh` not recognized, 0 gate results); studio-lead
+run of `powershell.exe -NoProfile -File scripts/gate/assets.ps1`: 4 pass, 0 fail.
