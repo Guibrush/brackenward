@@ -12,3 +12,8 @@ polygon = PackedVector2Array(-13, -13, 13, -13, 13, 13, -13, 13)
 [node name="Body" type="Polygon2D" parent="."]
 color = Color(0.6902, 0.41569, 0.23137, 1)
 polygon = PackedVector2Array(-10, -10, 10, -10, 10, 10, -10, 10)
+
+[node name="Sprite" type="Sprite2D" parent="."]
+visible = false
+texture_filter = 1
+centered = true
