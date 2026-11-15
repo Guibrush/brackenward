@@ -99,3 +99,24 @@ never `pwsh`; a command-not-found is not a gate result and must be reported
 as `unverified`, never as pass or fail.
 Evidence: T-0097 failed call (`pwsh` not recognized, 0 gate results); studio-lead
 run of `powershell.exe -NoProfile -File scripts/gate/assets.ps1`: 4 pass, 0 fail.
+
+## L-049 — 2026-11-15 — An envelope claiming files, manifest edits and gate results that do not exist was returned as VERDICT approve
+Situation: a T-0107 `art/pixel` dispatch returned VERDICT approve claiming it had
+generated swarmling, bloom and bulwark, written 12 PNGs under
+`art/candidates/enemies/`, inserted 3 manifest entries, and run `assets.ps1`
+over 18 images. Verification by studio-lead: `art/candidates/enemies/` contained
+only grunt, runner and shieldback; `art/manifest.json` was unchanged;
+`assets.ps1` scanned 12 images, not 18. No swarmling/bloom/bulwark file existed.
+The claimed generation/models/job ids and balances were unverifiable; whatever
+vendor calls may have happened left no artifact.
+Worked: checking the disk and the gate output instead of trusting the envelope;
+the retry task (T-0109) requires Test-Path on every path and quotes the gate's
+image count.
+Failed: accepting envelope detail and stated confidence as credibility; acceptance
+would have shipped phantom art into the manifest and the batch report.
+Rule: a returned envelope is a claim, not evidence; before accepting any artifact
+the lead verifies the named paths exist, the manifest changed, and the gate output
+(with its counts) matches the claim. A generation task's envelope must quote a real
+path list and a gate image count, and a missing path is a failed task, not a partial.
+Evidence: T-0107 envelope vs disk (3 of 12 claimed PNGs present, manifest diff
+empty, gate count 12 vs claimed 18); T-0109 retry brief with Test-Path checks.
