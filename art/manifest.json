@@ -720,7 +720,12 @@
       "ground_pad_pixels": 0,
       "pad_green_scan": "284 pixels of the three greens (#3a4a3a 141, #6f8f4a 89, #9ab55c 54) are present and are NOT a ground pad: they are the tower's foliage, which T-0097 explicitly allows. Judged on shape as the brief requires, not on colour count: the green spans rows 4-57 with the per-row green count peaking at the crown (rows 12-17: 14,18,21,16,13 and 9 px) and falling to a single pixel at row 57, and ROWS 58-63 CONTAIN ZERO GREEN. The bottom six rows of the sprite are plain stone, so there is no grass mat, no diamond and no plinth under the tower.",
       "enclosed_holes": 0,
-      "content_bbox": [14, 1, 45, 63],
+      "content_bbox": [
+        14,
+        1,
+        45,
+        63
+      ],
       "content_size": "32x63",
       "content_size_detail": "bbox (14,1)-(45,63) of a 64x64 canvas, outline-inclusive. 1 px clear on the top row, 14 px clear on the left, 18 px on the right, base on the bottom row.",
       "fill_rule": "content height 63 of 64 px = 98.4% against the 80% floor, widest row 32 px at row 14 against the 24 px floor. Both met.",
@@ -1025,6 +1030,888 @@
       "verified": "2026-11-12",
       "source_task": "T-0099",
       "generated_under_task": "T-0098 (art generation); post pass T-0099"
+    },
+    {
+      "id": "enemy-grunt-idle",
+      "type": "character",
+      "file": "art/candidates/enemies/grunt/idle/south.png",
+      "width": 32,
+      "height": 32,
+      "directions": 4,
+      "direction_files": [
+        {
+          "direction": "south",
+          "file": "art/candidates/enemies/grunt/idle/south.png"
+        },
+        {
+          "direction": "west",
+          "file": "art/candidates/enemies/grunt/idle/west.png"
+        },
+        {
+          "direction": "east",
+          "file": "art/candidates/enemies/grunt/idle/east.png"
+        },
+        {
+          "direction": "north",
+          "file": "art/candidates/enemies/grunt/idle/north.png"
+        }
+      ],
+      "actions": [
+        "idle"
+      ],
+      "frames": [
+        "art/candidates/enemies/grunt/idle/south.png",
+        "art/candidates/enemies/grunt/idle/west.png",
+        "art/candidates/enemies/grunt/idle/east.png",
+        "art/candidates/enemies/grunt/idle/north.png"
+      ],
+      "placeholder": true,
+      "status": "candidate",
+      "license": "generated: PixelLab, commercial use",
+      "purpose": "Grunt enemy, idle, 4 directions (south, west, east, north), 32x32. Candidate for the G2 enemy set: a squat goblin foot soldier on the board.",
+      "prompt": "pixel art character sprite of a squat hunchbacked goblin foot soldier, heavy stooped shoulders, protruding lower jaw tusks, low wide bipedal stance, ragged dark cloth tunic with leather bracers, dangling arms, isometric 3/4 view, light from top-left, warm dusk palette (bracken dusk 16), 1px dark ink outline #1b1a26, isolated on transparent background, no ground tile, clear margins on all sides.",
+      "prompt_source": "tasks/T-0106.md, art/director's text verbatim, sent unmodified.",
+      "generator": "pixellab.create_character",
+      "generator_detail": "mode standard (1 generation at any size), size 24 (stored on a 36x36 canvas; standard mode pads about 40 percent so animations fit), n_directions 4, view low top-down (about 20 degrees, classic 3/4), body humanoid (standard default, no template), outline 'single color black outline', shading 'basic shading', detail 'medium detail'. Standard mode refuses palette and max_colors, so no palette was passed to the generator; palette conformance is the post pass, as art/STYLE.md says it must be.",
+      "style_reference": "none passed. create_character in standard mode takes no style input at all: style_image_url and style_character_id are pro-only, and reference_image_url would be taken as a sprite to rotate, not as a style anchor. Pro mode allows a style image but costs 10 generations per call at this size against a 3-generation budget, so T-0106's standard route could not carry the anchor. Reported for art/director, not silently dropped.",
+      "character_id": "09339958-32c3-46c1-a41e-b5b1e709ea47",
+      "state": "Idle",
+      "animation_group": "3cd7847a-91b0-446e-a3a2-40b66fbc8b2f",
+      "seed": "none - create_character takes no seed and is not reproducible",
+      "generations_spent": 1,
+      "spend": "1 plan generation (standard mode, any size). Plan generations charged 39 to 42 against a 40 cap, covered by the daily bonus pool (12 to 9 available); credits unchanged at $9.87, so no dollar spend for this call.",
+      "post_processing": [
+        "measured the raw 36x36 rotation before touching it, binarising alpha first: content bbox, tones, off-palette, holes, components, boundary ink and the L-045 pad-green scan, on the raw and again on the result.",
+        "step 1, crop to content: took the exact alpha-greater-than-0 bbox of the 36x36 canvas (12x25 at [12, 6, 23, 30]) and copied it 1:1. No pixel inside the bbox was dropped, every pixel inside it survives in the final file, and every pixel removed was fully transparent canvas.",
+        "step 2, pad to 32x32: pasted the content on a transparent 32x32 canvas, centred, then clamped so at least 1 px stays clear on every side. Transparent space only; no resample, no scale, no rotation, no pixel added.",
+        "step 3, palette snap: nearest locked tone in RGB against the 16-colour bracken dusk palette, then capped at 12 tones (the cap was never reached: the final images hold 7 to 9 tones). The three greens #3a4a3a, #6f8f4a and #9ab55c were excluded from the snap target so that a greenish generator pixel lands on its nearest non-green locked tone; that exclusion is what makes T-0106's '0 pad greens' hold, and it changed 5 px across the four directions of this set.",
+        "step 4, outline: every silhouette-boundary pixel (opaque with a transparent or off-canvas 4-neighbour) was set to #1b1a26 in place. The boundary was inked, not grown, so the content box and the margins from step 2 are unchanged and no content pixel is lost; 4 directions, boundary px 65/65/59/59/58/58/68/68, of which 7 to 20 needed recolouring (the generator already drew a dark outline, so most were close to but not exactly the locked ink).",
+        "step 5, binary alpha: every alpha value forced to 0 or 255. The raw was already binary, so this changed nothing.",
+        "verified after the pass on all four files: 32x32, 7 to 9 tones, 0 off-palette, alpha [0, 255], 0 enclosed holes, 1 connected component, 0 pad greens, 100 percent silhouette-boundary ink, at least 1 px clear on all four edges, and no content on row 0 or any other edge."
+      ],
+      "tones": 9,
+      "palette_tones_used": [
+        "#1b1a26",
+        "#2e2a3b",
+        "#6b4a5a",
+        "#8b8291",
+        "#8c5a4a",
+        "#b06a3b",
+        "#d08a4a",
+        "#edb05f",
+        "#f6d9a0"
+      ],
+      "off_palette_colours": 0,
+      "binary_alpha": true,
+      "ground_pad_pixels": 0,
+      "pad_green_scan": "0 px of deep green #3a4a3a, leaf #6f8f4a or sunleaf #9ab55c in any of the four final files, scanned after the pass, and the raw was scanned first per L-045.",
+      "enclosed_holes": 0,
+      "components": 1,
+      "content_bbox": [
+        10,
+        3,
+        21,
+        27
+      ],
+      "content_size": "12x25",
+      "canvas_fill": "height 25 to 27 px and width 9 to 14 px of the 32x32 canvas, outline-inclusive and pad-free; per-direction numbers are in direction_metrics.",
+      "silhouette_outline": "100 percent of silhouette-boundary pixels are ink #1b1a26 in all four directions. Because the boundary is inked in place rather than grown, the count equals the boundary and the margins stay as measured.",
+      "direction_metrics": {
+        "south": {
+          "file": "art/candidates/enemies/grunt/idle/south.png",
+          "size": "32x32",
+          "tones": 7,
+          "tone_detail": "#1b1a26 116, #2e2a3b 55, #f6d9a0 30, #edb05f 11, #8b8291 4, #8c5a4a 4, #b06a3b 3",
+          "off_palette_colours": 0,
+          "alpha_values": [
+            0,
+            255
+          ],
+          "binary_alpha": true,
+          "enclosed_holes": 0,
+          "components": 1,
+          "component_sizes": [
+            223
+          ],
+          "pad_greens": 0,
+          "content_bbox": [
+            10,
+            3,
+            21,
+            27
+          ],
+          "content_size": "12x25",
+          "margins": {
+            "left": 10,
+            "top": 3,
+            "right": 10,
+            "bottom": 4
+          },
+          "outline_boundary": "65/65",
+          "outline_pct": 100.0,
+          "outline_recoloured": 20,
+          "opaque_pixels": 223,
+          "native_canvas": "36x36",
+          "native_content_bbox": [
+            12,
+            6,
+            23,
+            30
+          ],
+          "placed_at": [
+            10,
+            3
+          ]
+        },
+        "west": {
+          "file": "art/candidates/enemies/grunt/idle/west.png",
+          "size": "32x32",
+          "tones": 9,
+          "tone_detail": "#1b1a26 97, #f6d9a0 30, #2e2a3b 21, #b06a3b 11, #8c5a4a 4, #6b4a5a 2, #edb05f 2, #8b8291 1, #d08a4a 1",
+          "off_palette_colours": 0,
+          "alpha_values": [
+            0,
+            255
+          ],
+          "binary_alpha": true,
+          "enclosed_holes": 0,
+          "components": 1,
+          "component_sizes": [
+            169
+          ],
+          "pad_greens": 0,
+          "content_bbox": [
+            11,
+            2,
+            19,
+            28
+          ],
+          "content_size": "9x27",
+          "margins": {
+            "left": 11,
+            "top": 2,
+            "right": 12,
+            "bottom": 3
+          },
+          "outline_boundary": "59/59",
+          "outline_pct": 100.0,
+          "outline_recoloured": 7,
+          "opaque_pixels": 169,
+          "native_canvas": "36x36",
+          "native_content_bbox": [
+            13,
+            6,
+            21,
+            32
+          ],
+          "placed_at": [
+            11,
+            2
+          ]
+        },
+        "east": {
+          "file": "art/candidates/enemies/grunt/idle/east.png",
+          "size": "32x32",
+          "tones": 8,
+          "tone_detail": "#1b1a26 89, #f6d9a0 29, #2e2a3b 28, #edb05f 7, #8c5a4a 6, #b06a3b 5, #6b4a5a 2, #d08a4a 1",
+          "off_palette_colours": 0,
+          "alpha_values": [
+            0,
+            255
+          ],
+          "binary_alpha": true,
+          "enclosed_holes": 0,
+          "components": 1,
+          "component_sizes": [
+            167
+          ],
+          "pad_greens": 0,
+          "content_bbox": [
+            11,
+            3,
+            19,
+            28
+          ],
+          "content_size": "9x26",
+          "margins": {
+            "left": 11,
+            "top": 3,
+            "right": 12,
+            "bottom": 3
+          },
+          "outline_boundary": "58/58",
+          "outline_pct": 100.0,
+          "outline_recoloured": 8,
+          "opaque_pixels": 167,
+          "native_canvas": "36x36",
+          "native_content_bbox": [
+            14,
+            6,
+            22,
+            31
+          ],
+          "placed_at": [
+            11,
+            3
+          ]
+        },
+        "north": {
+          "file": "art/candidates/enemies/grunt/idle/north.png",
+          "size": "32x32",
+          "tones": 7,
+          "tone_detail": "#1b1a26 130, #2e2a3b 54, #f6d9a0 36, #b06a3b 17, #8c5a4a 6, #6b4a5a 4, #edb05f 3",
+          "off_palette_colours": 0,
+          "alpha_values": [
+            0,
+            255
+          ],
+          "binary_alpha": true,
+          "enclosed_holes": 0,
+          "components": 1,
+          "component_sizes": [
+            250
+          ],
+          "pad_greens": 0,
+          "content_bbox": [
+            9,
+            3,
+            22,
+            28
+          ],
+          "content_size": "14x26",
+          "margins": {
+            "left": 9,
+            "top": 3,
+            "right": 9,
+            "bottom": 3
+          },
+          "outline_boundary": "68/68",
+          "outline_pct": 100.0,
+          "outline_recoloured": 9,
+          "opaque_pixels": 250,
+          "native_canvas": "36x36",
+          "native_content_bbox": [
+            11,
+            6,
+            24,
+            31
+          ],
+          "placed_at": [
+            9,
+            3
+          ]
+        }
+      },
+      "sha256": {
+        "south": {
+          "sha256": "5A4AE7979403F08DECFA79714A08B57317C0DFE8F5F208BE0509D09D80505F14",
+          "bytes": 396
+        },
+        "west": {
+          "sha256": "F5237B0097C607062B92DDDEE0966EDBF8C6C742FAC65F1B3F6E6EEB3361157A",
+          "bytes": 379
+        },
+        "east": {
+          "sha256": "4451AB0FFCE06B51B5484D480DCD158C47E4A05EB7900F0AF75CB3E20EC7EC20",
+          "bytes": 400
+        },
+        "north": {
+          "sha256": "87C1707C4B7395EC9631E88A32D6D59FCECA5D706483C3C1C7778723CDDD5711",
+          "bytes": 402
+        }
+      },
+      "body_type_note": "The grunt call used the standard-mode default body type (humanoid); the prompt was passed verbatim and unmodified.",
+      "weakness_note": "Recorded for art/director, not resolved and not re-spent. (1) The head is the lightest thing in the sprite (parchment #f6d9a0, 29 to 36 px per direction) and carries the whole read, so at 1x the figure can read as a pale-headed human in dark cloth rather than a goblin; the tusks the prompt asks for cost 1 to 2 px at this size and are not separable at 1x. (2) No hunch is visible from the side views: east/west are 9 px wide and vertical, so the squat hunched brief is delivered as a short upright figure. (3) Ink is 53 to 58 percent of opaque pixels, heavy against STYLE's selective outline, but that is the size, not the pass.",
+      "read_note": "Not self-judged. Whether these read at 1x on the board, whether the grunt reads as a goblin rather than a pale-headed human, and whether the runner's front and back views stay distinct from the grunt, are judgements for art/director.",
+      "budget": "T-0106 allowed three calls and no regenerations. Three calls were made, one per kind, and no call was repeated.",
+      "verified": "2026-11-15",
+      "source_task": "T-0106"
+    },
+    {
+      "id": "enemy-runner-idle",
+      "type": "character",
+      "file": "art/candidates/enemies/runner/idle/south.png",
+      "width": 32,
+      "height": 32,
+      "directions": 4,
+      "direction_files": [
+        {
+          "direction": "south",
+          "file": "art/candidates/enemies/runner/idle/south.png"
+        },
+        {
+          "direction": "west",
+          "file": "art/candidates/enemies/runner/idle/west.png"
+        },
+        {
+          "direction": "east",
+          "file": "art/candidates/enemies/runner/idle/east.png"
+        },
+        {
+          "direction": "north",
+          "file": "art/candidates/enemies/runner/idle/north.png"
+        }
+      ],
+      "actions": [
+        "idle"
+      ],
+      "frames": [
+        "art/candidates/enemies/runner/idle/south.png",
+        "art/candidates/enemies/runner/idle/west.png",
+        "art/candidates/enemies/runner/idle/east.png",
+        "art/candidates/enemies/runner/idle/north.png"
+      ],
+      "placeholder": true,
+      "status": "candidate",
+      "license": "generated: PixelLab, commercial use",
+      "purpose": "Runner enemy, idle, 4 directions (south, west, east, north), 32x32. Candidate for the G2 enemy set: a low horizontal quadruped that must not read as the grunt.",
+      "prompt": "pixel art character sprite of a sleek quadrupedal sprinting hound beast, low elongated horizontal body, outstretched predatory snout, coiled sinewy legs in mid-stride, dark fur with a leather spine harness, distinct horizontal beast silhouette, isometric 3/4 view, light from top-left, warm dusk palette, 1px dark ink outline #1b1a26, isolated on transparent background, no ground tile, clear margins.",
+      "prompt_source": "tasks/T-0106.md, art/director's text verbatim, sent unmodified.",
+      "generator": "pixellab.create_character",
+      "generator_detail": "mode standard (1 generation at any size), size 24 (stored on a 36x36 canvas; standard mode pads about 40 percent so animations fit), n_directions 4, view low top-down (about 20 degrees, classic 3/4), body quadruped, template dog, outline 'single color black outline', shading 'basic shading', detail 'medium detail'. Standard mode refuses palette and max_colors, so no palette was passed to the generator; palette conformance is the post pass, as art/STYLE.md says it must be.",
+      "style_reference": "none passed. create_character in standard mode takes no style input at all: style_image_url and style_character_id are pro-only, and reference_image_url would be taken as a sprite to rotate, not as a style anchor. Pro mode allows a style image but costs 10 generations per call at this size against a 3-generation budget, so T-0106's standard route could not carry the anchor. Reported for art/director, not silently dropped.",
+      "character_id": "cc10e0a9-3453-4427-adde-d5c05249630a",
+      "state": "Idle",
+      "animation_group": "58820773-dcc2-49e1-aa7d-84c0931a19cb",
+      "seed": "none - create_character takes no seed and is not reproducible",
+      "generations_spent": 1,
+      "spend": "1 plan generation (standard mode, any size). Plan generations charged 39 to 42 against a 40 cap, covered by the daily bonus pool (12 to 9 available); credits unchanged at $9.87, so no dollar spend for this call.",
+      "post_processing": [
+        "measured the raw 36x36 rotation before touching it, binarising alpha first: content bbox, tones, off-palette, holes, components, boundary ink and the L-045 pad-green scan, on the raw and again on the result.",
+        "step 1, crop to content: took the exact alpha-greater-than-0 bbox of the 36x36 canvas (8x18 at [14, 9, 21, 26]) and copied it 1:1. No pixel inside the bbox was dropped, every pixel inside it survives in the final file, and every pixel removed was fully transparent canvas.",
+        "step 2, pad to 32x32: pasted the content on a transparent 32x32 canvas, centred, then clamped so at least 1 px stays clear on every side. Transparent space only; no resample, no scale, no rotation, no pixel added.",
+        "step 3, palette snap: nearest locked tone in RGB against the 16-colour bracken dusk palette, then capped at 12 tones (the cap was never reached: the final images hold 3 to 4 tones). The three greens #3a4a3a, #6f8f4a and #9ab55c were excluded from the snap target so that a greenish generator pixel lands on its nearest non-green locked tone; that exclusion is what makes T-0106's '0 pad greens' hold, and it changed 0 px across the four directions of this set.",
+        "step 4, outline: every silhouette-boundary pixel (opaque with a transparent or off-canvas 4-neighbour) was set to #1b1a26 in place. The boundary was inked, not grown, so the content box and the margins from step 2 are unchanged and no content pixel is lost; 4 directions, boundary px 40/40/73/73/72/72/48/48, of which 0 to 2 needed recolouring (the generator already drew a dark outline, so most were close to but not exactly the locked ink).",
+        "step 5, binary alpha: every alpha value forced to 0 or 255. The raw was already binary, so this changed nothing.",
+        "verified after the pass on all four files: 32x32, 3 to 4 tones, 0 off-palette, alpha [0, 255], 0 enclosed holes, 1 connected component, 0 pad greens, 100 percent silhouette-boundary ink, at least 1 px clear on all four edges, and no content on row 0 or any other edge."
+      ],
+      "tones": 4,
+      "palette_tones_used": [
+        "#1b1a26",
+        "#4a3b52",
+        "#8c5a4a",
+        "#d08a4a"
+      ],
+      "off_palette_colours": 0,
+      "binary_alpha": true,
+      "ground_pad_pixels": 0,
+      "pad_green_scan": "0 px of deep green #3a4a3a, leaf #6f8f4a or sunleaf #9ab55c in any of the four final files, scanned after the pass, and the raw was scanned first per L-045.",
+      "enclosed_holes": 0,
+      "components": 1,
+      "content_bbox": [
+        12,
+        7,
+        19,
+        24
+      ],
+      "content_size": "8x18",
+      "canvas_fill": "height 18 to 22 px and width 8 to 24 px of the 32x32 canvas, outline-inclusive and pad-free; per-direction numbers are in direction_metrics.",
+      "silhouette_outline": "100 percent of silhouette-boundary pixels are ink #1b1a26 in all four directions. Because the boundary is inked in place rather than grown, the count equals the boundary and the margins stay as measured.",
+      "direction_metrics": {
+        "south": {
+          "file": "art/candidates/enemies/runner/idle/south.png",
+          "size": "32x32",
+          "tones": 4,
+          "tone_detail": "#1b1a26 60, #4a3b52 50, #d08a4a 3, #8c5a4a 1",
+          "off_palette_colours": 0,
+          "alpha_values": [
+            0,
+            255
+          ],
+          "binary_alpha": true,
+          "enclosed_holes": 0,
+          "components": 1,
+          "component_sizes": [
+            114
+          ],
+          "pad_greens": 0,
+          "content_bbox": [
+            12,
+            7,
+            19,
+            24
+          ],
+          "content_size": "8x18",
+          "margins": {
+            "left": 12,
+            "top": 7,
+            "right": 12,
+            "bottom": 7
+          },
+          "outline_boundary": "40/40",
+          "outline_pct": 100.0,
+          "outline_recoloured": 2,
+          "opaque_pixels": 114,
+          "native_canvas": "36x36",
+          "native_content_bbox": [
+            14,
+            9,
+            21,
+            26
+          ],
+          "placed_at": [
+            12,
+            7
+          ]
+        },
+        "west": {
+          "file": "art/candidates/enemies/runner/idle/west.png",
+          "size": "32x32",
+          "tones": 4,
+          "tone_detail": "#1b1a26 99, #4a3b52 96, #8c5a4a 2, #d08a4a 2",
+          "off_palette_colours": 0,
+          "alpha_values": [
+            0,
+            255
+          ],
+          "binary_alpha": true,
+          "enclosed_holes": 0,
+          "components": 1,
+          "component_sizes": [
+            199
+          ],
+          "pad_greens": 0,
+          "content_bbox": [
+            4,
+            7,
+            27,
+            24
+          ],
+          "content_size": "24x18",
+          "margins": {
+            "left": 4,
+            "top": 7,
+            "right": 4,
+            "bottom": 7
+          },
+          "outline_boundary": "73/73",
+          "outline_pct": 100.0,
+          "outline_recoloured": 2,
+          "opaque_pixels": 199,
+          "native_canvas": "36x36",
+          "native_content_bbox": [
+            8,
+            9,
+            31,
+            26
+          ],
+          "placed_at": [
+            4,
+            7
+          ]
+        },
+        "east": {
+          "file": "art/candidates/enemies/runner/idle/east.png",
+          "size": "32x32",
+          "tones": 4,
+          "tone_detail": "#1b1a26 99, #4a3b52 93, #d08a4a 4, #8c5a4a 3",
+          "off_palette_colours": 0,
+          "alpha_values": [
+            0,
+            255
+          ],
+          "binary_alpha": true,
+          "enclosed_holes": 0,
+          "components": 1,
+          "component_sizes": [
+            199
+          ],
+          "pad_greens": 0,
+          "content_bbox": [
+            4,
+            7,
+            27,
+            24
+          ],
+          "content_size": "24x18",
+          "margins": {
+            "left": 4,
+            "top": 7,
+            "right": 4,
+            "bottom": 7
+          },
+          "outline_boundary": "72/72",
+          "outline_pct": 100.0,
+          "outline_recoloured": 0,
+          "opaque_pixels": 199,
+          "native_canvas": "36x36",
+          "native_content_bbox": [
+            4,
+            9,
+            27,
+            26
+          ],
+          "placed_at": [
+            4,
+            7
+          ]
+        },
+        "north": {
+          "file": "art/candidates/enemies/runner/idle/north.png",
+          "size": "32x32",
+          "tones": 3,
+          "tone_detail": "#1b1a26 81, #4a3b52 58, #8c5a4a 5",
+          "off_palette_colours": 0,
+          "alpha_values": [
+            0,
+            255
+          ],
+          "binary_alpha": true,
+          "enclosed_holes": 0,
+          "components": 1,
+          "component_sizes": [
+            144
+          ],
+          "pad_greens": 0,
+          "content_bbox": [
+            12,
+            5,
+            19,
+            26
+          ],
+          "content_size": "8x22",
+          "margins": {
+            "left": 12,
+            "top": 5,
+            "right": 12,
+            "bottom": 5
+          },
+          "outline_boundary": "48/48",
+          "outline_pct": 100.0,
+          "outline_recoloured": 0,
+          "opaque_pixels": 144,
+          "native_canvas": "36x36",
+          "native_content_bbox": [
+            14,
+            7,
+            21,
+            28
+          ],
+          "placed_at": [
+            12,
+            5
+          ]
+        }
+      },
+      "sha256": {
+        "south": {
+          "sha256": "798C4AC08DFBE424572023EAE1ABAFD3806951A92B1E489AEB808A84C0E3E2DF",
+          "bytes": 227
+        },
+        "west": {
+          "sha256": "D9C4773D4BC711FCA3A9BB29C7B16EB48B10FD8CE46735A3FBEA96F38877D902",
+          "bytes": 328
+        },
+        "east": {
+          "sha256": "D68A830B30D5C4FFA5672E1EAD133DEE63F0D37A583FF31AB94D81505625E237",
+          "bytes": 323
+        },
+        "north": {
+          "sha256": "E5D317B3B923C86E17E1B0333BB014E42A9386B4E1BCDE6167C5533AE9CDAA61",
+          "bytes": 259
+        }
+      },
+      "body_type_note": "INTERPRETATION, recorded for review: the brief fixed the route (standard, size 24, 4 directions) and the prompt text but not body_type. A sprinting hound beast on a humanoid rig would have reproduced the grunt/runner silhouette clash this task exists to fix, so body_type='quadruped' with template='dog' was used, which the tool documents as supported in standard mode. Prompt text unchanged.",
+      "weakness_note": "Recorded for art/director, not resolved and not re-spent. (1) The side views carry the archetype: 24x18 horizontal body, four readable legs, snout and spine harness. (2) The front and back views are the risk: south is 8x18 and north 8x22, a narrow vertical column, so from those two directions the runner loses the horizontal beast read and could be mistaken for a small humanoid standing next to the grunt. That is the confusion the previous batch was rejected for, now narrowed to two of four directions. (3) Only 3 to 4 tones per direction and 114 opaque px in south make it the sparsest set of the three; the harness accent (#d08a4a, 1 to 4 px) is barely present.",
+      "read_note": "Not self-judged. Whether these read at 1x on the board, whether the grunt reads as a goblin rather than a pale-headed human, and whether the runner's front and back views stay distinct from the grunt, are judgements for art/director.",
+      "budget": "T-0106 allowed three calls and no regenerations. Three calls were made, one per kind, and no call was repeated.",
+      "verified": "2026-11-15",
+      "source_task": "T-0106"
+    },
+    {
+      "id": "enemy-shieldback-idle",
+      "type": "character",
+      "file": "art/candidates/enemies/shieldback/idle/south.png",
+      "width": 32,
+      "height": 32,
+      "directions": 4,
+      "direction_files": [
+        {
+          "direction": "south",
+          "file": "art/candidates/enemies/shieldback/idle/south.png"
+        },
+        {
+          "direction": "west",
+          "file": "art/candidates/enemies/shieldback/idle/west.png"
+        },
+        {
+          "direction": "east",
+          "file": "art/candidates/enemies/shieldback/idle/east.png"
+        },
+        {
+          "direction": "north",
+          "file": "art/candidates/enemies/shieldback/idle/north.png"
+        }
+      ],
+      "actions": [
+        "idle"
+      ],
+      "frames": [
+        "art/candidates/enemies/shieldback/idle/south.png",
+        "art/candidates/enemies/shieldback/idle/west.png",
+        "art/candidates/enemies/shieldback/idle/east.png",
+        "art/candidates/enemies/shieldback/idle/north.png"
+      ],
+      "placeholder": true,
+      "status": "candidate",
+      "license": "generated: PixelLab, commercial use",
+      "purpose": "Shieldback enemy, idle, 4 directions (south, west, east, north), 32x32. Candidate for the G2 enemy set: a domed shelled beast.",
+      "prompt": "pixel art character sprite of a heavy domed shelled carapace beast, massive curved iron-banded stone shell dome covering the entire back and shoulders, wide low quadrupedal stance, thick stubby armored legs, small armored head sheltered beneath the shell rim, distinct dome silhouette from all angles, isometric 3/4 view, light from top-left, warm dusk palette, 1px dark ink outline #1b1a26, isolated on transparent background, no ground tile, clear margins.",
+      "prompt_source": "tasks/T-0106.md, art/director's text verbatim, sent unmodified.",
+      "generator": "pixellab.create_character",
+      "generator_detail": "mode standard (1 generation at any size), size 24 (stored on a 36x36 canvas; standard mode pads about 40 percent so animations fit), n_directions 4, view low top-down (about 20 degrees, classic 3/4), body quadruped, template bear, outline 'single color black outline', shading 'basic shading', detail 'medium detail'. Standard mode refuses palette and max_colors, so no palette was passed to the generator; palette conformance is the post pass, as art/STYLE.md says it must be.",
+      "style_reference": "none passed. create_character in standard mode takes no style input at all: style_image_url and style_character_id are pro-only, and reference_image_url would be taken as a sprite to rotate, not as a style anchor. Pro mode allows a style image but costs 10 generations per call at this size against a 3-generation budget, so T-0106's standard route could not carry the anchor. Reported for art/director, not silently dropped.",
+      "character_id": "32b4a874-0bd2-48a3-b670-0fb01e0350d4",
+      "state": "Idle",
+      "animation_group": "d1bcfaee-d23f-498e-866e-5c97f0854468",
+      "seed": "none - create_character takes no seed and is not reproducible",
+      "generations_spent": 1,
+      "spend": "1 plan generation (standard mode, any size). Plan generations charged 39 to 42 against a 40 cap, covered by the daily bonus pool (12 to 9 available); credits unchanged at $9.87, so no dollar spend for this call.",
+      "post_processing": [
+        "measured the raw 36x36 rotation before touching it, binarising alpha first: content bbox, tones, off-palette, holes, components, boundary ink and the L-045 pad-green scan, on the raw and again on the result.",
+        "step 1, crop to content: took the exact alpha-greater-than-0 bbox of the 36x36 canvas (16x20 at [10, 8, 25, 27]) and copied it 1:1. No pixel inside the bbox was dropped, every pixel inside it survives in the final file, and every pixel removed was fully transparent canvas.",
+        "step 2, pad to 32x32: pasted the content on a transparent 32x32 canvas, centred, then clamped so at least 1 px stays clear on every side. Transparent space only; no resample, no scale, no rotation, no pixel added.",
+        "step 3, palette snap: nearest locked tone in RGB against the 16-colour bracken dusk palette, then capped at 12 tones (the cap was never reached: the final images hold 8 to 8 tones). The three greens #3a4a3a, #6f8f4a and #9ab55c were excluded from the snap target so that a greenish generator pixel lands on its nearest non-green locked tone; that exclusion is what makes T-0106's '0 pad greens' hold, and it changed 19 px across the four directions of this set.",
+        "step 4, outline: every silhouette-boundary pixel (opaque with a transparent or off-canvas 4-neighbour) was set to #1b1a26 in place. The boundary was inked, not grown, so the content box and the margins from step 2 are unchanged and no content pixel is lost; 4 directions, boundary px 46/46/76/76/74/74/56/56, of which 9 to 23 needed recolouring (the generator already drew a dark outline, so most were close to but not exactly the locked ink).",
+        "step 5, binary alpha: every alpha value forced to 0 or 255. The raw was already binary, so this changed nothing.",
+        "verified after the pass on all four files: 32x32, 8 to 8 tones, 0 off-palette, alpha [0, 255], 0 enclosed holes, 1 connected component, 0 pad greens, 100 percent silhouette-boundary ink, at least 1 px clear on all four edges, and no content on row 0 or any other edge."
+      ],
+      "tones": 8,
+      "palette_tones_used": [
+        "#1b1a26",
+        "#2e2a3b",
+        "#4a3b52",
+        "#6b4a5a",
+        "#8b8291",
+        "#8c5a4a",
+        "#f6d9a0",
+        "#fff4d6"
+      ],
+      "off_palette_colours": 0,
+      "binary_alpha": true,
+      "ground_pad_pixels": 0,
+      "pad_green_scan": "0 px of deep green #3a4a3a, leaf #6f8f4a or sunleaf #9ab55c in any of the four final files, scanned after the pass, and the raw was scanned first per L-045.",
+      "enclosed_holes": 0,
+      "components": 1,
+      "content_bbox": [
+        8,
+        6,
+        23,
+        25
+      ],
+      "content_size": "16x20",
+      "canvas_fill": "height 19 to 24 px and width 16 to 29 px of the 32x32 canvas, outline-inclusive and pad-free; per-direction numbers are in direction_metrics.",
+      "silhouette_outline": "100 percent of silhouette-boundary pixels are ink #1b1a26 in all four directions. Because the boundary is inked in place rather than grown, the count equals the boundary and the margins stay as measured.",
+      "direction_metrics": {
+        "south": {
+          "file": "art/candidates/enemies/shieldback/idle/south.png",
+          "size": "32x32",
+          "tones": 8,
+          "tone_detail": "#1b1a26 86, #6b4a5a 53, #8b8291 20, #fff4d6 20, #f6d9a0 19, #2e2a3b 17, #4a3b52 11, #8c5a4a 10",
+          "off_palette_colours": 0,
+          "alpha_values": [
+            0,
+            255
+          ],
+          "binary_alpha": true,
+          "enclosed_holes": 0,
+          "components": 1,
+          "component_sizes": [
+            236
+          ],
+          "pad_greens": 0,
+          "content_bbox": [
+            8,
+            6,
+            23,
+            25
+          ],
+          "content_size": "16x20",
+          "margins": {
+            "left": 8,
+            "top": 6,
+            "right": 8,
+            "bottom": 6
+          },
+          "outline_boundary": "46/46",
+          "outline_pct": 100.0,
+          "outline_recoloured": 9,
+          "opaque_pixels": 236,
+          "native_canvas": "36x36",
+          "native_content_bbox": [
+            10,
+            8,
+            25,
+            27
+          ],
+          "placed_at": [
+            8,
+            6
+          ]
+        },
+        "west": {
+          "file": "art/candidates/enemies/shieldback/idle/west.png",
+          "size": "32x32",
+          "tones": 8,
+          "tone_detail": "#1b1a26 137, #8b8291 91, #6b4a5a 75, #fff4d6 30, #2e2a3b 10, #4a3b52 9, #f6d9a0 8, #8c5a4a 6",
+          "off_palette_colours": 0,
+          "alpha_values": [
+            0,
+            255
+          ],
+          "binary_alpha": true,
+          "enclosed_holes": 0,
+          "components": 1,
+          "component_sizes": [
+            366
+          ],
+          "pad_greens": 0,
+          "content_bbox": [
+            2,
+            6,
+            29,
+            24
+          ],
+          "content_size": "28x19",
+          "margins": {
+            "left": 2,
+            "top": 6,
+            "right": 2,
+            "bottom": 7
+          },
+          "outline_boundary": "76/76",
+          "outline_pct": 100.0,
+          "outline_recoloured": 20,
+          "opaque_pixels": 366,
+          "native_canvas": "36x36",
+          "native_content_bbox": [
+            4,
+            9,
+            31,
+            27
+          ],
+          "placed_at": [
+            2,
+            6
+          ]
+        },
+        "east": {
+          "file": "art/candidates/enemies/shieldback/idle/east.png",
+          "size": "32x32",
+          "tones": 8,
+          "tone_detail": "#1b1a26 127, #8b8291 86, #6b4a5a 81, #fff4d6 25, #2e2a3b 23, #f6d9a0 22, #8c5a4a 6, #4a3b52 3",
+          "off_palette_colours": 0,
+          "alpha_values": [
+            0,
+            255
+          ],
+          "binary_alpha": true,
+          "enclosed_holes": 0,
+          "components": 1,
+          "component_sizes": [
+            373
+          ],
+          "pad_greens": 0,
+          "content_bbox": [
+            1,
+            6,
+            29,
+            24
+          ],
+          "content_size": "29x19",
+          "margins": {
+            "left": 1,
+            "top": 6,
+            "right": 2,
+            "bottom": 7
+          },
+          "outline_boundary": "74/74",
+          "outline_pct": 100.0,
+          "outline_recoloured": 23,
+          "opaque_pixels": 373,
+          "native_canvas": "36x36",
+          "native_content_bbox": [
+            4,
+            9,
+            32,
+            27
+          ],
+          "placed_at": [
+            1,
+            6
+          ]
+        },
+        "north": {
+          "file": "art/candidates/enemies/shieldback/idle/north.png",
+          "size": "32x32",
+          "tones": 8,
+          "tone_detail": "#1b1a26 100, #8b8291 54, #6b4a5a 48, #fff4d6 22, #f6d9a0 15, #4a3b52 12, #2e2a3b 11, #8c5a4a 7",
+          "off_palette_colours": 0,
+          "alpha_values": [
+            0,
+            255
+          ],
+          "binary_alpha": true,
+          "enclosed_holes": 0,
+          "components": 1,
+          "component_sizes": [
+            269
+          ],
+          "pad_greens": 0,
+          "content_bbox": [
+            8,
+            4,
+            23,
+            27
+          ],
+          "content_size": "16x24",
+          "margins": {
+            "left": 8,
+            "top": 4,
+            "right": 8,
+            "bottom": 4
+          },
+          "outline_boundary": "56/56",
+          "outline_pct": 100.0,
+          "outline_recoloured": 15,
+          "opaque_pixels": 269,
+          "native_canvas": "36x36",
+          "native_content_bbox": [
+            10,
+            6,
+            25,
+            29
+          ],
+          "placed_at": [
+            8,
+            4
+          ]
+        }
+      },
+      "sha256": {
+        "south": {
+          "sha256": "6BA625854421A3D0041BAA40D0DA35A1D3C18CDCA0B5656DFC0850A0EA0C3FFB",
+          "bytes": 587
+        },
+        "west": {
+          "sha256": "F1C37B4C4A3B520DF6DE28048508FADFCAB5E3EA44B161C9CE4AE4F3C6F3B4CD",
+          "bytes": 582
+        },
+        "east": {
+          "sha256": "56952E42B0B7392D31241F71B6D5E4923C72728F71527ADB56218FBCC6A9541B",
+          "bytes": 574
+        },
+        "north": {
+          "sha256": "636179086D8C6C150C94A2074E250083E4CA02817DCD8E64FBD4191B34F05F03",
+          "bytes": 580
+        }
+      },
+      "body_type_note": "INTERPRETATION, recorded for review: same reasoning as the runner. body_type='quadruped' with template='bear' (heavy, low, bulky) instead of the humanoid default, because the prompt asks for a wide low quadrupedal stance and a dome silhouette. Prompt text unchanged.",
+      "weakness_note": "Recorded for art/director, not resolved and not re-spent. (1) The dome silhouette is the strongest of the three and is distinct from both the grunt and the runner in all four directions. (2) The shell plating sits at stone #8b8291 against mauve #6b4a5a and reads busier than a 32x32 tile needs; at 1x the north view is closer to a speckled boulder than to an armored beast. (3) East/west run 28 to 29 px wide against a 32 px canvas, leaving 1 to 2 px of margin, and are the widest assets in the G2 enemy set; anything wider would not fit and would have been refused rather than cropped.",
+      "read_note": "Not self-judged. Whether these read at 1x on the board, whether the grunt reads as a goblin rather than a pale-headed human, and whether the runner's front and back views stay distinct from the grunt, are judgements for art/director.",
+      "budget": "T-0106 allowed three calls and no regenerations. Three calls were made, one per kind, and no call was repeated.",
+      "verified": "2026-11-15",
+      "source_task": "T-0106"
     }
   ],
   "generation_ledger": {
