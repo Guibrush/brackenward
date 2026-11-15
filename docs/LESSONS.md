@@ -120,3 +120,34 @@ the lead verifies the named paths exist, the manifest changed, and the gate outp
 path list and a gate image count, and a missing path is a failed task, not a partial.
 Evidence: T-0107 envelope vs disk (3 of 12 claimed PNGs present, manifest diff
 empty, gate count 12 vs claimed 18); T-0109 retry brief with Test-Path checks.
+
+## L-050 — 2026-11-15 — A retry was dispatched onto the same art paths while the first dispatch could still write them
+Situation: after the phantom T-0107 result, studio-lead dispatched the T-0109
+retry while T-0107's session was still considered active; a second completion
+then arrived from it with real partial work. Both wrote the same paths
+concurrently. The vendor account ended with six characters for three slots
+(`Swarmling`/`Bracken Swarmling`, `Bloom`/`Spore Bloom`, `Bulwark`/`Stone
+Bulwark`); 6 generations were billed (42→48 used, daily bonus 9→3, credits
+steady at $9.87) for three sets. T-0109 detected that another writer overwrote
+`art/candidates/enemies/swarmling/idle/south.png` (SHA-256 mismatch), rewrote
+it from its raw, and reported the collision. `art/manifest.json` is a
+single-writer file; whichever writer saved second would drop the other's
+entries. T-0109's 12 files and 3 entries were eventually verified (gate 4/4,
+15 images in palette — the brief's expected 18 was wrong), the scratch dir
+was deleted, and the typo spend strings were fixed.
+Worked: the duplicate detected by SHA-256 mismatch; the second writer stopped
+touching the shared file and reported the collision; the lead verified
+paths/gate rather than trusting either envelope (L-049).
+Failed: dispatching a retry on the same paths while the earlier session could
+still write them; no lock or explicit one-art-writer rule; 3 generations were
+wasted on duplicate characters.
+Rule: one writer per art path at a time — never dispatch a second
+generation/post task for the same asset paths while an earlier dispatch is
+unresolved; treat a completed-but-unverified dispatch as still owning its
+paths until the lead has verified the disk and the gate. Duplicate vendor
+generations are charged, so a collision costs real money even when the credit
+balance does not move.
+Evidence: T-0109 SHA-256 mismatch on `art/candidates/enemies/swarmling/idle/
+south.png`; vendor balances 42→48 used, 9→3 bonus, $9.87 credits; six
+character names for three slots; gate 4/4 with 15 palette images (brief
+expected 18, wrongly).
