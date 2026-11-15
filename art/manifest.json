@@ -1034,41 +1034,41 @@
     {
       "id": "enemy-grunt-idle",
       "type": "character",
-      "file": "art/candidates/enemies/grunt/idle/south.png",
+      "file": "assets/art/enemies/grunt/idle/south.png",
       "width": 32,
       "height": 32,
       "directions": 4,
       "direction_files": [
         {
           "direction": "south",
-          "file": "art/candidates/enemies/grunt/idle/south.png"
+          "file": "assets/art/enemies/grunt/idle/south.png"
         },
         {
           "direction": "west",
-          "file": "art/candidates/enemies/grunt/idle/west.png"
+          "file": "assets/art/enemies/grunt/idle/west.png"
         },
         {
           "direction": "east",
-          "file": "art/candidates/enemies/grunt/idle/east.png"
+          "file": "assets/art/enemies/grunt/idle/east.png"
         },
         {
           "direction": "north",
-          "file": "art/candidates/enemies/grunt/idle/north.png"
+          "file": "assets/art/enemies/grunt/idle/north.png"
         }
       ],
       "actions": [
         "idle"
       ],
       "frames": [
-        "art/candidates/enemies/grunt/idle/south.png",
-        "art/candidates/enemies/grunt/idle/west.png",
-        "art/candidates/enemies/grunt/idle/east.png",
-        "art/candidates/enemies/grunt/idle/north.png"
+        "assets/art/enemies/grunt/idle/south.png",
+        "assets/art/enemies/grunt/idle/west.png",
+        "assets/art/enemies/grunt/idle/east.png",
+        "assets/art/enemies/grunt/idle/north.png"
       ],
-      "placeholder": true,
-      "status": "candidate",
+      "placeholder": false,
+      "status": "shipped",
       "license": "generated: PixelLab, commercial use",
-      "purpose": "Grunt enemy, idle, 4 directions (south, west, east, north), 32x32. Candidate for the G2 enemy set: a squat goblin foot soldier on the board.",
+      "purpose": "Grunt enemy, idle, 4 directions. Ships as the G2 grunt sprite.",
       "prompt": "pixel art character sprite of a squat hunchbacked goblin foot soldier, heavy stooped shoulders, protruding lower jaw tusks, low wide bipedal stance, ragged dark cloth tunic with leather bracers, dangling arms, isometric 3/4 view, light from top-left, warm dusk palette (bracken dusk 16), 1px dark ink outline #1b1a26, isolated on transparent background, no ground tile, clear margins on all sides.",
       "prompt_source": "tasks/T-0106.md, art/director's text verbatim, sent unmodified.",
       "generator": "pixellab.create_character",
@@ -1325,46 +1325,47 @@
       "read_note": "Not self-judged. Whether these read at 1x on the board, whether the grunt reads as a goblin rather than a pale-headed human, and whether the runner's front and back views stay distinct from the grunt, are judgements for art/director.",
       "budget": "T-0106 allowed three calls and no regenerations. Three calls were made, one per kind, and no call was repeated.",
       "verified": "2026-11-15",
-      "source_task": "T-0106"
+      "source_task": "T-0106",
+      "promoted_from": "art/candidates/enemies/grunt/idle/"
     },
     {
       "id": "enemy-runner-idle",
       "type": "character",
-      "file": "art/candidates/enemies/runner/idle/south.png",
+      "file": "assets/art/enemies/runner/idle/south.png",
       "width": 32,
       "height": 32,
       "directions": 4,
       "direction_files": [
         {
           "direction": "south",
-          "file": "art/candidates/enemies/runner/idle/south.png"
+          "file": "assets/art/enemies/runner/idle/south.png"
         },
         {
           "direction": "west",
-          "file": "art/candidates/enemies/runner/idle/west.png"
+          "file": "assets/art/enemies/runner/idle/west.png"
         },
         {
           "direction": "east",
-          "file": "art/candidates/enemies/runner/idle/east.png"
+          "file": "assets/art/enemies/runner/idle/east.png"
         },
         {
           "direction": "north",
-          "file": "art/candidates/enemies/runner/idle/north.png"
+          "file": "assets/art/enemies/runner/idle/north.png"
         }
       ],
       "actions": [
         "idle"
       ],
       "frames": [
-        "art/candidates/enemies/runner/idle/south.png",
-        "art/candidates/enemies/runner/idle/west.png",
-        "art/candidates/enemies/runner/idle/east.png",
-        "art/candidates/enemies/runner/idle/north.png"
+        "assets/art/enemies/runner/idle/south.png",
+        "assets/art/enemies/runner/idle/west.png",
+        "assets/art/enemies/runner/idle/east.png",
+        "assets/art/enemies/runner/idle/north.png"
       ],
-      "placeholder": true,
-      "status": "candidate",
+      "placeholder": false,
+      "status": "shipped",
       "license": "generated: PixelLab, commercial use",
-      "purpose": "Runner enemy, idle, 4 directions (south, west, east, north), 32x32. Candidate for the G2 enemy set: a low horizontal quadruped that must not read as the grunt.",
+      "purpose": "Runner enemy, idle, 4 directions. Ships as the G2 runner sprite.",
       "prompt": "pixel art character sprite of a sleek quadrupedal sprinting hound beast, low elongated horizontal body, outstretched predatory snout, coiled sinewy legs in mid-stride, dark fur with a leather spine harness, distinct horizontal beast silhouette, isometric 3/4 view, light from top-left, warm dusk palette, 1px dark ink outline #1b1a26, isolated on transparent background, no ground tile, clear margins.",
       "prompt_source": "tasks/T-0106.md, art/director's text verbatim, sent unmodified.",
       "generator": "pixellab.create_character",
@@ -1616,46 +1617,47 @@
       "read_note": "Not self-judged. Whether these read at 1x on the board, whether the grunt reads as a goblin rather than a pale-headed human, and whether the runner's front and back views stay distinct from the grunt, are judgements for art/director.",
       "budget": "T-0106 allowed three calls and no regenerations. Three calls were made, one per kind, and no call was repeated.",
       "verified": "2026-11-15",
-      "source_task": "T-0106"
+      "source_task": "T-0106",
+      "promoted_from": "art/candidates/enemies/runner/idle/"
     },
     {
       "id": "enemy-shieldback-idle",
       "type": "character",
-      "file": "art/candidates/enemies/shieldback/idle/south.png",
+      "file": "assets/art/enemies/shieldback/idle/south.png",
       "width": 32,
       "height": 32,
       "directions": 4,
       "direction_files": [
         {
           "direction": "south",
-          "file": "art/candidates/enemies/shieldback/idle/south.png"
+          "file": "assets/art/enemies/shieldback/idle/south.png"
         },
         {
           "direction": "west",
-          "file": "art/candidates/enemies/shieldback/idle/west.png"
+          "file": "assets/art/enemies/shieldback/idle/west.png"
         },
         {
           "direction": "east",
-          "file": "art/candidates/enemies/shieldback/idle/east.png"
+          "file": "assets/art/enemies/shieldback/idle/east.png"
         },
         {
           "direction": "north",
-          "file": "art/candidates/enemies/shieldback/idle/north.png"
+          "file": "assets/art/enemies/shieldback/idle/north.png"
         }
       ],
       "actions": [
         "idle"
       ],
       "frames": [
-        "art/candidates/enemies/shieldback/idle/south.png",
-        "art/candidates/enemies/shieldback/idle/west.png",
-        "art/candidates/enemies/shieldback/idle/east.png",
-        "art/candidates/enemies/shieldback/idle/north.png"
+        "assets/art/enemies/shieldback/idle/south.png",
+        "assets/art/enemies/shieldback/idle/west.png",
+        "assets/art/enemies/shieldback/idle/east.png",
+        "assets/art/enemies/shieldback/idle/north.png"
       ],
-      "placeholder": true,
-      "status": "candidate",
+      "placeholder": false,
+      "status": "shipped",
       "license": "generated: PixelLab, commercial use",
-      "purpose": "Shieldback enemy, idle, 4 directions (south, west, east, north), 32x32. Candidate for the G2 enemy set: a domed shelled beast.",
+      "purpose": "Shieldback enemy, idle, 4 directions. Ships as the G2 shieldback sprite.",
       "prompt": "pixel art character sprite of a heavy domed shelled carapace beast, massive curved iron-banded stone shell dome covering the entire back and shoulders, wide low quadrupedal stance, thick stubby armored legs, small armored head sheltered beneath the shell rim, distinct dome silhouette from all angles, isometric 3/4 view, light from top-left, warm dusk palette, 1px dark ink outline #1b1a26, isolated on transparent background, no ground tile, clear margins.",
       "prompt_source": "tasks/T-0106.md, art/director's text verbatim, sent unmodified.",
       "generator": "pixellab.create_character",
@@ -1911,46 +1913,47 @@
       "read_note": "Not self-judged. Whether these read at 1x on the board, whether the grunt reads as a goblin rather than a pale-headed human, and whether the runner's front and back views stay distinct from the grunt, are judgements for art/director.",
       "budget": "T-0106 allowed three calls and no regenerations. Three calls were made, one per kind, and no call was repeated.",
       "verified": "2026-11-15",
-      "source_task": "T-0106"
+      "source_task": "T-0106",
+      "promoted_from": "art/candidates/enemies/shieldback/idle/"
     },
     {
       "id": "enemy-swarmling-idle",
       "type": "character",
-      "file": "art/candidates/enemies/swarmling/idle/south.png",
+      "file": "assets/art/enemies/swarmling/idle/south.png",
       "width": 32,
       "height": 32,
       "directions": 4,
       "direction_files": [
         {
           "direction": "south",
-          "file": "art/candidates/enemies/swarmling/idle/south.png"
+          "file": "assets/art/enemies/swarmling/idle/south.png"
         },
         {
           "direction": "west",
-          "file": "art/candidates/enemies/swarmling/idle/west.png"
+          "file": "assets/art/enemies/swarmling/idle/west.png"
         },
         {
           "direction": "east",
-          "file": "art/candidates/enemies/swarmling/idle/east.png"
+          "file": "assets/art/enemies/swarmling/idle/east.png"
         },
         {
           "direction": "north",
-          "file": "art/candidates/enemies/swarmling/idle/north.png"
+          "file": "assets/art/enemies/swarmling/idle/north.png"
         }
       ],
       "actions": [
         "idle"
       ],
       "frames": [
-        "art/candidates/enemies/swarmling/idle/south.png",
-        "art/candidates/enemies/swarmling/idle/west.png",
-        "art/candidates/enemies/swarmling/idle/east.png",
-        "art/candidates/enemies/swarmling/idle/north.png"
+        "assets/art/enemies/swarmling/idle/south.png",
+        "assets/art/enemies/swarmling/idle/west.png",
+        "assets/art/enemies/swarmling/idle/east.png",
+        "assets/art/enemies/swarmling/idle/north.png"
       ],
-      "placeholder": true,
-      "status": "candidate",
+      "placeholder": false,
+      "status": "shipped",
       "license": "generated: PixelLab, commercial use",
-      "purpose": "Swarmling enemy, idle, 4 directions (south, west, east, north), 32x32. Candidate for the G2 enemy set: a tiny low insect that must read as a bug and never as a small humanoid.",
+      "purpose": "Swarmling enemy, idle, 4 directions. Ships as the G2 swarmling sprite.",
       "prompt": "pixel art character sprite of a tiny skittering spidery bracken bug, small compact round chitin body, six thin bristling legs, two tiny glowing amber eye dots, low crawling stance, small footprint, isometric 3/4 view, light from top-left, warm dusk palette, 1px dark ink outline #1b1a26, isolated on transparent background, wide clear margin around sprite, no ground tile.",
       "prompt_source": "tasks/T-0109.md, the brief's text verbatim, sent unmodified (382 characters or fewer, checked against the 2000-code-point limit before sending per L-046).",
       "generator": "pixellab.create_character",
@@ -2223,46 +2226,47 @@
       "read_note": "Not self-judged. Whether these read at 1x on the board, whether the swarmling and bloom stay distinct from the grunt/runner/shieldback at thumbnail size, and whether the bulwark dwarfs a 32x32 enemy are judgements for art/director.",
       "budget": "T-0109 allowed three calls and no regenerations. Three calls were made, one per kind, and no call was repeated.",
       "verified": "2026-11-15",
-      "source_task": "T-0109"
+      "source_task": "T-0109",
+      "promoted_from": "art/candidates/enemies/swarmling/idle/"
     },
     {
       "id": "enemy-bloom-idle",
       "type": "character",
-      "file": "art/candidates/enemies/bloom/idle/south.png",
+      "file": "assets/art/enemies/bloom/idle/south.png",
       "width": 32,
       "height": 32,
       "directions": 4,
       "direction_files": [
         {
           "direction": "south",
-          "file": "art/candidates/enemies/bloom/idle/south.png"
+          "file": "assets/art/enemies/bloom/idle/south.png"
         },
         {
           "direction": "west",
-          "file": "art/candidates/enemies/bloom/idle/west.png"
+          "file": "assets/art/enemies/bloom/idle/west.png"
         },
         {
           "direction": "east",
-          "file": "art/candidates/enemies/bloom/idle/east.png"
+          "file": "assets/art/enemies/bloom/idle/east.png"
         },
         {
           "direction": "north",
-          "file": "art/candidates/enemies/bloom/idle/north.png"
+          "file": "assets/art/enemies/bloom/idle/north.png"
         }
       ],
       "actions": [
         "idle"
       ],
       "frames": [
-        "art/candidates/enemies/bloom/idle/south.png",
-        "art/candidates/enemies/bloom/idle/west.png",
-        "art/candidates/enemies/bloom/idle/east.png",
-        "art/candidates/enemies/bloom/idle/north.png"
+        "assets/art/enemies/bloom/idle/south.png",
+        "assets/art/enemies/bloom/idle/west.png",
+        "assets/art/enemies/bloom/idle/east.png",
+        "assets/art/enemies/bloom/idle/north.png"
       ],
-      "placeholder": true,
-      "status": "candidate",
+      "placeholder": false,
+      "status": "shipped",
       "license": "generated: PixelLab, commercial use",
-      "purpose": "Bloom enemy, idle, 4 directions (south, west, east, north), 32x32. Candidate for the G2 enemy set: a bulbous fungal dome that must not read as the grunt or the runner.",
+      "purpose": "Bloom enemy, idle, 4 directions. Ships as the G2 bloom sprite.",
       "prompt": "pixel art character sprite of a bulbous crawling fungal spore creature, fleshy pulsating mushroom cap with glowing golden-amber spore speckles, short root-like crawling tendril base, distinct flared bell-dome silhouette, isometric 3/4 view, light from top-left, warm dusk palette, 1px dark ink outline #1b1a26, isolated on transparent background, no ground tile, clear margins.",
       "prompt_source": "tasks/T-0109.md, the brief's text verbatim, sent unmodified (382 characters or fewer, checked against the 2000-code-point limit before sending per L-046).",
       "generator": "pixellab.create_character",
@@ -2520,46 +2524,47 @@
       "read_note": "Not self-judged. Whether these read at 1x on the board, whether the swarmling and bloom stay distinct from the grunt/runner/shieldback at thumbnail size, and whether the bulwark dwarfs a 32x32 enemy are judgements for art/director.",
       "budget": "T-0109 allowed three calls and no regenerations. Three calls were made, one per kind, and no call was repeated.",
       "verified": "2026-11-15",
-      "source_task": "T-0109"
+      "source_task": "T-0109",
+      "promoted_from": "art/candidates/enemies/bloom/idle/"
     },
     {
       "id": "enemy-bulwark-idle",
       "type": "character",
-      "file": "art/candidates/enemies/bulwark/idle/south.png",
+      "file": "assets/art/enemies/bulwark/idle/south.png",
       "width": 48,
       "height": 48,
       "directions": 4,
       "direction_files": [
         {
           "direction": "south",
-          "file": "art/candidates/enemies/bulwark/idle/south.png"
+          "file": "assets/art/enemies/bulwark/idle/south.png"
         },
         {
           "direction": "west",
-          "file": "art/candidates/enemies/bulwark/idle/west.png"
+          "file": "assets/art/enemies/bulwark/idle/west.png"
         },
         {
           "direction": "east",
-          "file": "art/candidates/enemies/bulwark/idle/east.png"
+          "file": "assets/art/enemies/bulwark/idle/east.png"
         },
         {
           "direction": "north",
-          "file": "art/candidates/enemies/bulwark/idle/north.png"
+          "file": "assets/art/enemies/bulwark/idle/north.png"
         }
       ],
       "actions": [
         "idle"
       ],
       "frames": [
-        "art/candidates/enemies/bulwark/idle/south.png",
-        "art/candidates/enemies/bulwark/idle/west.png",
-        "art/candidates/enemies/bulwark/idle/east.png",
-        "art/candidates/enemies/bulwark/idle/north.png"
+        "assets/art/enemies/bulwark/idle/south.png",
+        "assets/art/enemies/bulwark/idle/west.png",
+        "assets/art/enemies/bulwark/idle/east.png",
+        "assets/art/enemies/bulwark/idle/north.png"
       ],
-      "placeholder": true,
-      "status": "candidate",
+      "placeholder": false,
+      "status": "shipped",
       "license": "generated: PixelLab, commercial use",
-      "purpose": "Bulwark sub-boss, idle, 4 directions (south, west, east, north), 48x48. Candidate for the G2 enemy set: the heavy stone golem that must dwarf a 32x32 enemy on the same board.",
+      "purpose": "Bulwark enemy, idle, 4 directions. Ships as the G2 bulwark sprite.",
       "prompt": "pixel art character sprite of a massive stone-armored iron golem sub-boss, monolithic hunched brute, heavy interlocking stone slab plating across chest and shoulders, thick pillar stone arms, battering-ram horned stone crest, isometric 3/4 view, light from top-left, warm dusk palette, 1px dark ink outline #1b1a26, isolated on transparent background, no ground tile, clear margins.",
       "prompt_source": "tasks/T-0109.md, the brief's text verbatim, sent unmodified (382 characters or fewer, checked against the 2000-code-point limit before sending per L-046).",
       "generator": "pixellab.create_character",
@@ -2815,7 +2820,324 @@
       "read_note": "Not self-judged. Whether these read at 1x on the board, whether the swarmling and bloom stay distinct from the grunt/runner/shieldback at thumbnail size, and whether the bulwark dwarfs a 32x32 enemy are judgements for art/director.",
       "budget": "T-0109 allowed three calls and no regenerations. Three calls were made, one per kind, and no call was repeated.",
       "verified": "2026-11-15",
-      "source_task": "T-0109"
+      "source_task": "T-0109",
+      "promoted_from": "art/candidates/enemies/bulwark/idle/"
+    },
+    {
+      "id": "enemy-herald-idle",
+      "type": "character",
+      "file": "assets/art/enemies/herald/idle/south.png",
+      "width": 48,
+      "height": 48,
+      "directions": 4,
+      "direction_files": [
+        {
+          "direction": "south",
+          "file": "assets/art/enemies/herald/idle/south.png"
+        },
+        {
+          "direction": "west",
+          "file": "assets/art/enemies/herald/idle/west.png"
+        },
+        {
+          "direction": "east",
+          "file": "assets/art/enemies/herald/idle/east.png"
+        },
+        {
+          "direction": "north",
+          "file": "assets/art/enemies/herald/idle/north.png"
+        }
+      ],
+      "actions": [
+        "idle"
+      ],
+      "frames": [
+        "assets/art/enemies/herald/idle/south.png",
+        "assets/art/enemies/herald/idle/west.png",
+        "assets/art/enemies/herald/idle/east.png",
+        "assets/art/enemies/herald/idle/north.png"
+      ],
+      "placeholder": false,
+      "status": "shipped",
+      "license": "generated: PixelLab, commercial use",
+      "purpose": "Herald enemy, idle, 4 directions. Ships as the G2 herald sprite.",
+      "prompt": "pixel art character sprite of a tall agile mantis-fiend commander sub-boss, upright slender chitinous silhouette, high arched spine with sweeping bladed crests, long scythe-like forearm blades, glowing amber antenna tips, isometric 3/4 view, light from top-left, warm dusk palette, 1px dark ink outline #1b1a26, isolated on transparent background, no ground tile, clear margins.",
+      "prompt_source": "tasks/T-0108.md, art/director's text verbatim; 378/418 code points, under the L-046 limit.",
+      "generator": "pixellab.create_character",
+      "generator_detail": "mode standard (1 generation at any size), size 40 (stored on a 56x56 canvas), n_directions 4, transparent background. Standard mode takes no palette or style image; palette conformance is the post pass.",
+      "character_id": "12c09f9b-a07b-48c5-96da-deb355e2eda7",
+      "style_reference": "none; standard create_character accepts no style input (pro-only).",
+      "generations_spent": 1,
+      "spend_note": "1 daily-bonus generation; credits unchanged at $9.87.",
+      "direction_metrics": {
+        "south": {
+          "tones": 8,
+          "tone_detail": "#1b1a26 323, #4a3b52 88, #2e2a3b 30, #edb05f 27, #b06a3b 19, #6b4a5a 15, #d08a4a 9, #8c5a4a 5",
+          "off_palette": 0,
+          "binary_alpha": true,
+          "enclosed_holes": 0,
+          "components": 1,
+          "pad_greens": 0,
+          "content_bbox": [
+            13,
+            2,
+            35,
+            45
+          ],
+          "content_size": "23x44",
+          "margins": {
+            "left": 13,
+            "top": 2,
+            "right": 12,
+            "bottom": 2
+          },
+          "outline_boundary": "180/180",
+          "outline_pct": 100.0,
+          "holes_filled": 12
+        },
+        "west": {
+          "tones": 9,
+          "tone_detail": "#1b1a26 206, #4a3b52 64, #b06a3b 22, #edb05f 17, #6b4a5a 11, #d08a4a 9, #2e2a3b 7, #f6d9a0 5, #8c5a4a 3",
+          "off_palette": 0,
+          "binary_alpha": true,
+          "enclosed_holes": 0,
+          "components": 1,
+          "pad_greens": 0,
+          "content_bbox": [
+            15,
+            1,
+            32,
+            46
+          ],
+          "content_size": "18x46",
+          "margins": {
+            "left": 15,
+            "top": 1,
+            "right": 15,
+            "bottom": 1
+          },
+          "outline_boundary": "110/110",
+          "outline_pct": 100.0,
+          "holes_filled": 0
+        },
+        "east": {
+          "tones": 9,
+          "tone_detail": "#1b1a26 206, #4a3b52 62, #edb05f 27, #b06a3b 16, #2e2a3b 11, #6b4a5a 9, #d08a4a 4, #8c5a4a 4, #f6d9a0 2",
+          "off_palette": 0,
+          "binary_alpha": true,
+          "enclosed_holes": 0,
+          "components": 1,
+          "pad_greens": 0,
+          "content_bbox": [
+            15,
+            1,
+            32,
+            45
+          ],
+          "content_size": "18x45",
+          "margins": {
+            "left": 15,
+            "top": 1,
+            "right": 15,
+            "bottom": 2
+          },
+          "outline_boundary": "113/113",
+          "outline_pct": 100.0,
+          "holes_filled": 0
+        },
+        "north": {
+          "tones": 10,
+          "tone_detail": "#1b1a26 282, #4a3b52 96, #b06a3b 20, #edb05f 17, #d08a4a 13, #2e2a3b 13, #6b4a5a 10, #f6d9a0 9, #8c5a4a 5, #8b8291 3",
+          "off_palette": 0,
+          "binary_alpha": true,
+          "enclosed_holes": 0,
+          "components": 1,
+          "pad_greens": 0,
+          "content_bbox": [
+            14,
+            2,
+            35,
+            46
+          ],
+          "content_size": "22x45",
+          "margins": {
+            "left": 14,
+            "top": 2,
+            "right": 12,
+            "bottom": 1
+          },
+          "outline_boundary": "164/164",
+          "outline_pct": 100.0,
+          "holes_filled": 3
+        }
+      },
+      "post_processing": [
+        "cropped to content bbox and padded to 48x48 with >=1 px clear margin on every edge",
+        "palette snap to the locked 16, cap 12 tones",
+        "1 px #1b1a26 outline on the silhouette boundary in place",
+        "binary alpha; enclosed holes filled with shadow #2e2a3b; herald antenna specks erased where the outline pass blackened them into floating ink dots"
+      ],
+      "verified": "2026-11-15",
+      "source_task": "T-0108",
+      "promoted_from": "art/candidates/enemies/herald/idle/"
+    },
+    {
+      "id": "enemy-warden-idle",
+      "type": "character",
+      "file": "assets/art/enemies/warden/idle/south.png",
+      "width": 96,
+      "height": 96,
+      "directions": 4,
+      "direction_files": [
+        {
+          "direction": "south",
+          "file": "assets/art/enemies/warden/idle/south.png"
+        },
+        {
+          "direction": "west",
+          "file": "assets/art/enemies/warden/idle/west.png"
+        },
+        {
+          "direction": "east",
+          "file": "assets/art/enemies/warden/idle/east.png"
+        },
+        {
+          "direction": "north",
+          "file": "assets/art/enemies/warden/idle/north.png"
+        }
+      ],
+      "actions": [
+        "idle"
+      ],
+      "frames": [
+        "assets/art/enemies/warden/idle/south.png",
+        "assets/art/enemies/warden/idle/west.png",
+        "assets/art/enemies/warden/idle/east.png",
+        "assets/art/enemies/warden/idle/north.png"
+      ],
+      "placeholder": false,
+      "status": "shipped",
+      "license": "generated: PixelLab, commercial use",
+      "purpose": "Warden enemy, idle, 4 directions. Ships as the G2 warden sprite.",
+      "prompt": "pixel art character sprite of a colossal ancient ironwood root titan boss, massive sprawling body of ancient twisted bark and masonry, towering crown of sweeping ironwood antler horns, hollow chest cavity glowing with amber heart core, massive pillar root legs, isometric 3/4 view, light from top-left, warm dusk palette, 1px dark ink outline #1b1a26, isolated on transparent background, no ground tile, clear margins.",
+      "prompt_source": "tasks/T-0108.md, art/director's text verbatim; 378/418 code points, under the L-046 limit.",
+      "generator": "pixellab.create_character",
+      "generator_detail": "mode standard (1 generation at any size), size 76 (stored on a 104x104 canvas), n_directions 4, transparent background. Standard mode takes no palette or style image; palette conformance is the post pass.",
+      "character_id": "6ab4ab0a-26ba-4f78-b56c-cd08617a6088",
+      "style_reference": "none; standard create_character accepts no style input (pro-only).",
+      "generations_spent": 1,
+      "spend_note": "1 daily-bonus generation; credits unchanged at $9.87.",
+      "direction_metrics": {
+        "south": {
+          "tones": 11,
+          "tone_detail": "#1b1a26 599, #d08a4a 414, #b06a3b 214, #4a3b52 209, #2e2a3b 178, #6b4a5a 48, #fff4d6 28, #8c5a4a 24, #edb05f 5, #5b8a8c 3, #2f4a55 2",
+          "off_palette": 0,
+          "binary_alpha": true,
+          "enclosed_holes": 0,
+          "components": 1,
+          "pad_greens": 0,
+          "content_bbox": [
+            27,
+            7,
+            68,
+            88
+          ],
+          "content_size": "42x82",
+          "margins": {
+            "left": 27,
+            "top": 7,
+            "right": 27,
+            "bottom": 7
+          },
+          "outline_boundary": "342/342",
+          "outline_pct": 100.0,
+          "holes_filled": 18
+        },
+        "west": {
+          "tones": 11,
+          "tone_detail": "#1b1a26 507, #4a3b52 267, #d08a4a 256, #2e2a3b 189, #b06a3b 141, #6b4a5a 29, #8c5a4a 19, #edb05f 14, #fff4d6 9, #5b8a8c 2, #2f4a55 1",
+          "off_palette": 0,
+          "binary_alpha": true,
+          "enclosed_holes": 0,
+          "components": 1,
+          "pad_greens": 0,
+          "content_bbox": [
+            30,
+            3,
+            64,
+            92
+          ],
+          "content_size": "35x90",
+          "margins": {
+            "left": 30,
+            "top": 3,
+            "right": 31,
+            "bottom": 3
+          },
+          "outline_boundary": "287/287",
+          "outline_pct": 100.0,
+          "holes_filled": 4
+        },
+        "east": {
+          "tones": 10,
+          "tone_detail": "#1b1a26 530, #d08a4a 282, #4a3b52 265, #2e2a3b 179, #b06a3b 155, #6b4a5a 29, #8c5a4a 14, #fff4d6 10, #edb05f 6, #5b8a8c 5",
+          "off_palette": 0,
+          "binary_alpha": true,
+          "enclosed_holes": 0,
+          "components": 1,
+          "pad_greens": 0,
+          "content_bbox": [
+            31,
+            3,
+            64,
+            92
+          ],
+          "content_size": "34x90",
+          "margins": {
+            "left": 31,
+            "top": 3,
+            "right": 31,
+            "bottom": 3
+          },
+          "outline_boundary": "294/294",
+          "outline_pct": 100.0,
+          "holes_filled": 0
+        },
+        "north": {
+          "tones": 9,
+          "tone_detail": "#1b1a26 569, #d08a4a 383, #4a3b52 357, #b06a3b 194, #2e2a3b 174, #6b4a5a 49, #8c5a4a 14, #edb05f 5, #fff4d6 1",
+          "off_palette": 0,
+          "binary_alpha": true,
+          "enclosed_holes": 0,
+          "components": 1,
+          "pad_greens": 0,
+          "content_bbox": [
+            27,
+            7,
+            68,
+            87
+          ],
+          "content_size": "42x81",
+          "margins": {
+            "left": 27,
+            "top": 7,
+            "right": 27,
+            "bottom": 8
+          },
+          "outline_boundary": "340/340",
+          "outline_pct": 100.0,
+          "holes_filled": 32
+        }
+      },
+      "post_processing": [
+        "cropped to content bbox and padded to 96x96 with >=1 px clear margin on every edge",
+        "palette snap to the locked 16, cap 12 tones",
+        "1 px #1b1a26 outline on the silhouette boundary in place",
+        "binary alpha; enclosed holes filled with shadow #2e2a3b; herald antenna specks erased where the outline pass blackened them into floating ink dots"
+      ],
+      "verified": "2026-11-15",
+      "source_task": "T-0108",
+      "promoted_from": "art/candidates/enemies/warden/idle/"
     }
   ],
   "generation_ledger": {
@@ -2895,5 +3217,17 @@
     "credits_after": 9.87,
     "recorded_total_after": 30,
     "concurrency_note": "One writer per manifest: the second dispatch on the same paths must not be repeated."
+  },
+  "credit_ledger_t0108": {
+    "vendor": "pixellab",
+    "source": "pixellab.get_balance",
+    "measured_at": "2026-11-15",
+    "note": "Herald and warden: two standard create_character calls, 4 directions, no animation, no regenerations. Plan generations had reached 0; the calls drew on the daily bonus pool. Credits unchanged at $9.87.",
+    "calls": 2,
+    "generations_used_before": 48,
+    "generations_used_after": 48,
+    "daily_bonus_before": 3,
+    "credits_before": 9.87,
+    "credits_after": 9.87
   }
 }
