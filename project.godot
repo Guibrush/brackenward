@@ -87,3 +87,32 @@ game_move_right={
 , Object(InputEventJoypadButton,"resource_local_to_scene":false,"resource_name":"","device":-1,"button_index":14,"pressure":0.0,"pressed":false,"script":null)
 ]
 }
+
+; T-0111 - presentation: the 2x scale art/STYLE.md specifies.
+;
+; art/STYLE.md line 15: "A 30x18 board at 32px is 960x576, shown at 2x in a
+; 1080p window." A 32 px tile must therefore cover 64 screen pixels. The
+; default 1152x648 window drew it at 1x, which is why sprites read as tiny.
+;
+; 960x540 logical viewport + **windowed** (mode=0) + a 1920x1080 window
+; override + canvas_items stretch with aspect "keep" and integer scale_mode: the
+; development window is exactly 2x on a screen that can hold it, and every
+; element is pixel-crisp. Fullscreen was rejected for the development period
+; (the human does not want the game taking over the screen); a release build
+; can choose fullscreen later. Aspect "keep" letterboxes rather than distorting,
+; which is what keeps 32 px art square.
+;
+; Presentation only: no sprite, scene size or gameplay constant changes. The
+; UI is anchored, so every HUD element is laid out against the 960x540 logical
+; rect and is unaffected by the physical surface size. See T-0111.
+
+[display]
+
+window/size/viewport_width=960
+window/size/viewport_height=540
+window/size/mode=0
+window/size/window_width_override=1920
+window/size/window_height_override=1080
+window/stretch/mode="canvas_items"
+window/stretch/aspect="keep"
+window/stretch/scale_mode="integer"

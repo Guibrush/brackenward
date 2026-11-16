@@ -82,7 +82,7 @@ const SEED := 20261108
 ## The window the panel and the bar are laid out in. A windowed run is required for
 ## the acceptance frame; `--headless` gives every run the same layout but cannot
 ## render one.
-const VIEWPORT := Vector2i(1152, 648)
+const VIEWPORT := Vector2i(960, 540)
 
 const SETTLE_FRAMES := 2
 const MOVIE_HOLD_FRAMES := 12

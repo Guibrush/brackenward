@@ -58,7 +58,7 @@ const SEED := 20261108
 
 ## The window the modal is laid out in; `--headless` gives every run a 64x64
 ## viewport whatever the project says (measured T-0062), so it is set explicitly.
-const VIEWPORT := Vector2i(1152, 648)
+const VIEWPORT := Vector2i(960, 540)
 
 const SETTLE_FRAMES := 2
 

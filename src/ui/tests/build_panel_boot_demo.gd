@@ -54,7 +54,7 @@ const SETTLE_FRAMES := 2
 ## display rather than about the panel. 1152x648 is the project's default window
 ## (`root.content_scale_size` in the same run); the level's own board is 960x540,
 ## so this is the smaller of the two and still fits the whole sidebar.
-const VIEWPORT := Vector2i(1152, 648)
+const VIEWPORT := Vector2i(960, 540)
 
 var _boot = null
 var _checks: int = 0

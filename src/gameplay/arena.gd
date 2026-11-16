@@ -433,6 +433,9 @@ func spawn_from_entry(entry: WaveEntry) -> LaneWalker:
 	var stats := entry.stats()
 	for key in stats:
 		walker.set(key, stats[key])
+	# Art, not stats: `stats()` carries numbers only, so the kind is copied here
+	# (T-0105) before the walker picks its sprite in `setup()`.
+	walker.kind = entry.kind
 	adopt_walker(walker)
 	return walker
 

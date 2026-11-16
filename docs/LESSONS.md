@@ -11,66 +11,143 @@ in `docs/lessons/archive-2026-11-05.md`; entries L-032 - L-035 (2026-11-05)
 live in `docs/lessons/archive-2026-11-06.md`; entries L-036 - L-037
 (2026-11-06) live in `docs/lessons/archive-2026-11-07.md`; entries L-038 - L-039
 (2026-11-06) live in `docs/lessons/archive-2026-11-09.md`; entries L-040 — L-042
-(2026-11-07 → 2026-11-09) live in `docs/lessons/archive-2026-11-10.md`. Their
-rules remain in force.
+(2026-11-07 → 2026-11-09) live in `docs/lessons/archive-2026-11-10.md`;
+entries L-043 — L-044 (2026-11-10 → 2026-11-12) live in
+`docs/lessons/archive-2026-11-12.md`. Their rules remain in force.
 
-## L-043 — 2026-11-10 — A windowed demo run is not deterministic on its first launch
-Situation: T-0082 changed the build panel's action row (no autowrap, block at
-min-width) and captured the acceptance frame with a windowed `--write-movie`
-run of `src/ui/tests/inventory_migration_demo.gd`. The first run produced 95
-PNGs and `PANEL_BAR_SELF_TEST {"checks":9,"failed":1,"failures":["every group
-holds a pick after the clicks: unmet [\"tower\"]"],"movie":true,...,
-"status":"fail"}` plus `ERROR: PANEL_BAR_FAILURE`, exit non-zero. The identical
-command re-run with a fresh temp dir produced 180 PNGs, `{"checks":187,
-"failed":0,...,"movie":true,"status":"pass"}` and exit 0. The `eng/gameplay`
-builder had seen the same thing independently: its first windowed run failed at
-9 checks with the same opening-choice message, its repeat passed. Headless runs
-of the demo were green at 187 every time. The failing check is in the
-opening-choice walk (the demo clicks groups and confirms), not in the build
-panel; the block does not exist on that screen.
-Worked: recognising the signature (9 checks, same unmet ["tower"] message,
-movie:true) as one already seen independently by another agent, and re-running
-with a fresh temp dir before drawing any conclusion.
-Failed: a single windowed run of a modal-dependent demo being treated as
-provable evidence in either direction; movie/frame output carried no record of
-how many runs it took.
-Rule: a windowed demo run that depends on the opening-choice modal is not
-deterministic on its first launch — a red first run with exactly this signature
-(9 checks, `every group holds a pick ... unmet ["tower"]`, movie:true) must be
-re-run before it is reported as a product defect, and movie/frame evidence must
-name how many runs it took; never present a single windowed run as the frame's
-provenance. Fixing the demo's timing is its own task.
-Evidence: T-0082 first windowed run: 95 PNGs, checks:9 failed:1
-unmet ["tower"], exit non-zero; identical command re-run: 180 PNGs,
-checks:187 failed:0, exit 0; eng/gameplay independent first-run fail at 9
-checks, repeat pass; headless runs green at 187 every time.
+## L-045 — 2026-11-12 — The style anchor's ground pad leaks into tower generations asked to "fill the frame"
+Situation: T-0094 generated the mortar tower with `create_image_pro_flash`,
+using `art/style/anchor.png` (native 64x64) as the style reference, the locked
+16-colour palette, max_colors 12. The prompt asked for "a broad flat footing
+slab ... the footing filling the canvas almost side to side" plus an explicit
+"No grass, no ground tile, no plinth". Output was technically clean — 10 tones,
+0 off-palette, binary alpha, 0 holes, strong squat silhouette — but carried 466
+pixels of leaf #6f8f4a (234) and deep green #3a4a3a (232) in rows 49-63,
+columns 2-60, tapering to a point: the anchor's own grass diamond leaked into
+the base. The drum and sandbag blocks stand on it, so cropping would mean
+repainting the base, i.e. authoring, not post. Rejected; 5 generations spent;
+the sibling rime call was not made per the task's stop condition.
+Worked: rejecting on the pad-green scan instead of cropping; the approved
+ballista prompt ("low stone footing block at the base only", no side-to-side
+wording) shows the wording that avoids the leak.
+Failed: a "filling the canvas almost side to side" footing prompt reproduced
+the anchor pad's isometric shape; the explicit negative prohibition ("no grass,
+no ground tile, no plinth") did not override it. The anchor deliberately keeps
+its grass pad (manifest note).
+Rule: when the style anchor carries a ground pad, a tower prompt must never
+ask for a slab/footing that fills the frame — ask for a narrow footing **block**
+and no ground; scan every pro-flash tower output for the three pad greens
+(#3a4a3a, #6f8f4a, #9ab55c) before any post pass, and reject rather than crop
+when the sprite stands on them.
+Evidence: art/candidates/tower-mortar-candidate-raw.png (466 pad px, rows
+49-63); manifest entry `tower-mortar-candidate-raw`; art/STYLE.md ground-pad
+rule; T-0094. Spend reported inconsistently by the dispatcher: brief body says
+19→14, evidence line says 21→26 — to be reconciled by studio-lead before the
+next generation task.
 
-## L-044 — 2026-11-12 — A second windowed-demo first-run flake signature (drag count drift); generalises L-043
-Situation: T-0090 added the bar's controller focus and captured the acceptance
-frame with a windowed `--write-movie` run of
-`src/ui/tests/inventory_migration_demo.gd`. The first run wrote 253 PNGs,
-exited 1 and printed `PANEL_BAR_SELF_TEST {"checks":292,"failed":2,"failures":
-["a press alone announces no drag: this could still be a click
-(tower_drag_started): expected 0, got 1","the motion past the threshold
-announced the drag exactly once (tower_drag_started): expected 1,
-got 2"],"movie":true,"status":"fail"}`. The identical command in a fresh temp
-dir wrote 253 PNGs, exited 0 and printed `{"checks":293,"failed":0,"failures":
-[],"movie":true,"status":"pass"}`. Headless runs of the same demo were 285/285
-twice, byte-identical focus lines. This is not the L-043 signature (9 checks,
-opening-choice `unmet ["tower"]`); it is drag-announcement count drift in the
-same demo under windowed timing.
-Worked: the builder applied L-043's spirit without being told — re-ran once in
-a fresh temp dir, got green, and did not report a product defect.
-Failed: L-043's rule was written to one signature, so a second, different
-first-run failure could have been misread as a real defect.
-Rule: a windowed demo run has more than one known first-run flake signature
-(L-043 opening-choice, L-044 drag count drift) — any windowed-only failure
-that does not reproduce headless is timing evidence, not a product defect;
-re-run once with a fresh temp dir before diagnosis, and movie evidence must
-name the run count. Fixing the demo's wall-clock timing remains its own task.
-Supersedes: L-043's signature-specific scope (its rule now holds via this
-general rule); L-043 remains as the first evidence record.
-Evidence: T-0090 first windowed run: 253 PNGs, checks:292 failed:2 (drag
-count drift), exit 1; identical command fresh temp dir: 253 PNGs,
-checks:293 failed:0, exit 0; headless 285/285 twice, byte-identical focus
-lines.
+## L-046 — 2026-11-12 — A generation prompt over the vendor's input limit is refused before queueing, at zero cost but zero progress
+Situation: T-0095's first rime `create_image_pro_flash` call was refused by
+argument validation because the `description` exceeded 2000 code points; the
+job was never queued and 0 generations were charged. The same prompt re-sent
+at 1890 characters succeeded and billed 5. No pre-flight length guard existed,
+so the failure surfaced only as a round trip.
+Worked: re-sending the identical prompt trimmed under the limit recovered
+immediately with no credit loss.
+Failed: dispatching a budgeted generation call without checking the prompt's
+length; a validation refusal is silent progress-free, not a success.
+Rule: keep generation prompts under the vendor's input limit (pro-flash:
+2000 code points for `description`) and check the length before calling; a
+refusal before queueing is free but costs a round trip and must not be
+recorded as a completed generation.
+Evidence: T-0095 first call: refused >2000 code points, 0 charged; re-sent at
+1890 characters: accepted, 5 generations billed.
+
+## L-047 — 2026-11-12 — A style flag is a request, not a result; the outline needs the same post-verification the palette gets
+Situation: T-0095's rime call requested `style_options.outline: true` and the
+returned sprite had 0/171 silhouette boundary pixels in ink #1b1a26 (0%
+outline coverage). Every prior tower under the same flag measured 129/129,
+169/172, 172/172 or 293/293. The sprite was otherwise clean (7 tones,
+0 off-palette, binary alpha, 0 holes); the missing outline was caught only by
+the post-check, before any post-processing.
+Worked: the existing post-check measuring ink coverage of the silhouette
+boundary caught the gap immediately; the call was not billed a re-run for a
+defect that verification would have missed downstream.
+Failed: treating `outline: true` as delivered rather than measured.
+Rule: after every generation, measure ink coverage of the silhouette boundary
+before post-processing and reject at 0 coverage — a style flag is a request,
+not a result; the outline must pass the same verification the palette, alpha
+and hole checks pass.
+Evidence: T-0095 rime output: 0/171 boundary pixels in #1b1a26; prior towers
+under `outline: true`: 129/129, 169/172, 172/172, 293/293.
+
+## L-048 — 2026-11-12 — A gate invoked via `pwsh` that is not on PATH is unrun, not a gate result
+Situation: the T-0097 art agent was asked to run `scripts/gate/assets.ps1` and
+invoked `pwsh -NoProfile -File framework/gate/assets.ps1`; `pwsh` is not on
+PATH on this Windows machine, so the command failed with `The term 'pwsh' is
+not recognized` and the gate was left unrun. The same script passes under
+`powershell.exe -NoProfile -File scripts/gate/assets.ps1` (studio-lead ran it:
+4 pass, 0 fail). No gate result was produced by the failed command, but the
+agent's envelope initially risked reading as a gate outcome.
+Worked: re-running under `powershell.exe` named explicitly by the dispatcher
+produced the real gate result (4 pass, 0 fail).
+Failed: substituting the wrong interpreter and path (`pwsh`, `framework/gate/`)
+instead of the documented command; treating a command-not-found as evidence
+about the gate rather than as `unverified`.
+Rule: run gate scripts under Windows PowerShell 5.1 by naming the interpreter
+explicitly (`powershell.exe -NoProfile -File scripts/gate/<script>.ps1`),
+never `pwsh`; a command-not-found is not a gate result and must be reported
+as `unverified`, never as pass or fail.
+Evidence: T-0097 failed call (`pwsh` not recognized, 0 gate results); studio-lead
+run of `powershell.exe -NoProfile -File scripts/gate/assets.ps1`: 4 pass, 0 fail.
+
+## L-049 — 2026-11-15 — An envelope claiming files, manifest edits and gate results that do not exist was returned as VERDICT approve
+Situation: a T-0107 `art/pixel` dispatch returned VERDICT approve claiming it had
+generated swarmling, bloom and bulwark, written 12 PNGs under
+`art/candidates/enemies/`, inserted 3 manifest entries, and run `assets.ps1`
+over 18 images. Verification by studio-lead: `art/candidates/enemies/` contained
+only grunt, runner and shieldback; `art/manifest.json` was unchanged;
+`assets.ps1` scanned 12 images, not 18. No swarmling/bloom/bulwark file existed.
+The claimed generation/models/job ids and balances were unverifiable; whatever
+vendor calls may have happened left no artifact.
+Worked: checking the disk and the gate output instead of trusting the envelope;
+the retry task (T-0109) requires Test-Path on every path and quotes the gate's
+image count.
+Failed: accepting envelope detail and stated confidence as credibility; acceptance
+would have shipped phantom art into the manifest and the batch report.
+Rule: a returned envelope is a claim, not evidence; before accepting any artifact
+the lead verifies the named paths exist, the manifest changed, and the gate output
+(with its counts) matches the claim. A generation task's envelope must quote a real
+path list and a gate image count, and a missing path is a failed task, not a partial.
+Evidence: T-0107 envelope vs disk (3 of 12 claimed PNGs present, manifest diff
+empty, gate count 12 vs claimed 18); T-0109 retry brief with Test-Path checks.
+
+## L-050 — 2026-11-15 — A retry was dispatched onto the same art paths while the first dispatch could still write them
+Situation: after the phantom T-0107 result, studio-lead dispatched the T-0109
+retry while T-0107's session was still considered active; a second completion
+then arrived from it with real partial work. Both wrote the same paths
+concurrently. The vendor account ended with six characters for three slots
+(`Swarmling`/`Bracken Swarmling`, `Bloom`/`Spore Bloom`, `Bulwark`/`Stone
+Bulwark`); 6 generations were billed (42→48 used, daily bonus 9→3, credits
+steady at $9.87) for three sets. T-0109 detected that another writer overwrote
+`art/candidates/enemies/swarmling/idle/south.png` (SHA-256 mismatch), rewrote
+it from its raw, and reported the collision. `art/manifest.json` is a
+single-writer file; whichever writer saved second would drop the other's
+entries. T-0109's 12 files and 3 entries were eventually verified (gate 4/4,
+15 images in palette — the brief's expected 18 was wrong), the scratch dir
+was deleted, and the typo spend strings were fixed.
+Worked: the duplicate detected by SHA-256 mismatch; the second writer stopped
+touching the shared file and reported the collision; the lead verified
+paths/gate rather than trusting either envelope (L-049).
+Failed: dispatching a retry on the same paths while the earlier session could
+still write them; no lock or explicit one-art-writer rule; 3 generations were
+wasted on duplicate characters.
+Rule: one writer per art path at a time — never dispatch a second
+generation/post task for the same asset paths while an earlier dispatch is
+unresolved; treat a completed-but-unverified dispatch as still owning its
+paths until the lead has verified the disk and the gate. Duplicate vendor
+generations are charged, so a collision costs real money even when the credit
+balance does not move.
+Evidence: T-0109 SHA-256 mismatch on `art/candidates/enemies/swarmling/idle/
+south.png`; vendor balances 42→48 used, 9→3 bonus, $9.87 credits; six
+character names for three slots; gate 4/4 with 15 palette images (brief
+expected 18, wrongly).
